@@ -18,9 +18,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # rustup no longer installs the toolchain named in rust-toolchain.toml on first use.
+      # rustup no longer installs the toolchain named in rust-toolchain.toml on first use, and
+      # the runner's rustup rejects a bare `rustup toolchain install` when that channel carries
+      # a target tuple. Naming the channel explicitly works with any rustup.
       - name: Install the pinned GNU toolchain
-        run: rustup toolchain install
+        shell: pwsh
+        run: |
+          if ((Get-Content rust-toolchain.toml -Raw) -notmatch 'channel\s*=\s*"([^"]+)"') {
+            throw 'no channel in rust-toolchain.toml'
+          }
+          rustup toolchain install $Matches[1] --profile minimal --component rustfmt --no-self-update
+          if ($LASTEXITCODE -ne 0) { throw "rustup exited with $LASTEXITCODE" }
+          rustc -vV
 
       - uses: Swatinem/rust-cache@v2
 
