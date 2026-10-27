@@ -2,25 +2,37 @@
 //! and the global mouse hook that watches for the jiggle gesture.
 
 use std::ffi::c_void;
+use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
 
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{
     DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND, DwmSetWindowAttribute,
 };
 use windows::Win32::Graphics::Gdi::{
-    GetMonitorInfoW, MONITOR_DEFAULTTOPRIMARY, MONITORINFO, MonitorFromWindow,
+    GetMonitorInfoW, MONITOR_DEFAULTTOPRIMARY, MONITORINFO, MonitorFromWindow, PtInRect,
 };
+use windows::Win32::System::Com::{CoTaskMemFree, IDataObject};
 use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
-use windows::Win32::UI::WindowsAndMessaging::{
-    CallNextHookEx, DispatchMessageW, GWL_EXSTYLE, GWL_STYLE, GetForegroundWindow, GetMessageW,
-    GetWindowLongPtrW, HHOOK, HWND_TOPMOST, MSG, MSLLHOOKSTRUCT, SWP_FRAMECHANGED, SWP_NOACTIVATE,
-    SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos,
-    SetWindowsHookExW, TranslateMessage, WH_MOUSE_LL, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
-    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP, WS_VISIBLE,
+use windows::Win32::System::Ole::{
+    DROPEFFECT_COPY, DROPEFFECT_LINK, DROPEFFECT_MOVE, DROPEFFECT_NONE, IDropTarget,
+    RegisterDragDrop, RevokeDragDrop,
 };
-use windows::core::{s, w};
+use windows::Win32::UI::Shell::Common::ITEMIDLIST;
+use windows::Win32::UI::Shell::{
+    BHID_DataObject, SHCreateShellItemArrayFromIDLists, SHDoDragDrop, SHParseDisplayName,
+    ShellExecuteW,
+};
+use windows::Win32::UI::WindowsAndMessaging::{
+    CallNextHookEx, DispatchMessageW, GWL_EXSTYLE, GWL_STYLE, GetCursorPos, GetForegroundWindow,
+    GetMessageW, GetPropW, GetWindowLongPtrW, GetWindowRect, HHOOK, HWND_TOPMOST, MSG,
+    MSLLHOOKSTRUCT, SW_SHOWNORMAL, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    SWP_NOZORDER, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, SetWindowsHookExW,
+    TranslateMessage, WH_MOUSE_LL, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WS_EX_NOACTIVATE,
+    WS_EX_TOOLWINDOW, WS_POPUP, WS_VISIBLE,
+};
+use windows::core::{Interface, PCWSTR, s, w};
 
 use crate::jiggle::{JiggleConfig, JiggleDetector};
 
@@ -156,6 +168,135 @@ pub fn monitor_top_center(hwnd: HWND) -> Option<(i32, i32)> {
 pub fn move_window(hwnd: HWND, x: i32, y: i32, w: i32, h: i32) {
     unsafe {
         let _ = SetWindowPos(hwnd, None, x, y, w, h, SWP_NOACTIVATE | SWP_NOZORDER);
+    }
+}
+
+fn wide_path(path: &Path) -> Vec<u16> {
+    use std::os::windows::ffi::OsStrExt;
+    path.as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect()
+}
+
+/// What a drag out of the shelf ended as.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DragOutcome {
+    /// Released over a target that took the files (copy, move or link).
+    Dropped,
+    /// Escape, or released over something that refuses files.
+    Cancelled,
+}
+
+/// Takes a window out of OLE drag-and-drop while one of its own items is being dragged.
+///
+/// GPUI registers every window as a drop target for files. During a drag out of the shelf
+/// the cursor starts over that window, so the system's drag loop would offer the drag to
+/// the window it came from, and GPUI's handler would read the dragged files straight back
+/// out of the shell's data object. That intermittently blocked the UI thread for seconds
+/// while the shell loaded handlers, with the drag loop never returning. Nothing is lost by
+/// pausing it: dropping a chip back on the shelf is not an operation.
+///
+/// GPUI keeps no reference to its drop target (the registration owns it), so it is read
+/// back from the property OLE stores it in, kept alive across the revoke, and registered
+/// again on drop. If the property is missing the window is left registered.
+struct PausedDropTarget {
+    hwnd: HWND,
+    target: Option<IDropTarget>,
+}
+
+impl PausedDropTarget {
+    fn new(hwnd: HWND) -> Self {
+        // `RegisterDragDrop` records the target in this window property.
+        let raw = unsafe { GetPropW(hwnd, w!("OleDropTargetInterface")) };
+        let target = unsafe { IDropTarget::from_raw_borrowed(&raw.0) }.cloned();
+        if target.is_some() {
+            let _ = unsafe { RevokeDragDrop(hwnd) };
+        }
+        Self { hwnd, target }
+    }
+}
+
+impl Drop for PausedDropTarget {
+    fn drop(&mut self) {
+        if let Some(target) = &self.target
+            && let Err(err) = unsafe { RegisterDragDrop(self.hwnd, target) }
+        {
+            eprintln!("topsy: could not restore the island as a drop target: {err}");
+        }
+    }
+}
+
+/// Drag `paths` out to whatever window the cursor ends up over, as Explorer would for the
+/// same selection. Blocks in the system's drag loop until the button is released, so it
+/// must be called with the left button down, and from a task, never from inside an event
+/// handler (the loop dispatches this window's messages back into GPUI).
+///
+/// The data object comes from the shell (`BHID_DataObject` on the items), so it carries
+/// everything real targets expect, and `SHDoDragDrop` with no drop source supplies the
+/// shell's own: the drag image, the cursors, Escape to cancel. No COM is implemented here.
+pub fn drag_files_out(hwnd: HWND, paths: &[PathBuf]) -> windows::core::Result<DragOutcome> {
+    unsafe {
+        let mut pidls: Vec<*const ITEMIDLIST> = Vec::with_capacity(paths.len());
+        let free_all = |pidls: &[*const ITEMIDLIST]| {
+            for pidl in pidls {
+                CoTaskMemFree(Some(pidl.cast()));
+            }
+        };
+        for path in paths {
+            let wide = wide_path(path);
+            let mut pidl: *mut ITEMIDLIST = std::ptr::null_mut();
+            if let Err(err) = SHParseDisplayName(PCWSTR(wide.as_ptr()), None, &mut pidl, 0, None) {
+                free_all(&pidls);
+                return Err(err);
+            }
+            pidls.push(pidl);
+        }
+        let array = SHCreateShellItemArrayFromIDLists(&pidls);
+        free_all(&pidls);
+        let data: IDataObject = array?.BindToHandler(None, &BHID_DataObject)?;
+
+        let _own_target_paused = PausedDropTarget::new(hwnd);
+        let effect = SHDoDragDrop(
+            Some(hwnd),
+            &data,
+            None,
+            DROPEFFECT_COPY | DROPEFFECT_MOVE | DROPEFFECT_LINK,
+        )?;
+        Ok(if effect == DROPEFFECT_NONE {
+            DragOutcome::Cancelled
+        } else {
+            DragOutcome::Dropped
+        })
+    }
+}
+
+/// Open a file or folder with its default handler, as a double-click would.
+pub fn open_path(path: &Path) -> bool {
+    let wide = wide_path(path);
+    let result = unsafe {
+        ShellExecuteW(
+            None,
+            w!("open"),
+            PCWSTR(wide.as_ptr()),
+            PCWSTR::null(),
+            PCWSTR::null(),
+            SW_SHOWNORMAL,
+        )
+    };
+    // ShellExecute reports success as a value above 32.
+    result.0 as usize > 32
+}
+
+/// Is the cursor over the window's rectangle right now? Asked of the system directly
+/// rather than inferred from hover events, which can miss a "leave" while a drag has the mouse.
+pub fn cursor_over(hwnd: HWND) -> bool {
+    let mut at = POINT::default();
+    let mut rect = RECT::default();
+    unsafe {
+        GetCursorPos(&mut at).is_ok()
+            && GetWindowRect(hwnd, &mut rect).is_ok()
+            && PtInRect(&rect, at).as_bool()
     }
 }
 
