@@ -2,12 +2,16 @@
 
 A Droppy-style notch/island for Windows, written in Rust on [GPUI](https://crates.io/crates/gpui).
 
-This branch is a **feasibility spike** for the riskiest parts of the design:
+It started as a **feasibility spike** for the riskiest parts of the design, and all four held up:
 
 1. A transparent, always-on-top, non-activating glass pill window with spring animation.
 2. A global mouse hook that detects the "jiggle a drag" gesture.
 3. Receiving a real file drag on that window.
 4. A real blur behind the pill, in the pill's shape.
+
+On top of that it is now a usable v1: the tray holds a **shelf** of files you can drag back out, there is a
+**tray icon** with a menu, **start with Windows**, and a **Quit** item. See
+[Shelf, tray icon and startup](#shelf-tray-icon-and-startup).
 
 ## What's here
 
@@ -15,20 +19,26 @@ This branch is a **feasibility spike** for the riskiest parts of the design:
 |---|---|
 | `src/spring.rs` | Damped spring (Framer-Motion-style `stiffness/damping/mass`), fixed sub-step, retargetable mid-flight |
 | `src/jiggle.rs` | Pure jiggle detector: direction reversals of a held-button drag inside a time window |
-| `src/win32.rs` | Overlay window styles, acrylic glass, window geometry, `WH_MOUSE_LL` hook thread |
-| `src/main.rs` | The island view: idle pill, expandable tray, file-drop target |
+| `src/win32.rs` | Overlay window styles, acrylic glass, window geometry, `WH_MOUSE_LL` hook thread, dragging files out, opening them |
+| `src/shelf.rs` | The shelf model: files parked on the island (no UI, no OS calls, unit tested) |
+| `src/tray.rs` | The notification-area icon and its menu, on their own thread |
+| `src/autostart.rs` | Start with Windows: one `HKCU\...\Run` value |
+| `src/main.rs` | The island view: idle pill, expandable tray with the shelf, file-drop target |
 | `build.rs` | Copies one import library the GNU toolchain's bundled MinGW lacks (see below) |
 | `rust-toolchain.toml` | Pins the GNU toolchain, `stable-x86_64-pc-windows-gnu` |
 
-Right-click the pill to quit. Env vars for testing: `TOPSY_DEMO=1` (auto expand/collapse),
-`TOPSY_LOG=1` (event trace on stderr), `TOPSY_EXIT_AFTER_MS=<n>`, `TOPSY_NO_HOOK=1` (don't install the
-mouse hook), `TOPSY_GLASS=tint|solid|clear` (see [Glass](#glass); the default is the real blur).
+Right-click the pill or the tray icon for the menu (Quit is in it). Env vars for testing: `TOPSY_DEMO=1`
+(auto expand/collapse), `TOPSY_LOG=1` (event trace on stderr), `TOPSY_EXIT_AFTER_MS=<n>`, `TOPSY_NO_HOOK=1` (don't
+install the mouse hook), `TOPSY_NO_TRAY=1` (no tray icon and no menu, so right-clicking the pill quits; start-with-Windows is left
+alone),
+`TOPSY_SEED=<path;path>` (start with these files on the shelf), `TOPSY_GLASS=tint|solid|clear` (see
+[Glass](#glass); the default is the real blur).
 
 ## Running
 
 ```powershell
 cargo run            # then hold the left mouse button on a file and jiggle it side to side
-cargo test           # spring + jiggle unit tests
+cargo test           # spring, jiggle, shelf, tray icon and start-with-Windows unit tests
 ```
 
 This builds with the **GNU toolchain** (`x86_64-pc-windows-gnu`), pinned in `rust-toolchain.toml`. No MSVC.
@@ -51,6 +61,37 @@ the `topsy-windows-gnu` artifact: no Rust, MinGW or SDK needed to run it. A cold
 
 To build locally without installing the SDK, GPUI only needs one file from it: copy `fxc.exe` (from
 `Windows Kits\10\bin\<version>\x64`) anywhere and set `GPUI_FXC_PATH` to it.
+
+## Shelf, tray icon and startup
+
+- **Shelf.** Drop files on the pill and they are parked in the tray as chips (an extension badge, the name, and a
+  cross to remove it from the shelf; the file itself is never touched). The chips are references, not copies.
+  Drag a chip out and drop it on any window, as you would from Explorer; click a chip to open it; **Clear**
+  empties the shelf. A chip leaves the shelf once a drop is accepted. Files that were moved or deleted since they
+  were parked are dropped from the shelf when the tray opens (checked off the UI thread). The shelf is not saved across restarts.
+- **Tray icon.** A small glass-blue pill in the notification area (drawn in code, no asset). Left click opens
+  or closes the shelf. Right click, or right-click the pill itself, opens the menu: *Show shelf*, *Clear shelf (N)*,
+  *Start with Windows* (checked when on) and *Quit topsy*. The icon lives on its own thread with a hidden window,
+  re-adds itself when Explorer restarts, and is removed on Quit. On Windows 11 a new icon starts in the overflow
+  flyout; drag it out to keep it visible.
+- **Start with Windows** writes `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\topsy` (the quoted path of
+  the running exe): per-user, no admin, nothing to uninstall. It is off until you turn it on from the menu. If
+  the exe has moved since, the stored path is repaired at launch; an entry is never created by itself.
+
+Two things about dragging out of a window that is itself a drop target, both found the hard way:
+
+- **The island steps out of drag-and-drop while one of its chips is being dragged.** GPUI registers every window as
+  a file drop target, and the drag starts over that window, so the system's drag loop offered the drag to the
+  window it came from. GPUI's handler then read the files out of the shell's data object, and that
+  intermittently blocked the UI thread for seconds with the loop never returning. `win32::PausedDropTarget` takes
+  the registration out for the duration of the drag and puts it back afterwards (GPUI keeps no reference to its
+  drop target, so it is read back from the `OleDropTargetInterface` window property and kept alive across the
+  revoke). The cost is that dropping a chip back on the shelf is a cancelled drag, which is what you want anyway.
+- **Anything that pumps messages must stay out of event handlers.** The drag loop does, and so does
+  `ShellExecute` (opening a chip): a message for the window reaching GPUI while it is inside a click handler finds
+  the app already borrowed and aborts the process. That crashed the app about one run in five in the e2e. The
+  drag loop runs from a `cx.spawn` task; opening a chip runs on a thread of its own, which also keeps a slow
+  handler (a UAC prompt, a cold network path) from freezing the island.
 
 ## Glass
 
@@ -101,6 +142,16 @@ These drive the real desktop, so they move your cursor and/or show a window for 
   verifies the tray expands, carries the drag onto the pill, and checks the drop arrives with the right file name.
   It checks that the window under the drop point is the island's first and aborts otherwise, so a drag is never
   carried to the top of the screen unless the pill is there to catch it.
+- `e2e-shelf.ps1` — seeds a shelf, clicks the pill open, drags a chip onto a separate app (a fixture window,
+  `drop-target.ps1`) and checks it received the file and the chip left, cancels a drag with Escape (the chip stays),
+  removes a chip with its cross without opening it, opens a folder chip in Explorer, clears the shelf, and finally
+  drops a file from another app onto the island to prove it is still a drop target after being dragged out of.
+  Escape is held for 250 ms, as the drag loop polls the key.
+- `e2e-tray.ps1` — checks the real notification area: the icon is registered with the shell and drawn there, left
+  click toggles the shelf, the menu's items work (real keystrokes), *Start with Windows* writes and then clears the
+  real Run value, right-clicking the pill opens the menu, and Quit exits cleanly and removes the icon. It handles an
+  auto-hidden taskbar, and briefly sets the shell's "show this icon" flag for topsy under
+  `HKCU\Control Panel\NotifyIconSettings`; that flag and the Run value are restored when it finishes.
 - `check-overlay.ps1` — only the pill is hit-testable, and launching doesn't change the foreground window.
   Run it on a release build (see above).
 - `check-glass.ps1` — the blur proof described under [Glass](#glass). Shows a stripe window at the top of the
@@ -120,7 +171,10 @@ These drive the real desktop, so they move your cursor and/or show a window for 
   expanding the tray mid-drag (checked in the e2e).
 - **`SetCursorPos` does not reliably reach `WH_MOUSE_LL`**; test input must be `mouse_event`/`SendInput`.
 - Low-level hooks do see button-up and moves during an OLE drag loop.
-- The GNU build links and runs (11/11 unit tests, all live checks pass); the binary imports `msvcrt.dll`, no
+- **A drag out with Escape needs the key held a moment.** The system's drag loop polls the key state rather than
+  being sent the keystroke, because the island never takes focus. A tap shorter than a frame can be missed;
+  releasing the button over something that refuses files cancels too.
+- The GNU build links and runs (27/27 unit tests, all live checks pass); the binary imports `msvcrt.dll`, no
   VCRUNTIME/MSVCP.
 
 ## Measured (release build, GNU toolchain, Windows 11, one 3440x1440 display, idle)
@@ -149,7 +203,12 @@ worth a profile before building on it, because an always-on app should be closer
   light backdrops. The acrylic call is undocumented API and could change.
 - Resizing a window every frame is not profiled, and the window trails the spring by a frame. No tearing showed
   in sampled frames, but it was not measured at speed.
-- No tray icon / settings / droplets yet.
+- The shelf shows an extension badge, not the file's own icon or a thumbnail, and is not saved across restarts.
+- The target decides copy, move or link (the default shell drop source offers all three), so a drag to a folder on
+  the same drive moves the file, as in Explorer; the chip then leaves the shelf.
+- No settings window or droplets yet. The tray icon is drawn in code and the exe itself has no icon resource.
+- Dropping files stats each one on the UI thread (to tell folders from files); a file on a dead network share
+  could stall that for its timeout.
 
 ## License
 

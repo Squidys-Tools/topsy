@@ -2,23 +2,30 @@
 // that window takes foreground focus at launch. Debug builds keep the console for logging.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod autostart;
 mod jiggle;
+mod shelf;
 mod spring;
+mod tray;
 mod win32;
 
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    App, Application, Bounds, Context, ExternalPaths, TitlebarOptions, Window,
-    WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions, div, point, prelude::*,
-    px, rgb, rgba, size,
+    App, Application, Bounds, ClickEvent, Context, ExternalPaths, FontWeight, MouseButton,
+    MouseDownEvent, MouseMoveEvent, Pixels, Point, TitlebarOptions, Window,
+    WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions, div, hsla, point,
+    prelude::*, px, rgb, rgba, size,
 };
 use raw_window_handle::HasWindowHandle;
 use windows::Win32::Foundation::HWND;
 
 use crate::jiggle::JiggleConfig;
+use crate::shelf::{Item, Shelf};
 use crate::spring::{Spring, SpringConfig};
-use crate::win32::HookEvent;
+use crate::tray::TrayEvent;
+use crate::win32::{DragOutcome, HookEvent};
 
 /// Gap between the top of the screen and the pill.
 const TOP_INSET: f32 = 6.0;
@@ -36,6 +43,15 @@ const GLASS_TINT: u32 = 0x0c101c8c;
 
 const COLLAPSE_AFTER_RELEASE: Duration = Duration::from_millis(1200);
 const COLLAPSE_AFTER_DROP: Duration = Duration::from_millis(4000);
+/// How long the tray stays once the cursor has left it.
+const COLLAPSE_AFTER_LEAVE: Duration = Duration::from_millis(1500);
+/// How long a tray opened by a click (on the pill or the tray icon) waits for the cursor to arrive.
+const COLLAPSE_AFTER_CLICK: Duration = Duration::from_millis(5000);
+
+/// How far (logical pixels) a pressed chip must be dragged before it becomes a drag out.
+const DRAG_OUT_THRESHOLD: f32 = 6.0;
+
+const CHIP: (f32, f32) = (72.0, 70.0);
 
 /// Event trace for scripted tests; silent unless TOPSY_LOG is set.
 fn log(message: &str) {
@@ -91,7 +107,7 @@ struct Island {
     width: Spring,
     height: Spring,
     last_frame: Option<Instant>,
-    files: Vec<String>,
+    shelf: Shelf,
     hwnd: Option<HWND>,
     scale: f32,
     glass: Glass,
@@ -102,6 +118,10 @@ struct Island {
     applied_size: Option<(i32, i32)>,
     /// Bumped on every state change that schedules a collapse, so stale timers do nothing.
     collapse_generation: u64,
+    /// The chip the left button went down on, and where: it becomes a drag out once moved.
+    press: Option<(usize, Point<Pixels>)>,
+    /// A chip is being dragged out; the system's drag loop is running.
+    drag_out: bool,
 }
 
 impl Island {
@@ -114,13 +134,15 @@ impl Island {
             width: Spring::new(IDLE.0, SpringConfig::ISLAND),
             height: Spring::new(IDLE.1, SpringConfig::ISLAND),
             last_frame: None,
-            files: Vec::new(),
+            shelf: Shelf::default(),
             hwnd,
             scale,
             glass,
             anchor,
             applied_size: None,
             collapse_generation: 0,
+            press: None,
+            drag_out: false,
         }
     }
 
@@ -129,10 +151,62 @@ impl Island {
         let (w, h) = mode.size();
         self.width.set_target(w);
         self.height.set_target(h);
-        if mode == Mode::Idle {
-            self.files.clear();
+        if mode == Mode::Tray {
+            self.prune_missing(cx);
         }
         cx.notify();
+    }
+
+    /// Files can move or vanish while parked; don't keep chips for ones that have.
+    ///
+    /// Looking asks the disk, which can take seconds for a share that has gone away, so it
+    /// happens off the UI thread and the chips are dropped when the answer comes back.
+    fn prune_missing(&mut self, cx: &mut Context<Self>) {
+        let paths: Vec<PathBuf> = self.shelf.items().iter().map(|i| i.path.clone()).collect();
+        if paths.is_empty() {
+            return;
+        }
+        cx.spawn(async move |this, cx| {
+            let gone: Vec<PathBuf> = cx
+                .background_executor()
+                .spawn(async move { paths.into_iter().filter(|p| !p.exists()).collect() })
+                .await;
+            if gone.is_empty() {
+                return;
+            }
+            this.update(cx, |this, cx| {
+                let pruned = this.shelf.prune(|p| !gone.iter().any(|g| g == p));
+                if pruned > 0 {
+                    log(&format!("pruned {pruned} missing"));
+                    this.shelf_changed(cx);
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn shelf_changed(&mut self, cx: &mut Context<Self>) {
+        log(&format!("shelf now {}", self.shelf.len()));
+        tray::set_shelf_count(self.shelf.len());
+        cx.notify();
+    }
+
+    fn add_paths(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) -> usize {
+        let added = self.shelf.add(paths, |p| p.is_dir());
+        self.shelf_changed(cx);
+        added
+    }
+
+    /// Open the tray. `collapse_after` folds it away again unless the cursor arrives; `None`
+    /// is for a drag in progress, which closes the tray itself when the button is released.
+    fn open_tray(&mut self, collapse_after: Option<Duration>, cx: &mut Context<Self>) {
+        // Cancels any pending collapse from earlier.
+        self.collapse_generation += 1;
+        self.set_mode(Mode::Tray, cx);
+        if let Some(after) = collapse_after {
+            self.schedule_collapse(after, cx);
+        }
     }
 
     fn schedule_collapse(&mut self, after: Duration, cx: &mut Context<Self>) {
@@ -141,7 +215,15 @@ impl Island {
         cx.spawn(async move |this, cx| {
             cx.background_executor().timer(after).await;
             this.update(cx, |this, cx| {
-                if this.collapse_generation == generation {
+                if this.collapse_generation != generation || this.drag_out {
+                    return;
+                }
+                // The cursor is asked directly rather than remembered: a hover state that
+                // missed its "leave" (a drag took over the mouse) must not pin the tray open.
+                if this.hwnd.is_some_and(win32::cursor_over) {
+                    // Still being used; look again later, in case no "leave" ever arrives.
+                    this.schedule_collapse(after, cx);
+                } else {
                     this.set_mode(Mode::Idle, cx);
                 }
             })
@@ -153,17 +235,122 @@ impl Island {
     fn on_hook(&mut self, event: HookEvent, cx: &mut Context<Self>) {
         log(&format!("hook {event:?} (mode {:?})", self.mode));
         match event {
-            HookEvent::Jiggle => {
-                // Cancels any pending collapse from an earlier drag.
-                self.collapse_generation += 1;
-                self.set_mode(Mode::Tray, cx);
-            }
+            HookEvent::Jiggle => self.open_tray(None, cx),
             HookEvent::ButtonUp => {
-                if self.mode == Mode::Tray {
+                if self.mode == Mode::Tray && !self.drag_out {
                     self.schedule_collapse(COLLAPSE_AFTER_RELEASE, cx);
                 }
             }
         }
+    }
+
+    fn on_tray(&mut self, event: TrayEvent, cx: &mut Context<Self>) {
+        log(&format!("tray {event:?} (mode {:?})", self.mode));
+        match event {
+            TrayEvent::Toggle if self.mode == Mode::Tray => {
+                self.collapse_generation += 1;
+                self.set_mode(Mode::Idle, cx);
+            }
+            TrayEvent::Toggle | TrayEvent::Show => self.open_tray(Some(COLLAPSE_AFTER_CLICK), cx),
+            TrayEvent::ClearShelf => {
+                self.shelf.clear();
+                self.shelf_changed(cx);
+            }
+            TrayEvent::Quit => cx.quit(),
+        }
+    }
+
+    fn on_hover(&mut self, hovered: bool, cx: &mut Context<Self>) {
+        if hovered {
+            // The cursor is here; don't fold away under it.
+            self.collapse_generation += 1;
+        } else if self.mode == Mode::Tray && !self.drag_out {
+            self.schedule_collapse(COLLAPSE_AFTER_LEAVE, cx);
+        }
+    }
+
+    fn remove_item(&mut self, index: usize, cx: &mut Context<Self>) {
+        if let Some(item) = self.shelf.remove(index) {
+            log(&format!("removed {}", item.name()));
+            self.shelf_changed(cx);
+        }
+    }
+
+    /// Open a chip's file or folder with its default handler.
+    ///
+    /// On a thread of its own: `ShellExecute` can wait on the handler for a while and pumps
+    /// messages meanwhile. Inline, that freezes the island, and a message for this window
+    /// reaching GPUI from inside the click handler that got us here finds the app already
+    /// borrowed and aborts the process.
+    fn open_item(&self, index: usize) {
+        let Some(item) = self.shelf.items().get(index).cloned() else {
+            return;
+        };
+        let spawned = std::thread::Builder::new()
+            .name("topsy-open".into())
+            .spawn(move || {
+                let opened = win32::open_path(&item.path);
+                log(&format!(
+                    "open {} ({})",
+                    item.name(),
+                    if opened { "ok" } else { "failed" }
+                ));
+                if !opened {
+                    eprintln!("topsy: could not open {}", item.path.display());
+                }
+            });
+        if let Err(err) = spawned {
+            eprintln!("topsy: could not start opening the file: {err}");
+        }
+    }
+
+    /// Hand a chip's file to the system's drag loop, so it can be dropped on any window.
+    ///
+    /// The loop blocks until the button is released, and dispatches this window's messages
+    /// while it runs, so it can't run inside the event handler that got us here: that would
+    /// re-enter GPUI. It runs from a task instead, outside any borrow of this entity.
+    fn begin_drag_out(&mut self, index: usize, cx: &mut Context<Self>) {
+        let (Some(hwnd), Some(item)) = (self.hwnd, self.shelf.items().get(index).cloned()) else {
+            return;
+        };
+        if self.drag_out {
+            return;
+        }
+        self.drag_out = true;
+        // Whatever was about to fold the tray away must not, mid-drag.
+        self.collapse_generation += 1;
+        log(&format!("dragout start {}", item.name()));
+        cx.spawn(async move |this, cx| {
+            let outcome = win32::drag_files_out(hwnd, std::slice::from_ref(&item.path));
+            this.update(cx, |this, cx| this.finish_drag_out(&item, outcome, cx))
+                .ok();
+        })
+        .detach();
+    }
+
+    fn finish_drag_out(
+        &mut self,
+        item: &Item,
+        outcome: windows::core::Result<DragOutcome>,
+        cx: &mut Context<Self>,
+    ) {
+        self.drag_out = false;
+        self.press = None;
+        let moved = matches!(outcome, Ok(DragOutcome::Dropped));
+        if let Err(err) = &outcome {
+            eprintln!("topsy: drag out failed: {err}");
+        }
+        log(&format!(
+            "dragout done {} ({})",
+            item.name(),
+            if moved { "dropped" } else { "cancelled" }
+        ));
+        if moved {
+            self.shelf.remove_path(&item.path);
+            self.shelf_changed(cx);
+        }
+        // The button is up and the cursor is usually elsewhere by now.
+        self.schedule_collapse(COLLAPSE_AFTER_RELEASE, cx);
     }
 
     /// Make the OS window exactly the pill, centred under the anchor.
@@ -192,6 +379,183 @@ impl Island {
             win32::move_window(hwnd, center_x - size.0 / 2, top, size.0, size.1);
         })
         .detach();
+    }
+
+    /// One file on the shelf: a coloured type badge and the name. Press and drag to take it
+    /// out, click to open it, the corner cross to remove it from the shelf (not from disk).
+    fn chip(&self, index: usize, item: &Item, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let remove = div()
+            .id(("remove", index))
+            .absolute()
+            .top(px(2.0))
+            .right(px(2.0))
+            .size(px(16.0))
+            .rounded_full()
+            .bg(rgba(0x000000b8))
+            .flex()
+            .items_center()
+            .justify_center()
+            .text_xs()
+            .child("×")
+            .invisible()
+            .group_hover("chip", |style| style.visible())
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, _: &MouseDownEvent, _window, cx| {
+                    this.press = None;
+                    cx.stop_propagation();
+                }),
+            )
+            .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                cx.stop_propagation();
+                this.remove_item(index, cx);
+            }));
+
+        let badge = div()
+            .size(px(38.0))
+            .rounded(px(8.0))
+            .bg(hsla(item.badge_hue(), 0.55, 0.45, 1.0))
+            .flex()
+            .items_center()
+            .justify_center()
+            .text_xs()
+            .font_weight(FontWeight::BOLD)
+            .child(item.badge_label());
+
+        div()
+            .id(("chip", index))
+            .group("chip")
+            .relative()
+            .w(px(CHIP.0))
+            .h(px(CHIP.1))
+            .flex_shrink_0()
+            .flex()
+            .flex_col()
+            .items_center()
+            .gap(px(4.0))
+            .pt(px(6.0))
+            .rounded(px(8.0))
+            .cursor_pointer()
+            .hover(|style| style.bg(rgba(0xffffff1a)))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, event: &MouseDownEvent, _window, _cx| {
+                    this.press = Some((index, event.position));
+                }),
+            )
+            .on_mouse_move(
+                cx.listener(move |this, event: &MouseMoveEvent, _window, cx| {
+                    if !event.dragging() {
+                        this.press = None;
+                        return;
+                    }
+                    let Some((pressed, start)) = this.press else {
+                        return;
+                    };
+                    let dx = f32::from(event.position.x - start.x);
+                    let dy = f32::from(event.position.y - start.y);
+                    if pressed == index && dx * dx + dy * dy >= DRAG_OUT_THRESHOLD.powi(2) {
+                        this.press = None;
+                        this.begin_drag_out(index, cx);
+                    }
+                }),
+            )
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|this, _: &gpui::MouseUpEvent, _window, _cx| this.press = None),
+            )
+            // Released somewhere else (slid off the chip first): that press is over too.
+            .on_mouse_up_out(
+                MouseButton::Left,
+                cx.listener(|this, _: &gpui::MouseUpEvent, _window, _cx| this.press = None),
+            )
+            .on_click(cx.listener(move |this, _: &ClickEvent, _window, _cx| this.open_item(index)))
+            .child(badge)
+            .child(
+                div()
+                    .w(px(CHIP.0 - 8.0))
+                    .text_xs()
+                    .text_center()
+                    .truncate()
+                    .child(item.name()),
+            )
+            .child(remove)
+    }
+
+    /// The expanded tray: a header and a row of chips (or the hint, when the shelf is empty).
+    fn tray_content(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let count = self.shelf.len();
+        let title = if count == 0 {
+            "Shelf".to_string()
+        } else {
+            format!("Shelf · {count}")
+        };
+        let clear = (count > 0).then(|| {
+            div()
+                .id("clear")
+                .px(px(6.0))
+                .rounded(px(4.0))
+                .text_xs()
+                .text_color(rgba(0xffffffb3))
+                .cursor_pointer()
+                .hover(|style| style.bg(rgba(0xffffff1a)).text_color(rgb(0xffffff)))
+                .child("Clear")
+                .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                    this.shelf.clear();
+                    this.shelf_changed(cx);
+                }))
+        });
+
+        let body = if self.shelf.is_empty() {
+            div()
+                .flex_1()
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_sm()
+                .child("Drop files to park them")
+                .into_any_element()
+        } else {
+            let chips: Vec<_> = self
+                .shelf
+                .items()
+                .iter()
+                .enumerate()
+                .map(|(i, item)| self.chip(i, item, cx))
+                .collect();
+            div()
+                .id("chips")
+                .w_full()
+                .flex()
+                .flex_row()
+                .gap(px(8.0))
+                .overflow_x_scroll()
+                .children(chips)
+                .into_any_element()
+        };
+
+        // Fixed size and centred in the window, so it is revealed (not squashed) while the
+        // pill springs open.
+        div()
+            .w(px(TRAY.0))
+            .h(px(TRAY.1))
+            .flex_shrink_0()
+            .flex()
+            .flex_col()
+            .p(px(10.0))
+            .gap(px(6.0))
+            .child(
+                div()
+                    .w_full()
+                    .h(px(16.0))
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .justify_between()
+                    .child(div().text_xs().text_color(rgba(0xffffffb3)).child(title))
+                    .children(clear),
+            )
+            .child(body)
     }
 }
 
@@ -224,10 +588,9 @@ impl Render for Island {
             Glass::Solid => (rgba(0x000000ff), rgba(0xffffff1a)),
         };
 
-        let label = if self.files.is_empty() {
-            "Drop files to park them".to_string()
-        } else {
-            self.files.join("\n")
+        let idle_label = match self.shelf.len() {
+            0 => "topsy".to_string(),
+            n => format!("{n} on shelf"),
         };
 
         div()
@@ -246,24 +609,38 @@ impl Render for Island {
             .text_color(rgb(0xffffff))
             .drag_over::<ExternalPaths>(|style, _, _, _| style.bg(rgb(0x14213d)))
             .on_drop(cx.listener(|this, paths: &ExternalPaths, _window, cx| {
-                this.files = paths
+                let names: Vec<String> = paths
                     .paths()
                     .iter()
                     .filter_map(|p| p.file_name())
                     .map(|n| n.to_string_lossy().into_owned())
                     .collect();
-                log(&format!("drop {:?}", this.files));
-                this.schedule_collapse(COLLAPSE_AFTER_DROP, cx);
-                cx.notify();
+                log(&format!("drop {names:?}"));
+                let added = this.add_paths(paths.paths().to_vec(), cx);
+                log(&format!("shelf {} (+{added})", this.shelf.len()));
+                // Open so the file is seen to land, then fold away unless the cursor is on it.
+                this.open_tray(Some(COLLAPSE_AFTER_DROP), cx);
+            }))
+            .on_hover(cx.listener(|this, hovered: &bool, _window, cx| this.on_hover(*hovered, cx)))
+            .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                if this.mode == Mode::Idle {
+                    this.open_tray(Some(COLLAPSE_AFTER_CLICK), cx);
+                }
             }))
             .on_mouse_down(
-                gpui::MouseButton::Right,
-                cx.listener(|_, _, _, cx| cx.quit()),
+                MouseButton::Right,
+                cx.listener(|_, _: &MouseDownEvent, _window, cx| {
+                    // Without a tray (TOPSY_NO_TRAY, or it could not start) there is no menu,
+                    // and this would otherwise leave no way to quit.
+                    if !tray::show_menu() {
+                        cx.quit();
+                    }
+                }),
             )
             .child(if show_tray {
-                div().text_sm().child(label)
+                self.tray_content(cx).into_any_element()
             } else {
-                div().text_xs().child("topsy")
+                div().text_xs().child(idle_label).into_any_element()
             })
     }
 }
@@ -326,6 +703,42 @@ fn main() {
             .expect("open island window");
 
         let island = window.entity(cx).expect("island entity");
+
+        // Test hook: TOPSY_SEED=path;path puts files on the shelf at startup, so a drag out
+        // can be tested without first dragging in.
+        if let Some(seed) = std::env::var_os("TOPSY_SEED") {
+            let paths: Vec<PathBuf> = std::env::split_paths(&seed).collect();
+            island.update(cx, |island, cx| {
+                let added = island.add_paths(paths, cx);
+                log(&format!("seeded {added}"));
+            });
+        }
+
+        // The notification-area icon and its menu. TOPSY_NO_TRAY skips it (for measuring).
+        if std::env::var_os("TOPSY_NO_TRAY").is_none() {
+            if let Ok(exe) = std::env::current_exe() {
+                autostart::refresh(&exe);
+            }
+            let tray_events = tray::spawn();
+            let tray_island = island.clone();
+            cx.spawn(async move |cx| {
+                while let Ok(event) = tray_events.recv().await {
+                    if tray_island
+                        .update(cx, |island, cx| island.on_tray(event, cx))
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+            })
+            .detach();
+            // However the app ends, don't leave a dead icon in the notification area.
+            cx.on_app_quit(|_| {
+                tray::remove();
+                async {}
+            })
+            .detach();
+        }
 
         // Real input: the global mouse hook reports jiggles and button releases.
         // TOPSY_NO_HOOK skips it, to measure the app's idle cost without hook traffic.
