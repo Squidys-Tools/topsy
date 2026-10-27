@@ -9,6 +9,8 @@ Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 Add-Type @"
 using System; using System.Runtime.InteropServices;
 public static class Native {
+  [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
+  [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT p);
   [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
   [DllImport("user32.dll")] public static extern void mouse_event(uint f, int dx, int dy, uint d, UIntPtr e);
@@ -82,13 +84,12 @@ try {
     $tx = $screen.X + $screen.Width / 2
     $ty = $screen.Y + (6 + 59) * $scale
 
-    # Safety: never carry a drag to the top of the screen unless the pill is really
-    # there, or the drop lands on whatever app is underneath. Pure black, left of the label.
-    $probe = New-Object System.Drawing.Bitmap 1, 1
-    $pg = [System.Drawing.Graphics]::FromImage($probe)
-    $pg.CopyFromScreen([int]($tx - 120 * $scale), [int]$ty, 0, 0, $probe.Size)
-    $px0 = $probe.GetPixel(0, 0); $pg.Dispose(); $probe.Dispose()
-    if (-not ($px0.R -eq 0 -and $px0.G -eq 0 -and $px0.B -eq 0)) { throw "pill not visible at drop point (pixel $px0); aborting drag" }
+    # Safety: never carry a drag to the top of the screen unless the island is really
+    # there, or the drop lands on whatever app is underneath. The island's window is the
+    # pill, so the window under the drop point must be ours.
+    $pt = New-Object Native+POINT; $pt.X = [int]$tx; $pt.Y = [int]$ty
+    $ownerPid = 0; [void][Native]::GetWindowThreadProcessId([Native]::WindowFromPoint($pt), [ref]$ownerPid)
+    if ($ownerPid -ne $app.Id) { throw "the island is not under the drop point (that window belongs to pid $ownerPid); aborting drag" }
     $fx = $x; $fy = $py
     for ($i = 1; $i -le 20; $i++) {
         Move-Cursor ($fx + ($tx - $fx) * $i / 20) ($fy + ($ty - $fy) * $i / 20)

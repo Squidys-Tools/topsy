@@ -1,5 +1,7 @@
 # Sample a 1px-high strip through the pill and log its pure-black run width over time.
 # Gives a time series of the spring animation as actually composited on screen.
+# Needs the pill to be pure black, so launch the app with TOPSY_GLASS=solid (and TOPSY_DEMO=1
+# for something to animate); the default glass pill is not black.
 # usage: trace-width.ps1 <out.csv> [durationMs] [rowY]
 param(
     [Parameter(Mandatory)][string]$Out,

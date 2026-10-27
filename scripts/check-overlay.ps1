@@ -1,8 +1,11 @@
 # Checks two overlay promises on a live desktop:
-#   1. Only the pill is hit-testable; the transparent rest of the window is click-through.
-#   2. The overlay never takes foreground focus from the app the user is working in.
-# usage: check-overlay.ps1 [-Exe target\debug\topsy.exe]
-param([string]$Exe = "$PSScriptRoot\..\target\debug\topsy.exe")
+#   1. Only the pill is hit-testable: the island's window is exactly the pill, so the screen
+#      around it belongs to whatever is underneath.
+#   2. The overlay never takes foreground focus from the app the user is working in: the
+#      foreground window must be the very same one after launch.
+# Use a release build. A debug build is a console app, and its console window takes focus.
+# usage: check-overlay.ps1 [-Exe target\release\topsy.exe]
+param([string]$Exe = "$PSScriptRoot\..\target\release\topsy.exe")
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type @"
@@ -39,23 +42,25 @@ try {
     "window up after $($sw.ElapsedMilliseconds)ms"
     Start-Sleep -Milliseconds 500
 
-    # Idle pill is 168x34 at 6px from the top, inside a 440x150 window.
+    # Idle pill is 168x34, 6px from the top of the screen, and the window is exactly that.
     $inside = Pid-At $cx ((6 + 17) * $scale)
-    $belowPill = Pid-At $cx (100 * $scale)       # inside the OS window, below the pill
-    $besidePill = Pid-At ($cx + 150 * $scale) ((6 + 17) * $scale)   # inside the window, right of the pill
+    $belowPill = Pid-At $cx (100 * $scale)
+    $besidePill = Pid-At ($cx + 150 * $scale) ((6 + 17) * $scale)
+    $abovePill = Pid-At $cx (2 * $scale)         # the 6px gap above the pill
     "pid under pill:        $inside (topsy = $mine)"
     "pid below pill:        $belowPill"
     "pid beside pill:       $besidePill"
+    "pid above pill:        $abovePill"
     if ($inside -ne $mine) { $failures += 'pill is not hit-testable' }
-    if ($belowPill -eq $mine) { $failures += 'transparent area below the pill blocks clicks' }
-    if ($besidePill -eq $mine) { $failures += 'transparent area beside the pill blocks clicks' }
+    if ($belowPill -eq $mine) { $failures += 'the area below the pill blocks clicks' }
+    if ($besidePill -eq $mine) { $failures += 'the area beside the pill blocks clicks' }
+    if ($abovePill -eq $mine) { $failures += 'the gap above the pill blocks clicks' }
 
     $fgNow = [N]::GetForegroundWindow()
     function Pname($i) { (Get-Process -Id $i -ErrorAction SilentlyContinue).ProcessName }
     "foreground before launch: $(Owner-Pid $fgBefore) ($(Pname (Owner-Pid $fgBefore))), after: $(Owner-Pid $fgNow) ($(Pname (Owner-Pid $fgNow)))"
     if ((Owner-Pid $fgNow) -eq $mine) { $failures += 'overlay stole foreground focus' }
-
-    $ex = [N]::GetWindowLongW($fgNow, -20)
+    elseif ($fgNow -ne $fgBefore) { $failures += 'the foreground window changed across launch (is this a debug build? its console window takes focus)' }
 } finally {
     Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
 }
