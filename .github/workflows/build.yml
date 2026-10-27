@@ -1,0 +1,72 @@
+name: build
+
+# Builds topsy.exe with the GNU toolchain and uploads it, so it can be tried on a
+# machine that has no Rust, MinGW or Windows SDK (download it from the run's page).
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-gnu:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # rustup no longer installs the toolchain named in rust-toolchain.toml on first use, and
+      # the runner's rustup rejects a bare `rustup toolchain install` when that channel carries
+      # a target tuple. Naming the channel explicitly works with any rustup.
+      - name: Install the pinned GNU toolchain
+        shell: pwsh
+        run: |
+          if ((Get-Content rust-toolchain.toml -Raw) -notmatch 'channel\s*=\s*"([^"]+)"') {
+            throw 'no channel in rust-toolchain.toml'
+          }
+          rustup toolchain install $Matches[1] --profile minimal --component rustfmt --no-self-update
+          if ($LASTEXITCODE -ne 0) { throw "rustup exited with $LASTEXITCODE" }
+          rustc -vV
+
+      - uses: Swatinem/rust-cache@v2
+
+      # build.rs asks gcc where libktmw32.a lives (see README).
+      - name: Find MinGW-w64 gcc
+        shell: pwsh
+        run: |
+          if (-not (Get-Command gcc -ErrorAction SilentlyContinue)) {
+            $dir = 'C:\mingw64\bin', 'C:\msys64\mingw64\bin', 'C:\msys64\ucrt64\bin' |
+              Where-Object { Test-Path "$_\gcc.exe" } | Select-Object -First 1
+            if (-not $dir) { throw 'No MinGW-w64 gcc on this runner' }
+            Add-Content $env:GITHUB_PATH $dir
+            $env:PATH = "$dir;$env:PATH"
+          }
+          gcc --version
+          # Quoted: pwsh drops the ".a" from an unquoted -print-file-name=libktmw32.a.
+          $lib = gcc "-print-file-name=libktmw32.a"
+          if (-not [IO.Path]::IsPathRooted($lib)) { throw "gcc cannot find libktmw32.a ($lib)" }
+          "libktmw32.a: $lib"
+
+      # GPUI compiles its HLSL shaders with fxc.exe from the Windows SDK.
+      - name: Find the Windows SDK shader compiler
+        shell: pwsh
+        run: |
+          $fxc = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\*\x64\fxc.exe' |
+            Sort-Object { [version]$_.Directory.Parent.Name } -Descending | Select-Object -First 1
+          if (-not $fxc) { throw 'No fxc.exe in the Windows SDK on this runner' }
+          "GPUI_FXC_PATH=$($fxc.FullName)" | Add-Content $env:GITHUB_ENV
+          "fxc: $($fxc.FullName)"
+
+      - run: cargo fmt --check
+      - run: cargo test --release --locked
+      - run: cargo build --release --locked
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: topsy-windows-gnu
+          path: target/release/topsy.exe
+          if-no-files-found: error
+          retention-days: 30
