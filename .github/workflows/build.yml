@@ -45,7 +45,8 @@ jobs:
             $env:PATH = "$dir;$env:PATH"
           }
           gcc --version
-          $lib = gcc -print-file-name=libktmw32.a
+          # Quoted: pwsh drops the ".a" from an unquoted -print-file-name=libktmw32.a.
+          $lib = gcc "-print-file-name=libktmw32.a"
           if (-not [IO.Path]::IsPathRooted($lib)) { throw "gcc cannot find libktmw32.a ($lib)" }
           "libktmw32.a: $lib"
 
