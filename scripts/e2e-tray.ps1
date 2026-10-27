@@ -2,7 +2,8 @@
 #   the icon is registered in the notification area -> left click toggles the shelf -> right click
 #   opens the menu -> "Start with Windows" writes and then removes the real HKCU Run value ->
 #   Show shelf / Clear shelf -> right-clicking the pill opens the same menu -> Quit exits the app
-#   and takes the icon out of the notification area.
+#   and takes the icon out of the notification area -> without a tray (TOPSY_NO_TRAY) right-clicking
+#   the pill quits instead, as there is no other way out.
 # Moves the real cursor for ~40s. Briefly edits HKCU\...\Run\topsy (start with Windows) and the shell's
 # own "show this icon" flag for topsy under HKCU\Control Panel\NotifyIconSettings; both are restored.
 # Works with an auto-hidden taskbar: the cursor is parked on the screen edge to bring it up.
@@ -248,6 +249,19 @@ try {
     $left = Blue-Pixels $ir
     Shot-Region $ir (Join-Path $shots 'tray-icon-after-quit.png')
     if ($left -gt 3) { throw "the icon is still in the notification area after Quit ($left blue pixels)" }
+
+    # 7. With no tray there is no menu, so right-clicking the pill quits: the only way out.
+    $env:TOPSY_NO_TRAY = '1'
+    $app = Start-Process $Exe -PassThru -RedirectStandardError (Join-Path $work 'notray.log')
+    [void]$app.Handle
+    Remove-Item Env:\TOPSY_NO_TRAY
+    if (-not (Wait-Until { [Native]::IslandOf($app.Id) -ne [IntPtr]::Zero } 8000)) { throw 'the tray-less island never appeared' }
+    Start-Sleep -Milliseconds 800
+    if ([Native]::WindowOf($app.Id, 'topsy-tray', $false) -ne [IntPtr]::Zero) { throw 'TOPSY_NO_TRAY still made a tray window' }
+    $r = Island-Rect
+    Click (($r.Left + $r.Right) / 2) (($r.Top + $r.Bottom) / 2) -Right
+    if (-not (Wait-Until { $app.HasExited } 4000)) { throw 'right-clicking the pill of a tray-less app did not quit it' }
+    if ($null -ne (Run-Value)) { throw 'a tray-less run must not touch start-with-Windows' }
 } catch {
     $failed = $_
     [Native]::keybd_event(0x1B, 0, 0, [UIntPtr]::Zero); [Native]::keybd_event(0x1B, 0, 2, [UIntPtr]::Zero)

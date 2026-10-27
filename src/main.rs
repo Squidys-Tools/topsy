@@ -152,14 +152,38 @@ impl Island {
         self.width.set_target(w);
         self.height.set_target(h);
         if mode == Mode::Tray {
-            // Files can move or vanish while parked; don't show chips for ones that have.
-            let gone = self.shelf.prune(|p| p.exists());
-            if gone > 0 {
-                log(&format!("pruned {gone} missing"));
-                self.shelf_changed(cx);
-            }
+            self.prune_missing(cx);
         }
         cx.notify();
+    }
+
+    /// Files can move or vanish while parked; don't keep chips for ones that have.
+    ///
+    /// Looking asks the disk, which can take seconds for a share that has gone away, so it
+    /// happens off the UI thread and the chips are dropped when the answer comes back.
+    fn prune_missing(&mut self, cx: &mut Context<Self>) {
+        let paths: Vec<PathBuf> = self.shelf.items().iter().map(|i| i.path.clone()).collect();
+        if paths.is_empty() {
+            return;
+        }
+        cx.spawn(async move |this, cx| {
+            let gone: Vec<PathBuf> = cx
+                .background_executor()
+                .spawn(async move { paths.into_iter().filter(|p| !p.exists()).collect() })
+                .await;
+            if gone.is_empty() {
+                return;
+            }
+            this.update(cx, |this, cx| {
+                let pruned = this.shelf.prune(|p| !gone.iter().any(|g| g == p));
+                if pruned > 0 {
+                    log(&format!("pruned {pruned} missing"));
+                    this.shelf_changed(cx);
+                }
+            })
+            .ok();
+        })
+        .detach();
     }
 
     fn shelf_changed(&mut self, cx: &mut Context<Self>) {
@@ -191,10 +215,15 @@ impl Island {
         cx.spawn(async move |this, cx| {
             cx.background_executor().timer(after).await;
             this.update(cx, |this, cx| {
+                if this.collapse_generation != generation || this.drag_out {
+                    return;
+                }
                 // The cursor is asked directly rather than remembered: a hover state that
                 // missed its "leave" (a drag took over the mouse) must not pin the tray open.
-                let over = this.hwnd.is_some_and(win32::cursor_over);
-                if this.collapse_generation == generation && !this.drag_out && !over {
+                if this.hwnd.is_some_and(win32::cursor_over) {
+                    // Still being used; look again later, in case no "leave" ever arrives.
+                    this.schedule_collapse(after, cx);
+                } else {
                     this.set_mode(Mode::Idle, cx);
                 }
             })
@@ -227,10 +256,7 @@ impl Island {
                 self.shelf.clear();
                 self.shelf_changed(cx);
             }
-            TrayEvent::Quit => {
-                tray::remove();
-                cx.quit();
-            }
+            TrayEvent::Quit => cx.quit(),
         }
     }
 
@@ -252,25 +278,30 @@ impl Island {
 
     /// Open a chip's file or folder with its default handler.
     ///
-    /// Runs from a task, not inline: `ShellExecute` pumps messages while it talks to the
-    /// handler, and one for this window reaching GPUI from inside the click handler that got
-    /// us here would find the app already borrowed and abort the process.
-    fn open_item(&mut self, index: usize, cx: &mut Context<Self>) {
+    /// On a thread of its own: `ShellExecute` can wait on the handler for a while and pumps
+    /// messages meanwhile. Inline, that freezes the island, and a message for this window
+    /// reaching GPUI from inside the click handler that got us here finds the app already
+    /// borrowed and aborts the process.
+    fn open_item(&self, index: usize) {
         let Some(item) = self.shelf.items().get(index).cloned() else {
             return;
         };
-        cx.spawn(async move |_, _| {
-            let opened = win32::open_path(&item.path);
-            log(&format!(
-                "open {} ({})",
-                item.name(),
-                if opened { "ok" } else { "failed" }
-            ));
-            if !opened {
-                eprintln!("topsy: could not open {}", item.path.display());
-            }
-        })
-        .detach();
+        let spawned = std::thread::Builder::new()
+            .name("topsy-open".into())
+            .spawn(move || {
+                let opened = win32::open_path(&item.path);
+                log(&format!(
+                    "open {} ({})",
+                    item.name(),
+                    if opened { "ok" } else { "failed" }
+                ));
+                if !opened {
+                    eprintln!("topsy: could not open {}", item.path.display());
+                }
+            });
+        if let Err(err) = spawned {
+            eprintln!("topsy: could not start opening the file: {err}");
+        }
     }
 
     /// Hand a chip's file to the system's drag loop, so it can be dropped on any window.
@@ -415,6 +446,7 @@ impl Island {
             .on_mouse_move(
                 cx.listener(move |this, event: &MouseMoveEvent, _window, cx| {
                     if !event.dragging() {
+                        this.press = None;
                         return;
                     }
                     let Some((pressed, start)) = this.press else {
@@ -432,9 +464,12 @@ impl Island {
                 MouseButton::Left,
                 cx.listener(|this, _: &gpui::MouseUpEvent, _window, _cx| this.press = None),
             )
-            .on_click(
-                cx.listener(move |this, _: &ClickEvent, _window, cx| this.open_item(index, cx)),
+            // Released somewhere else (slid off the chip first): that press is over too.
+            .on_mouse_up_out(
+                MouseButton::Left,
+                cx.listener(|this, _: &gpui::MouseUpEvent, _window, _cx| this.press = None),
             )
+            .on_click(cx.listener(move |this, _: &ClickEvent, _window, _cx| this.open_item(index)))
             .child(badge)
             .child(
                 div()
@@ -594,7 +629,13 @@ impl Render for Island {
             }))
             .on_mouse_down(
                 MouseButton::Right,
-                cx.listener(|_, _: &MouseDownEvent, _window, _cx| tray::show_menu()),
+                cx.listener(|_, _: &MouseDownEvent, _window, cx| {
+                    // Without a tray (TOPSY_NO_TRAY, or it could not start) there is no menu,
+                    // and this would otherwise leave no way to quit.
+                    if !tray::show_menu() {
+                        cx.quit();
+                    }
+                }),
             )
             .child(if show_tray {
                 self.tray_content(cx).into_any_element()

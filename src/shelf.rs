@@ -46,10 +46,9 @@ impl Item {
     }
 }
 
-/// Windows paths compare case-insensitively.
+/// Windows paths compare case-insensitively, accents and all.
 fn same_path(a: &Path, b: &Path) -> bool {
-    a.to_string_lossy()
-        .eq_ignore_ascii_case(&b.to_string_lossy())
+    a.to_string_lossy().to_lowercase() == b.to_string_lossy().to_lowercase()
 }
 
 #[derive(Default)]
@@ -135,6 +134,14 @@ mod tests {
             1
         );
         assert_eq!(shelf.len(), 3);
+    }
+
+    #[test]
+    fn duplicates_are_found_across_accented_case_too() {
+        let mut shelf = Shelf::default();
+        shelf.add(paths(&[r"C:\Users\Élodie\a.txt"]), files);
+        assert_eq!(shelf.add(paths(&[r"C:\Users\élodie\A.TXT"]), files), 0);
+        assert!(shelf.remove_path(Path::new(r"c:\users\éLODIE\a.txt")));
     }
 
     #[test]

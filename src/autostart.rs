@@ -4,11 +4,13 @@ use std::path::{Path, PathBuf};
 
 use windows::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_SUCCESS, WIN32_ERROR};
 use windows::Win32::System::Registry::{
-    HKEY, HKEY_CURRENT_USER, KEY_QUERY_VALUE, KEY_SET_VALUE, REG_OPTION_NON_VOLATILE, REG_SZ,
-    REG_VALUE_TYPE, RegCloseKey, RegCreateKeyExW, RegDeleteValueW, RegOpenKeyExW, RegQueryValueExW,
-    RegSetValueExW,
+    HKEY, HKEY_CURRENT_USER, KEY_QUERY_VALUE, KEY_SET_VALUE, REG_EXPAND_SZ,
+    REG_OPTION_NON_VOLATILE, REG_SZ, REG_VALUE_TYPE, RegCloseKey, RegCreateKeyExW, RegDeleteValueW,
+    RegOpenKeyExW, RegQueryValueExW, RegSetValueExW,
 };
 use windows::core::{PCWSTR, Result};
+
+use crate::win32::wide;
 
 const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 const VALUE_NAME: &str = "topsy";
@@ -24,10 +26,6 @@ pub const SYSTEM: RunEntry<'static> = RunEntry {
     key: RUN_KEY,
     name: VALUE_NAME,
 };
-
-fn wide(s: &str) -> Vec<u16> {
-    s.encode_utf16().chain(std::iter::once(0)).collect()
-}
 
 fn check(status: WIN32_ERROR) -> Result<()> {
     if status == ERROR_SUCCESS {
@@ -101,7 +99,8 @@ impl RunEntry<'_> {
                 Some(&mut bytes),
             ))
             .ok()?;
-            if kind != REG_SZ {
+            // A value written by hand may be REG_EXPAND_SZ; it is still the command line.
+            if kind != REG_SZ && kind != REG_EXPAND_SZ {
                 return None;
             }
             let mut buf = vec![0u16; (bytes as usize).div_ceil(2)];

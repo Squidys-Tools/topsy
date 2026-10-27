@@ -30,6 +30,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::{PCWSTR, w};
 
 use crate::autostart;
+use crate::win32::wide;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TrayEvent {
@@ -79,12 +80,12 @@ pub fn set_shelf_count(count: usize) {
 }
 
 /// Pop the menu up at the cursor, as if the icon had been right-clicked. For the pill.
-pub fn show_menu() {
-    if let Some(hwnd) = window() {
-        unsafe {
-            let _ = PostMessageW(Some(hwnd), WM_SHOW_MENU, WPARAM(0), LPARAM(0));
-        }
-    }
+/// False if there is no tray to do it (it is switched off, or its window could not be made).
+pub fn show_menu() -> bool {
+    let Some(hwnd) = window() else {
+        return false;
+    };
+    unsafe { PostMessageW(Some(hwnd), WM_SHOW_MENU, WPARAM(0), LPARAM(0)) }.is_ok()
 }
 
 /// Take the icon out of the notification area. Without this a killed-off icon lingers
@@ -230,10 +231,6 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
     }
 }
 
-fn wide(s: &str) -> Vec<u16> {
-    s.encode_utf16().chain(std::iter::once(0)).collect()
-}
-
 /// Show the menu at `at` and carry out the choice.
 unsafe fn open_menu(hwnd: HWND, at: POINT) {
     unsafe {
@@ -241,7 +238,7 @@ unsafe fn open_menu(hwnd: HWND, at: POINT) {
             return;
         };
         let count = SHELF_COUNT.load(Ordering::Relaxed);
-        let clear = wide(&format!("&Clear shelf ({count})"));
+        let clear = wide(format!("&Clear shelf ({count})"));
         let clear_flags = if count > 0 {
             MF_STRING
         } else {

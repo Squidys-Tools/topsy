@@ -13,7 +13,10 @@ use windows::Win32::Graphics::Dwm::{
 use windows::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MONITOR_DEFAULTTOPRIMARY, MONITORINFO, MonitorFromWindow, PtInRect,
 };
-use windows::Win32::System::Com::{CoTaskMemFree, IDataObject};
+use windows::Win32::System::Com::{
+    COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE, CoInitializeEx, CoTaskMemFree,
+    CoUninitialize, IDataObject,
+};
 use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
 use windows::Win32::System::Ole::{
     DROPEFFECT_COPY, DROPEFFECT_LINK, DROPEFFECT_MOVE, DROPEFFECT_NONE, IDropTarget,
@@ -171,12 +174,10 @@ pub fn move_window(hwnd: HWND, x: i32, y: i32, w: i32, h: i32) {
     }
 }
 
-fn wide_path(path: &Path) -> Vec<u16> {
+/// `s` as the NUL-terminated UTF-16 the Windows APIs take.
+pub fn wide(s: impl AsRef<std::ffi::OsStr>) -> Vec<u16> {
     use std::os::windows::ffi::OsStrExt;
-    path.as_os_str()
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect()
+    s.as_ref().encode_wide().chain(std::iter::once(0)).collect()
 }
 
 /// What a drag out of the shelf ended as.
@@ -210,8 +211,13 @@ impl PausedDropTarget {
         // `RegisterDragDrop` records the target in this window property.
         let raw = unsafe { GetPropW(hwnd, w!("OleDropTargetInterface")) };
         let target = unsafe { IDropTarget::from_raw_borrowed(&raw.0) }.cloned();
-        if target.is_some() {
-            let _ = unsafe { RevokeDragDrop(hwnd) };
+        match &target {
+            Some(_) => {
+                let _ = unsafe { RevokeDragDrop(hwnd) };
+            }
+            None => eprintln!(
+                "topsy: the island's drop target was not found, so a drag out may stall (is OleDropTargetInterface gone?)"
+            ),
         }
         Self { hwnd, target }
     }
@@ -244,7 +250,7 @@ pub fn drag_files_out(hwnd: HWND, paths: &[PathBuf]) -> windows::core::Result<Dr
             }
         };
         for path in paths {
-            let wide = wide_path(path);
+            let wide = wide(path);
             let mut pidl: *mut ITEMIDLIST = std::ptr::null_mut();
             if let Err(err) = SHParseDisplayName(PCWSTR(wide.as_ptr()), None, &mut pidl, 0, None) {
                 free_all(&pidls);
@@ -272,8 +278,15 @@ pub fn drag_files_out(hwnd: HWND, paths: &[PathBuf]) -> windows::core::Result<Dr
 }
 
 /// Open a file or folder with its default handler, as a double-click would.
+///
+/// Blocks until the handler has been started, which can be a while (a UAC prompt, a cold
+/// network path), and pumps messages while it waits. Call it from a thread of its own, never
+/// the UI thread: it would freeze the island, and a message for the island's window reaching
+/// GPUI from inside one of its event handlers aborts the process.
 pub fn open_path(path: &Path) -> bool {
-    let wide = wide_path(path);
+    let wide = wide(path);
+    // ShellExecute wants COM on the calling thread, and a fresh thread has none.
+    let com = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE) };
     let result = unsafe {
         ShellExecuteW(
             None,
@@ -284,6 +297,9 @@ pub fn open_path(path: &Path) -> bool {
             SW_SHOWNORMAL,
         )
     };
+    if com.is_ok() {
+        unsafe { CoUninitialize() };
+    }
     // ShellExecute reports success as a value above 32.
     result.0 as usize > 32
 }

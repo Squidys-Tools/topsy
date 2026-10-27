@@ -29,7 +29,8 @@ On top of that it is now a usable v1: the tray holds a **shelf** of files you ca
 
 Right-click the pill or the tray icon for the menu (Quit is in it). Env vars for testing: `TOPSY_DEMO=1`
 (auto expand/collapse), `TOPSY_LOG=1` (event trace on stderr), `TOPSY_EXIT_AFTER_MS=<n>`, `TOPSY_NO_HOOK=1` (don't
-install the mouse hook), `TOPSY_NO_TRAY=1` (no tray icon, and don't touch start-with-Windows),
+install the mouse hook), `TOPSY_NO_TRAY=1` (no tray icon and no menu, so right-clicking the pill quits; start-with-Windows is left
+alone),
 `TOPSY_SEED=<path;path>` (start with these files on the shelf), `TOPSY_GLASS=tint|solid|clear` (see
 [Glass](#glass); the default is the real blur).
 
@@ -67,7 +68,7 @@ To build locally without installing the SDK, GPUI only needs one file from it: c
   cross to remove it from the shelf; the file itself is never touched). The chips are references, not copies.
   Drag a chip out and drop it on any window, as you would from Explorer; click a chip to open it; **Clear**
   empties the shelf. A chip leaves the shelf once a drop is accepted. Files that were moved or deleted since they
-  were parked are dropped from the shelf when the tray opens. The shelf is not saved across restarts.
+  were parked are dropped from the shelf when the tray opens (checked off the UI thread). The shelf is not saved across restarts.
 - **Tray icon.** A small glass-blue pill in the notification area (drawn in code, no asset). Left click opens
   or closes the shelf. Right click, or right-click the pill itself, opens the menu: *Show shelf*, *Clear shelf (N)*,
   *Start with Windows* (checked when on) and *Quit topsy*. The icon lives on its own thread with a hidden window,
@@ -86,9 +87,11 @@ Two things about dragging out of a window that is itself a drop target, both fou
   the registration out for the duration of the drag and puts it back afterwards (GPUI keeps no reference to its
   drop target, so it is read back from the `OleDropTargetInterface` window property and kept alive across the
   revoke). The cost is that dropping a chip back on the shelf is a cancelled drag, which is what you want anyway.
-- **Anything that pumps messages has to run from a task, not an event handler.** The drag loop does, and so does
+- **Anything that pumps messages must stay out of event handlers.** The drag loop does, and so does
   `ShellExecute` (opening a chip): a message for the window reaching GPUI while it is inside a click handler finds
-  the app already borrowed and aborts the process. Both run from `cx.spawn`.
+  the app already borrowed and aborts the process. That crashed the app about one run in five in the e2e. The
+  drag loop runs from a `cx.spawn` task; opening a chip runs on a thread of its own, which also keeps a slow
+  handler (a UAC prompt, a cold network path) from freezing the island.
 
 ## Glass
 
@@ -171,7 +174,7 @@ These drive the real desktop, so they move your cursor and/or show a window for 
 - **A drag out with Escape needs the key held a moment.** The system's drag loop polls the key state rather than
   being sent the keystroke, because the island never takes focus. A tap shorter than a frame can be missed;
   releasing the button over something that refuses files cancels too.
-- The GNU build links and runs (26/26 unit tests, all live checks pass); the binary imports `msvcrt.dll`, no
+- The GNU build links and runs (27/27 unit tests, all live checks pass); the binary imports `msvcrt.dll`, no
   VCRUNTIME/MSVCP.
 
 ## Measured (release build, GNU toolchain, Windows 11, one 3440x1440 display, idle)
@@ -204,8 +207,8 @@ worth a profile before building on it, because an always-on app should be closer
 - The target decides copy, move or link (the default shell drop source offers all three), so a drag to a folder on
   the same drive moves the file, as in Explorer; the chip then leaves the shelf.
 - No settings window or droplets yet. The tray icon is drawn in code and the exe itself has no icon resource.
-- Files that were moved or deleted are pruned from the shelf when the tray opens, with a filesystem check on the UI
-  thread: fine for a handful of files, not for a very long shelf on a slow network share.
+- Dropping files stats each one on the UI thread (to tell folders from files); a file on a dead network share
+  could stall that for its timeout.
 
 ## License
 
