@@ -43,6 +43,15 @@ You need:
 Use a release build to judge anything about focus or footprint. A debug build is a console app, and the
 console window it opens takes foreground focus at launch. Release builds use the GUI subsystem.
 
+### No toolchain, or no admin rights?
+
+CI (`.github/workflows/build.yml`) builds the same release exe on a GitHub Windows runner, which has the Windows
+SDK and a MinGW gcc, and uploads it. Open the run for a commit under the repository's **Actions** tab and download
+the `topsy-windows-gnu` artifact: no Rust, MinGW or SDK needed to run it. A cold build takes about 20 minutes.
+
+To build locally without installing the SDK, GPUI only needs one file from it: copy `fxc.exe` (from
+`Windows Kits\10\bin\<version>\x64`) anywhere and set `GPUI_FXC_PATH` to it.
+
 ## Glass
 
 The pill is real acrylic blur of whatever is behind it, in the pill's shape, animated.
@@ -141,3 +150,8 @@ worth a profile before building on it, because an always-on app should be closer
 - Resizing a window every frame is not profiled, and the window trails the spring by a frame. No tearing showed
   in sampled frames, but it was not measured at speed.
 - No tray icon / settings / droplets yet.
+
+## License
+
+[MIT](LICENSE). The crates this builds on (GPUI and its dependency tree, 482 packages on Windows) are all
+permissively licensed (MIT, Apache-2.0, BSD, Zlib, ISC and similar); a distributed binary should ship their notices.
