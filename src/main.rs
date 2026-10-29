@@ -8,6 +8,7 @@ mod shelf;
 mod spring;
 mod state;
 mod tray;
+mod tray_cause;
 mod win32;
 
 use std::path::PathBuf;
@@ -26,7 +27,8 @@ use crate::jiggle::JiggleConfig;
 use crate::shelf::{Item, Shelf};
 use crate::spring::{Spring, SpringConfig};
 use crate::tray::TrayEvent;
-use crate::win32::{DragOutcome, HookEvent};
+use crate::tray_cause::TrayCause;
+use crate::win32::{DragOutcome, DropEvent, HookEvent};
 
 /// Gap between the top of the screen and the pill.
 const TOP_INSET: f32 = 6.0;
@@ -117,6 +119,8 @@ struct Island {
     anchor: Option<(i32, i32)>,
     /// Size in physical pixels last requested from the OS, to skip redundant calls.
     applied_size: Option<(i32, i32)>,
+    /// What the tray was opened for; decides which events fold it early.
+    tray_cause: TrayCause,
     /// Bumped on every state change that schedules a collapse, so stale timers do nothing.
     collapse_generation: u64,
     /// The chip the left button went down on, and where: it becomes a drag out once moved.
@@ -143,6 +147,7 @@ impl Island {
             glass,
             anchor,
             applied_size: None,
+            tray_cause: TrayCause::Timed(Duration::ZERO),
             collapse_generation: 0,
             press: None,
             drag_out: false,
@@ -253,13 +258,14 @@ impl Island {
         self.prune_missing(cx);
     }
 
-    /// Open the tray. `collapse_after` folds it away again unless the cursor arrives; `None`
-    /// is for a drag in progress, which closes the tray itself when the button is released.
-    fn open_tray(&mut self, collapse_after: Option<Duration>, cx: &mut Context<Self>) {
+    /// Open the tray. `cause` is what it is waiting for: a `Timed` one folds on its
+    /// own timer; a `Drag` one waits for a drag in progress to end, land, or be refused.
+    fn open_tray(&mut self, cause: TrayCause, cx: &mut Context<Self>) {
         // Cancels any pending collapse from earlier.
         self.collapse_generation += 1;
+        self.tray_cause = cause;
         self.set_mode(Mode::Tray, cx);
-        if let Some(after) = collapse_after {
+        if let TrayCause::Timed(after) = cause {
             self.schedule_collapse(after, cx);
         }
     }
@@ -290,7 +296,7 @@ impl Island {
     fn on_hook(&mut self, event: HookEvent, cx: &mut Context<Self>) {
         log(&format!("hook {event:?} (mode {:?})", self.mode));
         match event {
-            HookEvent::Jiggle => self.open_tray(None, cx),
+            HookEvent::Jiggle => self.open_tray(TrayCause::Drag, cx),
             HookEvent::ButtonUp => {
                 if self.mode == Mode::Tray && !self.drag_out {
                     self.schedule_collapse(COLLAPSE_AFTER_RELEASE, cx);
@@ -306,12 +312,27 @@ impl Island {
                 self.collapse_generation += 1;
                 self.set_mode(Mode::Idle, cx);
             }
-            TrayEvent::Toggle | TrayEvent::Show => self.open_tray(Some(COLLAPSE_AFTER_CLICK), cx),
+            TrayEvent::Toggle | TrayEvent::Show => {
+                self.open_tray(TrayCause::Timed(COLLAPSE_AFTER_CLICK), cx)
+            }
             TrayEvent::ClearShelf => {
                 self.shelf.clear();
                 self.shelf_changed(cx);
             }
             TrayEvent::Quit => cx.quit(),
+        }
+    }
+
+    /// The drop target refused a drag crossing the island. If the tray only opened
+    /// for that drag (a jiggle), its payload can never land: fold it away.
+    fn on_drop_event(&mut self, event: DropEvent, cx: &mut Context<Self>) {
+        log(&format!("drop-target {event:?} (mode {:?})", self.mode));
+        if event == DropEvent::Refused
+            && self.mode == Mode::Tray
+            && self.tray_cause.closed_by_refusal()
+        {
+            self.collapse_generation += 1;
+            self.set_mode(Mode::Idle, cx);
         }
     }
 
@@ -674,12 +695,12 @@ impl Render for Island {
                 let added = this.add_paths(paths.paths().to_vec(), cx);
                 log(&format!("shelf {} (+{added})", this.shelf.len()));
                 // Open so the file is seen to land, then fold away unless the cursor is on it.
-                this.open_tray(Some(COLLAPSE_AFTER_DROP), cx);
+                this.open_tray(TrayCause::Timed(COLLAPSE_AFTER_DROP), cx);
             }))
             .on_hover(cx.listener(|this, hovered: &bool, _window, cx| this.on_hover(*hovered, cx)))
             .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
                 if this.mode == Mode::Idle {
-                    this.open_tray(Some(COLLAPSE_AFTER_CLICK), cx);
+                    this.open_tray(TrayCause::Timed(COLLAPSE_AFTER_CLICK), cx);
                 }
             }))
             .on_mouse_down(
@@ -720,6 +741,9 @@ fn main() {
 
         let previous_foreground = win32::foreground_window();
         let glass = Glass::from_env();
+        // Refused drags report here, so a jiggle that opened the tray for a payload
+        // the island can't take (the hook can't tell text from files) folds it away.
+        let (refuse_tx, refuse_rx) = async_channel::bounded(4);
         let window = cx
             .open_window(
                 WindowOptions {
@@ -754,6 +778,7 @@ fn main() {
                             // After GPUI has applied its own background appearance, so ours wins.
                             win32::enable_acrylic(hwnd, GLASS_TINT);
                         }
+                        win32::watch_drop_refusals(hwnd, refuse_tx);
                         win32::restore_foreground(previous_foreground);
                     }
                     cx.new(move |_| Island::new(hwnd, window.scale_factor(), glass, persistence))
@@ -782,6 +807,20 @@ fn main() {
             })
             .detach();
         }
+
+        // The wrapped drop target reports refusals while an external drag runs.
+        let refuse_island = island.clone();
+        cx.spawn(async move |cx| {
+            while let Ok(event) = refuse_rx.recv().await {
+                if refuse_island
+                    .update(cx, |island, cx| island.on_drop_event(event, cx))
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
 
         // Test hook: TOPSY_SEED=path;path puts files on the shelf at startup, so a drag out
         // can be tested without first dragging in.

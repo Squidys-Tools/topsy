@@ -19,9 +19,10 @@ On top of that it is now a usable v1: the tray holds a **shelf** of files you ca
 |---|---|
 | `src/spring.rs` | Damped spring (Framer-Motion-style `stiffness/damping/mass`), fixed sub-step, retargetable mid-flight |
 | `src/jiggle.rs` | Pure jiggle detector: direction reversals of a held-button drag inside a time window |
-| `src/win32.rs` | Overlay window styles, acrylic glass, window geometry, `WH_MOUSE_LL` hook thread, dragging files out, opening them |
+| `src/win32.rs` | Overlay window styles, acrylic glass, window geometry, `WH_MOUSE_LL` hook thread, the drop-target wrapper that reports refused drags, dragging files out, opening them |
 | `src/shelf.rs` | The shelf model: files parked on the island (no UI, no OS calls, unit tested) |
 | `src/state.rs` | The shelf's save file and the thread that writes it |
+| `src/tray_cause.rs` | Why the tray is open, and which events fold it early (pure, unit tested) |
 | `src/tray.rs` | The notification-area icon and its menu, on their own thread |
 | `src/autostart.rs` | Start with Windows: one `HKCU\...\Run` value |
 | `src/main.rs` | The island view: idle pill, expandable tray with the shelf, file-drop target |
@@ -167,8 +168,14 @@ These drive the real desktop, so they move your cursor and/or show a window for 
 
 ## Findings
 
-- **GPUI already registers an `IDropTarget` per window** and accepts only `CF_HDROP`, rejecting other drags.
-  No custom OLE code is needed; use `on_drop::<ExternalPaths>` / `drag_over::<ExternalPaths>`.
+- **GPUI already registers an `IDropTarget` per window** and the view sees file drops through
+  `on_drop::<ExternalPaths>` / `drag_over::<ExternalPaths>`, but a refused drag (anything without
+  `CF_HDROP`, like a text selection) gets `DROPEFFECT_NONE` and *no* event, so the app can't hear it
+  through GPUI. `win32::watch_drop_refusals` swaps the registered target for one that forwards to
+  GPUI's and reports a refusal over a channel: that is the signal a jiggle-opened tray uses to learn
+  that the drag it opened for — the hook can't tell text from files — can never land, and fold itself
+  away. The wrapper also re-answers `DragOver` as `DROPEFFECT_NONE` for a refused payload: GPUI says
+  `COPY` unconditionally, which would flash a copy cursor and let the drop through.
 - **`WindowOptions::focus` is ignored on Windows**; GPUI activates the window when it is created.
   `show: false` is *not* a workaround in gpui 0.2.2: it defers placement until `activate()` and the window is
   never painted. What works: create visible, apply `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW` + topmost right away,
@@ -179,7 +186,7 @@ These drive the real desktop, so they move your cursor and/or show a window for 
 - **A drag out with Escape needs the key held a moment.** The system's drag loop polls the key state rather than
   being sent the keystroke, because the island never takes focus. A tap shorter than a frame can be missed;
   releasing the button over something that refuses files cancels too.
-- The GNU build links and runs (39/39 unit tests, all live checks pass); the binary imports `msvcrt.dll`, no
+- The GNU build links and runs (41/41 unit tests, all live checks pass); the binary imports `msvcrt.dll`, no
   VCRUNTIME/MSVCP.
 
 ## Measured (release build, GNU toolchain, Windows 11, one 3440x1440 display, idle)
@@ -198,9 +205,9 @@ worth a profile before building on it, because an always-on app should be closer
 
 ## Not done / known gaps
 
-- Real jiggle thresholds are untuned (tested only with synthetic input).
-- A text selection drag also triggers the tray (the hook can't tell what is being dragged); the drop target
-  correctly refuses non-file payloads, so the tray should dismiss itself in that case. Not yet implemented.
+- Real jiggle thresholds are untuned (tested only with synthetic input). A text-selection drag also
+  triggers the tray (the hook can't tell what is being dragged); the drop target refuses the payload
+  and the tray folds itself away.
 - Multi-monitor and non-100% DPI are handled in code (scale factor, the pill anchors to the monitor it opens on)
   but only tested on one 100% display.
 - Glass: the tint and rim are untuned, and only tried over a stripe pattern and a dark desktop. Not verified:
