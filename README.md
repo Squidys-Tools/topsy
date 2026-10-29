@@ -72,7 +72,8 @@ To build locally without installing the SDK, GPUI only needs one file from it: c
   Drag a chip out and drop it on any window, as you would from Explorer; click a chip to open it; **Clear**
   empties the shelf. A chip leaves the shelf once a drop is accepted. Files that were moved or deleted since they
   were parked are dropped from the shelf when the tray opens (checked off the UI thread). The shelf is saved to
-  `%LOCALAPPDATA%\topsy\shelf.txt` on every change and comes back on the next start, minus entries whose files are gone.
+  `%LOCALAPPDATA%\topsy\shelf.txt` on every change and comes back on the next start. Startup never looks at the saved files (a dead share would
+  stall launch): chips return as `…` and are settled off the UI thread, which drops entries whose files are gone.
 - **Tray icon.** A small glass-blue pill in the notification area (drawn in code, no asset). Left click opens
   or closes the shelf. Right click, or right-click the pill itself, opens the menu: *Show shelf*, *Clear shelf (N)*,
   *Start with Windows* (checked when on) and *Quit topsy*. The icon lives on its own thread with a hidden window,
@@ -178,7 +179,7 @@ These drive the real desktop, so they move your cursor and/or show a window for 
 - **A drag out with Escape needs the key held a moment.** The system's drag loop polls the key state rather than
   being sent the keystroke, because the island never takes focus. A tap shorter than a frame can be missed;
   releasing the button over something that refuses files cancels too.
-- The GNU build links and runs (38/38 unit tests, all live checks pass); the binary imports `msvcrt.dll`, no
+- The GNU build links and runs (39/39 unit tests, all live checks pass); the binary imports `msvcrt.dll`, no
   VCRUNTIME/MSVCP.
 
 ## Measured (release build, GNU toolchain, Windows 11, one 3440x1440 display, idle)

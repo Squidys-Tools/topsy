@@ -134,29 +134,6 @@ impl Shelf {
         self.items.retain(|i| exists(&i.path));
         before - self.items.len()
     }
-
-    /// Rebuild the shelf from saved paths, as at startup. `stat` answers `Some(is_dir)`
-    /// for a file that is still there and `None` for one that has gone, so a chip never
-    /// comes back for a file deleted while the app was off. Duplicates collapse as in
-    /// `add`. Returns how many were restored.
-    pub fn restore(
-        &mut self,
-        paths: impl IntoIterator<Item = PathBuf>,
-        stat: impl Fn(&Path) -> Option<bool>,
-    ) -> usize {
-        let mut added = 0;
-        for path in paths {
-            if self.items.iter().any(|i| same_path(&i.path, &path)) {
-                continue;
-            }
-            let Some(is_dir) = stat(&path) else {
-                continue;
-            };
-            self.items.push(Item { path, is_dir });
-            added += 1;
-        }
-        added
-    }
 }
 
 /// The shelf's saved form: one absolute path per line (a path that isn't UTF-8 can't be
@@ -173,8 +150,8 @@ pub fn serialize(items: &[Item]) -> String {
 }
 
 /// The paths in a saved file: one per line. Blank lines, junk and relative paths are
-/// skipped; whether what is left still exists is not checked here — that is
-/// `Shelf::restore`'s `stat`.
+/// skipped; whether what is left still exists is not checked here. The app restores them
+/// with `Shelf::add` and prunes the gone ones off the UI thread once the island is up.
 pub fn parse(text: &str) -> Vec<PathBuf> {
     text.lines()
         .map(|line| line.strip_suffix('\r').unwrap_or(line))
@@ -336,46 +313,17 @@ mod tests {
     }
 
     #[test]
-    fn restore_drops_gone_files_and_learns_their_kind() {
-        let mut shelf = Shelf::default();
-        let stat = |p: &Path| match p.file_name().and_then(|n| n.to_str()) {
-            Some("gone.txt") => None,
-            Some("a-dir") => Some(true),
-            _ => Some(false),
-        };
-        let n = shelf.restore(paths(&[r"C:\kept.txt", r"C:\gone.txt", r"C:\a-dir"]), stat);
-        assert_eq!(n, 2);
-        assert_eq!(shelf.items()[0].name(), "kept.txt");
-        assert!(!shelf.items()[0].is_dir);
-        assert_eq!(shelf.items()[1].name(), "a-dir");
-        assert!(shelf.items()[1].is_dir);
-    }
-
-    #[test]
-    fn restore_keeps_order_and_collapses_duplicates() {
-        let mut shelf = Shelf::default();
-        let n = shelf.restore(
-            paths(&[r"C:\b.txt", r"C:\A.TXT", r"C:\a.txt", r"C:\b.txt"]),
-            |_| Some(false),
-        );
-        assert_eq!(n, 2);
-        assert_eq!(shelf.items()[0].name(), "b.txt");
-        assert_eq!(shelf.items()[1].name(), "A.TXT");
-    }
-
-    #[test]
     fn serialize_and_parse_round_trip() {
         let mut shelf = Shelf::default();
-        shelf.add(
-            paths(&[r"C:\a.txt", r"D:\dir", r"C:\Users\Zoë\b ü.txt"]),
-            |p| p.ends_with("dir"),
-        );
+        shelf.add(paths(&[r"C:\a.txt", r"D:\dir", r"C:\Users\Zoë\b ü.txt"]));
         let text = serialize(shelf.items());
         assert_eq!(text, "C:\\a.txt\nD:\\dir\nC:\\Users\\Zoë\\b ü.txt\n");
 
+        // A restored shelf is rebuilt with `add`, so a hand-edited file's duplicates collapse.
         let mut back = Shelf::default();
-        assert_eq!(back.restore(parse(&text), |p| Some(p.ends_with("dir"))), 3);
+        assert_eq!(back.add(parse(&text)).len(), 3);
         assert_eq!(shelf.items(), back.items());
+        assert_eq!(back.add(parse("C:\\B.TXT\nC:\\b.txt\n")).len(), 1);
     }
 
     #[test]
@@ -392,11 +340,11 @@ mod tests {
         let items = [
             Item {
                 path: weird,
-                is_dir: false,
+                kind: Kind::File,
             },
             Item {
                 path: PathBuf::from(r"C:\ok.txt"),
-                is_dir: false,
+                kind: Kind::File,
             },
         ];
         assert_eq!(serialize(&items), "C:\\ok.txt\n");

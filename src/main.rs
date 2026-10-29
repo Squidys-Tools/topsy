@@ -213,6 +213,12 @@ impl Island {
             return 0;
         }
         let count = added.len();
+        self.resolve_kinds(added, cx);
+        count
+    }
+
+    /// Learn whether each chip is a folder or a file, off the UI thread.
+    fn resolve_kinds(&mut self, added: Vec<PathBuf>, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
             let resolved: Vec<(PathBuf, bool)> = cx
                 .background_executor()
@@ -234,7 +240,17 @@ impl Island {
             .ok();
         })
         .detach();
-        count
+    }
+
+    /// The shelf was restored from disk without looking at its files: learn their kinds and
+    /// drop the ones that went away while the app was off, both off the UI thread.
+    fn settle_restored(&mut self, cx: &mut Context<Self>) {
+        let paths: Vec<PathBuf> = self.shelf.items().iter().map(|i| i.path.clone()).collect();
+        if paths.is_empty() {
+            return;
+        }
+        self.resolve_kinds(paths, cx);
+        self.prune_missing(cx);
     }
 
     /// Open the tray. `collapse_after` folds it away again unless the cursor arrives; `None`
@@ -685,8 +701,8 @@ impl Render for Island {
 }
 
 fn main() {
-    // The shelf comes back before the window opens; chips for files that went away while
-    // the app was off are dropped by the restore, never shown and dropped after.
+    // The shelf comes back before the window opens, without touching the disk for its files
+    // (a dead share would stall launch); `settle_restored` checks them in the background.
     let persistence = state::start();
     log(&format!("restored {}", persistence.shelf.len()));
     Application::new().run(move |cx: &mut App| {
@@ -748,7 +764,10 @@ fn main() {
         let island = window.entity(cx).expect("island entity");
 
         // The restored count reaches the tray icon's menu before the first shelf change.
-        island.update(cx, |island, _| tray::set_shelf_count(island.shelf.len()));
+        island.update(cx, |island, cx| {
+            tray::set_shelf_count(island.shelf.len());
+            island.settle_restored(cx);
+        });
 
         // However the app ends, the writer thread lands the queued shelf save first.
         {

@@ -43,14 +43,14 @@ fn resolve(topsy_state: Option<&OsStr>, local_app_data: Option<&OsStr>) -> Optio
 }
 
 /// Read the state file back into a shelf. No file, an unreadable file or pure noise are
-/// all just an empty shelf; entries whose files have gone don't come back.
+/// all just an empty shelf. The listed files are not looked at: asking the disk can stall
+/// on a dead share, so chips come back `Unknown` and the island settles them once it is
+/// up (`Island::settle_restored`).
 pub fn load(path: &Path) -> Shelf {
     let mut shelf = Shelf::default();
     match std::fs::read_to_string(path) {
         Ok(text) => {
-            shelf.restore(shelf::parse(&text), |p| {
-                p.metadata().map(|m| m.is_dir()).ok()
-            });
+            shelf.add(shelf::parse(&text));
         }
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
         Err(err) => eprintln!("topsy: could not read the shelf state: {err}"),
@@ -156,15 +156,14 @@ mod tests {
     }
 
     #[test]
-    fn round_trip_keeps_order_and_kinds() {
+    fn round_trip_keeps_order() {
         let scratch = Scratch::new("roundtrip");
         let a = scratch.file("a.txt");
-        let dir = scratch.path("a-dir");
-        std::fs::create_dir(&dir).unwrap();
         let b = scratch.file("b.txt");
+        let c = scratch.file("c.txt");
 
         let mut shelf = Shelf::default();
-        shelf.add([a, dir, b], |p| p.is_dir());
+        shelf.add([a, c, b]);
         let file = scratch.path("nested\\shelf.txt");
         write_file(&file, &shelf::serialize(shelf.items())).unwrap();
 
@@ -173,23 +172,17 @@ mod tests {
     }
 
     #[test]
-    fn load_drops_entries_whose_files_are_gone() {
-        let scratch = Scratch::new("missing");
-        let real = scratch.file("real.txt");
+    fn load_does_not_look_at_the_files_it_lists() {
+        // Startup must not wait on the disk: gone files are pruned later, off the UI thread.
+        let scratch = Scratch::new("untouched");
         let file = scratch.path("shelf.txt");
-        std::fs::write(
-            &file,
-            format!(
-                "{}\nC:\\definitely\\not\\there-{}\n",
-                real.display(),
-                std::process::id()
-            ),
-        )
-        .unwrap();
+        let gone = PathBuf::from(format!(r"C:\definitely\not\there-{}", std::process::id()));
+        std::fs::write(&file, format!("{}\n", gone.display())).unwrap();
 
         let back = load(&file);
         assert_eq!(back.len(), 1);
-        assert_eq!(back.items()[0].path, real);
+        assert_eq!(back.items()[0].path, gone);
+        assert_eq!(back.items()[0].kind, shelf::Kind::Unknown);
     }
 
     #[test]
