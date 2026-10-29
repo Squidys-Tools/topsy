@@ -80,6 +80,7 @@ function Amplitude($left, $top, $width, $height) {
 # Run the pill in one glass mode and return inside/beside stripe amplitude.
 function Measure-Mode($mode) {
     $env:TOPSY_GLASS = $mode
+    $env:TOPSY_STATE = Join-Path $env:TEMP 'topsy-glass-state.txt'
     $app = Start-Process $Exe -PassThru
     try {
         # Wait for the pill: its window answers hit-tests at the pill's centre.
@@ -120,7 +121,7 @@ function Measure-Mode($mode) {
     } finally {
         Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
         $app.WaitForExit(3000) | Out-Null
-        Remove-Item Env:TOPSY_GLASS -ErrorAction SilentlyContinue
+        Remove-Item Env:TOPSY_GLASS, Env:\TOPSY_STATE -ErrorAction SilentlyContinue
     }
 }
 

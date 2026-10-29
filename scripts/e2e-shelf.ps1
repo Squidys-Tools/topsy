@@ -117,6 +117,7 @@ function Drag-Chip($i, [switch]$Escape) {
 $tgtX = 300; $tgtY = 500
 $env:TOPSY_LOG = '1'
 $env:TOPSY_SEED = ($files + $dir) -join ';'
+$env:TOPSY_STATE = Join-Path $work 'shelf.state'
 $app = Start-Process $Exe -PassThru -RedirectStandardError $appLog
 $tgt = Start-Process powershell -ArgumentList @('-NoProfile', '-STA', '-File', "$PSScriptRoot\drop-target.ps1", $tgtX, $tgtY, $tgtLog) -PassThru
 $failed = $null

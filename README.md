@@ -21,6 +21,7 @@ On top of that it is now a usable v1: the tray holds a **shelf** of files you ca
 | `src/jiggle.rs` | Pure jiggle detector: direction reversals of a held-button drag inside a time window |
 | `src/win32.rs` | Overlay window styles, acrylic glass, window geometry, `WH_MOUSE_LL` hook thread, dragging files out, opening them |
 | `src/shelf.rs` | The shelf model: files parked on the island (no UI, no OS calls, unit tested) |
+| `src/state.rs` | The shelf's save file and the thread that writes it |
 | `src/tray.rs` | The notification-area icon and its menu, on their own thread |
 | `src/autostart.rs` | Start with Windows: one `HKCU\...\Run` value |
 | `src/main.rs` | The island view: idle pill, expandable tray with the shelf, file-drop target |
@@ -31,14 +32,15 @@ Right-click the pill or the tray icon for the menu (Quit is in it). Env vars for
 (auto expand/collapse), `TOPSY_LOG=1` (event trace on stderr), `TOPSY_EXIT_AFTER_MS=<n>`, `TOPSY_NO_HOOK=1` (don't
 install the mouse hook), `TOPSY_NO_TRAY=1` (no tray icon and no menu, so right-clicking the pill quits; start-with-Windows is left
 alone),
-`TOPSY_SEED=<path;path>` (start with these files on the shelf), `TOPSY_GLASS=tint|solid|clear` (see
+`TOPSY_SEED=<path;path>` (start with these files on the shelf), `TOPSY_STATE=<path>` (the shelf's save file,
+`%LOCALAPPDATA%\topsy\shelf.txt` by default; set empty to not save), `TOPSY_GLASS=tint|solid|clear` (see
 [Glass](#glass); the default is the real blur).
 
 ## Running
 
 ```powershell
 cargo run            # then hold the left mouse button on a file and jiggle it side to side
-cargo test           # spring, jiggle, shelf, tray icon and start-with-Windows unit tests
+cargo test           # spring, jiggle, shelf and its save file, tray icon and start-with-Windows unit tests
 scripts/check.ps1    # fmt, clippy and tests, the same gates as CI; run it before pushing
 ```
 
@@ -69,7 +71,8 @@ To build locally without installing the SDK, GPUI only needs one file from it: c
   cross to remove it from the shelf; the file itself is never touched). The chips are references, not copies.
   Drag a chip out and drop it on any window, as you would from Explorer; click a chip to open it; **Clear**
   empties the shelf. A chip leaves the shelf once a drop is accepted. Files that were moved or deleted since they
-  were parked are dropped from the shelf when the tray opens (checked off the UI thread). The shelf is not saved across restarts.
+  were parked are dropped from the shelf when the tray opens (checked off the UI thread). The shelf is saved to
+  `%LOCALAPPDATA%\topsy\shelf.txt` on every change and comes back on the next start, minus entries whose files are gone.
 - **Tray icon.** A small glass-blue pill in the notification area (drawn in code, no asset). Left click opens
   or closes the shelf. Right click, or right-click the pill itself, opens the menu: *Show shelf*, *Clear shelf (N)*,
   *Start with Windows* (checked when on) and *Quit topsy*. The icon lives on its own thread with a hidden window,
@@ -175,7 +178,7 @@ These drive the real desktop, so they move your cursor and/or show a window for 
 - **A drag out with Escape needs the key held a moment.** The system's drag loop polls the key state rather than
   being sent the keystroke, because the island never takes focus. A tap shorter than a frame can be missed;
   releasing the button over something that refuses files cancels too.
-- The GNU build links and runs (27/27 unit tests, all live checks pass); the binary imports `msvcrt.dll`, no
+- The GNU build links and runs (38/38 unit tests, all live checks pass); the binary imports `msvcrt.dll`, no
   VCRUNTIME/MSVCP.
 
 ## Measured (release build, GNU toolchain, Windows 11, one 3440x1440 display, idle)
@@ -183,7 +186,7 @@ These drive the real desktop, so they move your cursor and/or show a window for 
 | | |
 |---|---|
 | Working set | ~59 MB (private ~55 MB) |
-| Threads | 12 (11 without the mouse hook) |
+| Threads | 13 (12 without the mouse hook) |
 | Binary | 32.4 MB (unstripped; the earlier MSVC build was 10.6 MB) |
 | Idle CPU | ~0.5–0.7% of one core, with or without the hook |
 | Island re-renders at idle | 0 over 10 s |
@@ -204,7 +207,7 @@ worth a profile before building on it, because an always-on app should be closer
   light backdrops. The acrylic call is undocumented API and could change.
 - Resizing a window every frame is not profiled, and the window trails the spring by a frame. No tearing showed
   in sampled frames, but it was not measured at speed.
-- The shelf shows an extension badge, not the file's own icon or a thumbnail, and is not saved across restarts.
+- The shelf shows an extension badge, not the file's own icon or a thumbnail.
 - The target decides copy, move or link (the default shell drop source offers all three), so a drag to a folder on
   the same drive moves the file, as in Explorer; the chip then leaves the shelf.
 - No settings window or droplets yet. The tray icon is drawn in code and the exe itself has no icon resource.

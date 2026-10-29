@@ -9,6 +9,7 @@ param(
 
 function Measure-Idle([string]$Label, [bool]$NoHook) {
     if ($NoHook) { $env:TOPSY_NO_HOOK = '1' } else { Remove-Item Env:\TOPSY_NO_HOOK -ErrorAction SilentlyContinue }
+    $env:TOPSY_STATE = Join-Path $env:TEMP 'topsy-idle-state.txt'
     $app = Start-Process $Exe -PassThru
     Start-Sleep -Seconds $WarmupSec
     $before = (Get-Process -Id $app.Id).TotalProcessorTime.TotalMilliseconds
@@ -25,4 +26,4 @@ for ($i = 0; $i -lt $Rounds; $i++) {
     Measure-Idle 'with hook' $false
     Measure-Idle 'no hook' $true
 }
-Remove-Item Env:\TOPSY_NO_HOOK -ErrorAction SilentlyContinue
+Remove-Item Env:\TOPSY_NO_HOOK, Env:\TOPSY_STATE -ErrorAction SilentlyContinue

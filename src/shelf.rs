@@ -134,6 +134,53 @@ impl Shelf {
         self.items.retain(|i| exists(&i.path));
         before - self.items.len()
     }
+
+    /// Rebuild the shelf from saved paths, as at startup. `stat` answers `Some(is_dir)`
+    /// for a file that is still there and `None` for one that has gone, so a chip never
+    /// comes back for a file deleted while the app was off. Duplicates collapse as in
+    /// `add`. Returns how many were restored.
+    pub fn restore(
+        &mut self,
+        paths: impl IntoIterator<Item = PathBuf>,
+        stat: impl Fn(&Path) -> Option<bool>,
+    ) -> usize {
+        let mut added = 0;
+        for path in paths {
+            if self.items.iter().any(|i| same_path(&i.path, &path)) {
+                continue;
+            }
+            let Some(is_dir) = stat(&path) else {
+                continue;
+            };
+            self.items.push(Item { path, is_dir });
+            added += 1;
+        }
+        added
+    }
+}
+
+/// The shelf's saved form: one absolute path per line (a path that isn't UTF-8 can't be
+/// written plainly and is left out). `state` owns the file; this is only the format.
+pub fn serialize(items: &[Item]) -> String {
+    let mut text = String::new();
+    for item in items {
+        if let Some(path) = item.path.to_str() {
+            text.push_str(path);
+            text.push('\n');
+        }
+    }
+    text
+}
+
+/// The paths in a saved file: one per line. Blank lines, junk and relative paths are
+/// skipped; whether what is left still exists is not checked here — that is
+/// `Shelf::restore`'s `stat`.
+pub fn parse(text: &str) -> Vec<PathBuf> {
+    text.lines()
+        .map(|line| line.strip_suffix('\r').unwrap_or(line))
+        .filter(|line| Path::new(line).is_absolute())
+        .map(PathBuf::from)
+        .collect()
 }
 
 #[cfg(test)]
@@ -286,5 +333,72 @@ mod tests {
             kind: Kind::Dir,
         };
         assert_eq!(item.name(), r"C:\");
+    }
+
+    #[test]
+    fn restore_drops_gone_files_and_learns_their_kind() {
+        let mut shelf = Shelf::default();
+        let stat = |p: &Path| match p.file_name().and_then(|n| n.to_str()) {
+            Some("gone.txt") => None,
+            Some("a-dir") => Some(true),
+            _ => Some(false),
+        };
+        let n = shelf.restore(paths(&[r"C:\kept.txt", r"C:\gone.txt", r"C:\a-dir"]), stat);
+        assert_eq!(n, 2);
+        assert_eq!(shelf.items()[0].name(), "kept.txt");
+        assert!(!shelf.items()[0].is_dir);
+        assert_eq!(shelf.items()[1].name(), "a-dir");
+        assert!(shelf.items()[1].is_dir);
+    }
+
+    #[test]
+    fn restore_keeps_order_and_collapses_duplicates() {
+        let mut shelf = Shelf::default();
+        let n = shelf.restore(
+            paths(&[r"C:\b.txt", r"C:\A.TXT", r"C:\a.txt", r"C:\b.txt"]),
+            |_| Some(false),
+        );
+        assert_eq!(n, 2);
+        assert_eq!(shelf.items()[0].name(), "b.txt");
+        assert_eq!(shelf.items()[1].name(), "A.TXT");
+    }
+
+    #[test]
+    fn serialize_and_parse_round_trip() {
+        let mut shelf = Shelf::default();
+        shelf.add(
+            paths(&[r"C:\a.txt", r"D:\dir", r"C:\Users\Zoë\b ü.txt"]),
+            |p| p.ends_with("dir"),
+        );
+        let text = serialize(shelf.items());
+        assert_eq!(text, "C:\\a.txt\nD:\\dir\nC:\\Users\\Zoë\\b ü.txt\n");
+
+        let mut back = Shelf::default();
+        assert_eq!(back.restore(parse(&text), |p| Some(p.ends_with("dir"))), 3);
+        assert_eq!(shelf.items(), back.items());
+    }
+
+    #[test]
+    fn parse_skips_blank_junk_and_relative_lines() {
+        let text = "C:\\a.txt\r\n\n  \nnot a path\nrelative\\b.txt\nD:\\b.txt\n";
+        assert_eq!(parse(text), paths(&[r"C:\a.txt", r"D:\b.txt"]));
+    }
+
+    #[test]
+    fn serialize_skips_a_path_that_is_not_utf8() {
+        use std::os::windows::ffi::OsStringExt;
+        // `C:\` followed by a lone surrogate: a legal file name, but not writable as text.
+        let weird = PathBuf::from(std::ffi::OsString::from_wide(&[0x43, 0x3A, 0x5C, 0xD800]));
+        let items = [
+            Item {
+                path: weird,
+                is_dir: false,
+            },
+            Item {
+                path: PathBuf::from(r"C:\ok.txt"),
+                is_dir: false,
+            },
+        ];
+        assert_eq!(serialize(&items), "C:\\ok.txt\n");
     }
 }

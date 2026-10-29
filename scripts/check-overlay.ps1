@@ -32,6 +32,7 @@ $scale = [N]::GetDpiForSystem() / 96.0
 $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
 $cx = $screen.X + $screen.Width / 2
 $fgBefore = [N]::GetForegroundWindow()
+$env:TOPSY_STATE = Join-Path $env:TEMP 'topsy-overlay-state.txt'
 $app = Start-Process $Exe -PassThru
 $failures = @()
 try {

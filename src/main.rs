@@ -6,6 +6,7 @@ mod autostart;
 mod jiggle;
 mod shelf;
 mod spring;
+mod state;
 mod tray;
 mod win32;
 
@@ -122,10 +123,12 @@ struct Island {
     press: Option<(usize, Point<Pixels>)>,
     /// A chip is being dragged out; the system's drag loop is running.
     drag_out: bool,
+    /// Writes the shelf to its state file on a thread of its own; `None` when saving is off.
+    writer: Option<state::Writer>,
 }
 
 impl Island {
-    fn new(hwnd: Option<HWND>, scale: f32, glass: Glass) -> Self {
+    fn new(hwnd: Option<HWND>, scale: f32, glass: Glass, persistence: state::Persistence) -> Self {
         let anchor = hwnd
             .and_then(win32::monitor_top_center)
             .map(|(center_x, top)| (center_x, top + (TOP_INSET * scale).round() as i32));
@@ -134,7 +137,7 @@ impl Island {
             width: Spring::new(IDLE.0, SpringConfig::ISLAND),
             height: Spring::new(IDLE.1, SpringConfig::ISLAND),
             last_frame: None,
-            shelf: Shelf::default(),
+            shelf: persistence.shelf,
             hwnd,
             scale,
             glass,
@@ -143,6 +146,7 @@ impl Island {
             collapse_generation: 0,
             press: None,
             drag_out: false,
+            writer: persistence.writer,
         }
     }
 
@@ -189,6 +193,9 @@ impl Island {
     fn shelf_changed(&mut self, cx: &mut Context<Self>) {
         log(&format!("shelf now {}", self.shelf.len()));
         tray::set_shelf_count(self.shelf.len());
+        if let Some(writer) = &self.writer {
+            writer.send(shelf::serialize(self.shelf.items()));
+        }
         cx.notify();
     }
 
@@ -678,7 +685,11 @@ impl Render for Island {
 }
 
 fn main() {
-    Application::new().run(|cx: &mut App| {
+    // The shelf comes back before the window opens; chips for files that went away while
+    // the app was off are dropped by the restore, never shown and dropped after.
+    let persistence = state::start();
+    log(&format!("restored {}", persistence.shelf.len()));
+    Application::new().run(move |cx: &mut App| {
         let display = cx.primary_display();
         let display_bounds = display
             .as_ref()
@@ -715,7 +726,7 @@ fn main() {
                     window_background: WindowBackgroundAppearance::Transparent,
                     ..Default::default()
                 },
-                |window, cx| {
+                move |window, cx| {
                     let hwnd = window
                         .window_handle()
                         .ok()
@@ -729,12 +740,29 @@ fn main() {
                         }
                         win32::restore_foreground(previous_foreground);
                     }
-                    cx.new(|_| Island::new(hwnd, window.scale_factor(), glass))
+                    cx.new(move |_| Island::new(hwnd, window.scale_factor(), glass, persistence))
                 },
             )
             .expect("open island window");
 
         let island = window.entity(cx).expect("island entity");
+
+        // The restored count reaches the tray icon's menu before the first shelf change.
+        island.update(cx, |island, _| tray::set_shelf_count(island.shelf.len()));
+
+        // However the app ends, the writer thread lands the queued shelf save first.
+        {
+            let island = island.clone();
+            cx.on_app_quit(move |cx| {
+                island.update(cx, |island, _| {
+                    if let Some(writer) = island.writer.take() {
+                        writer.drain();
+                    }
+                });
+                async {}
+            })
+            .detach();
+        }
 
         // Test hook: TOPSY_SEED=path;path puts files on the shelf at startup, so a drag out
         // can be tested without first dragging in.

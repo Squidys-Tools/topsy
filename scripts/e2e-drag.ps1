@@ -53,6 +53,7 @@ function Move-Cursor($x, $y) {
 $srcX = 300; $srcY = 500
 
 $env:TOPSY_LOG = '1'
+$env:TOPSY_STATE = Join-Path $work 'shelf.state'
 # No -WindowStyle Hidden: it hides the first window the process shows, i.e. the island.
 $app = Start-Process $Exe -PassThru -RedirectStandardError $appLog
 $src = Start-Process powershell -ArgumentList @('-NoProfile', '-STA', '-File', "$PSScriptRoot\drag-source.ps1", $payload, $srcX, $srcY, $srcLog) -PassThru
