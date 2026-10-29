@@ -208,8 +208,6 @@ worth a profile before building on it, because an always-on app should be closer
 - The target decides copy, move or link (the default shell drop source offers all three), so a drag to a folder on
   the same drive moves the file, as in Explorer; the chip then leaves the shelf.
 - No settings window or droplets yet. The tray icon is drawn in code and the exe itself has no icon resource.
-- Dropping files stats each one on the UI thread (to tell folders from files); a file on a dead network share
-  could stall that for its timeout.
 
 ## License
 

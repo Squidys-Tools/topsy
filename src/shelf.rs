@@ -6,10 +6,20 @@
 
 use std::path::{Path, PathBuf};
 
+/// What a chip is on disk. A dropped path starts `Unknown`: the stat runs off the
+/// UI thread (a dead network share can stall it for its timeout) and
+/// `Shelf::resolve_kinds` merges the answer back, so the chip never waits on it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kind {
+    Unknown,
+    File,
+    Dir,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Item {
     pub path: PathBuf,
-    pub is_dir: bool,
+    pub kind: Kind,
 }
 
 impl Item {
@@ -23,10 +33,12 @@ impl Item {
     }
 
     /// Up to four capital letters for the badge: the extension, `DIR` for a folder,
-    /// `FILE` for a file with no extension.
+    /// `FILE` for a file with no extension, `…` until the stat comes back.
     pub fn badge_label(&self) -> String {
-        if self.is_dir {
-            return "DIR".into();
+        match self.kind {
+            Kind::Dir => return "DIR".into(),
+            Kind::Unknown => return "…".into(),
+            Kind::File => {}
         }
         match self.path.extension().and_then(|e| e.to_str()) {
             Some(ext) if !ext.is_empty() => ext.chars().take(4).collect::<String>().to_uppercase(),
@@ -69,22 +81,36 @@ impl Shelf {
         self.items.is_empty()
     }
 
-    /// Add paths that aren't already on the shelf; returns how many were added.
-    pub fn add(
-        &mut self,
-        paths: impl IntoIterator<Item = PathBuf>,
-        is_dir: impl Fn(&Path) -> bool,
-    ) -> usize {
-        let mut added = 0;
+    /// Add paths that aren't already on the shelf; returns the ones added, in
+    /// order. New chips are `Kind::Unknown` until `resolve_kinds` applies the
+    /// stat read off the UI thread.
+    pub fn add(&mut self, paths: impl IntoIterator<Item = PathBuf>) -> Vec<PathBuf> {
+        let mut added = Vec::new();
         for path in paths {
             if self.items.iter().any(|i| same_path(&i.path, &path)) {
                 continue;
             }
-            let is_dir = is_dir(&path);
-            self.items.push(Item { path, is_dir });
-            added += 1;
+            self.items.push(Item {
+                path: path.clone(),
+                kind: Kind::Unknown,
+            });
+            added.push(path);
         }
         added
+    }
+
+    /// Merge stat answers (`path` → is-dir) into the chips still parked. Answers are
+    /// matched by path, never position, so a chip removed or cleared before its
+    /// answer arrived is skipped instead of reappearing. Returns how many applied.
+    pub fn resolve_kinds(&mut self, resolved: impl IntoIterator<Item = (PathBuf, bool)>) -> usize {
+        let mut applied = 0;
+        for (path, is_dir) in resolved {
+            if let Some(item) = self.items.iter_mut().find(|i| same_path(&i.path, &path)) {
+                item.kind = if is_dir { Kind::Dir } else { Kind::File };
+                applied += 1;
+            }
+        }
+        applied
     }
 
     pub fn remove(&mut self, index: usize) -> Option<Item> {
@@ -118,19 +144,20 @@ mod tests {
         list.iter().map(PathBuf::from).collect()
     }
 
-    fn files(_: &Path) -> bool {
-        false
+    /// Stat answers as the background read returns them: `(path, is_dir)`.
+    fn resolved(list: &[(&str, bool)]) -> Vec<(PathBuf, bool)> {
+        list.iter().map(|(p, d)| (PathBuf::from(p), *d)).collect()
     }
 
     #[test]
     fn add_skips_duplicates_even_with_different_case() {
         let mut shelf = Shelf::default();
         assert_eq!(
-            shelf.add(paths(&[r"C:\a\Photo.PNG", r"C:\a\b.txt"]), files),
+            shelf.add(paths(&[r"C:\a\Photo.PNG", r"C:\a\b.txt"])).len(),
             2
         );
         assert_eq!(
-            shelf.add(paths(&[r"c:\a\photo.png", r"C:\a\c.txt"]), files),
+            shelf.add(paths(&[r"c:\a\photo.png", r"C:\a\c.txt"])).len(),
             1
         );
         assert_eq!(shelf.len(), 3);
@@ -139,21 +166,68 @@ mod tests {
     #[test]
     fn duplicates_are_found_across_accented_case_too() {
         let mut shelf = Shelf::default();
-        shelf.add(paths(&[r"C:\Users\Élodie\a.txt"]), files);
-        assert_eq!(shelf.add(paths(&[r"C:\Users\élodie\A.TXT"]), files), 0);
+        shelf.add(paths(&[r"C:\Users\Élodie\a.txt"]));
+        assert_eq!(shelf.add(paths(&[r"C:\Users\élodie\A.TXT"])).len(), 0);
         assert!(shelf.remove_path(Path::new(r"c:\users\éLODIE\a.txt")));
     }
 
     #[test]
     fn add_skips_duplicates_within_one_drop() {
         let mut shelf = Shelf::default();
-        assert_eq!(shelf.add(paths(&[r"C:\a.txt", r"C:\a.txt"]), files), 1);
+        assert_eq!(shelf.add(paths(&[r"C:\a.txt", r"C:\a.txt"])).len(), 1);
+    }
+
+    #[test]
+    fn added_chips_are_unknown_until_their_stat_resolves() {
+        let mut shelf = Shelf::default();
+        // `add` returns the paths still needing a stat, in drop order.
+        assert_eq!(
+            shelf.add(paths(&[r"C:\a.txt", r"C:\dir"])),
+            paths(&[r"C:\a.txt", r"C:\dir"])
+        );
+        assert_eq!(shelf.items()[0].badge_label(), "…");
+
+        // Answers can come back in any order; only the kind changes, not the position.
+        assert_eq!(
+            shelf.resolve_kinds(resolved(&[(r"C:\dir", true), (r"C:\a.txt", false)])),
+            2
+        );
+        assert_eq!(shelf.items()[0].badge_label(), "TXT");
+        assert_eq!(shelf.items()[1].badge_label(), "DIR");
+    }
+
+    #[test]
+    fn a_late_stat_for_a_chip_that_left_is_ignored() {
+        let mut shelf = Shelf::default();
+        shelf.add(paths(&[r"C:\a.txt", r"C:\b"]));
+        shelf.remove_path(Path::new(r"C:\a.txt"));
+        assert_eq!(
+            shelf.resolve_kinds(resolved(&[(r"C:\a.txt", false), (r"C:\b", true)])),
+            1
+        );
+        assert_eq!(shelf.len(), 1);
+        assert_eq!(shelf.items()[0].name(), "b");
+
+        // Cleared entirely before any answer arrives: nothing comes back.
+        shelf.clear();
+        assert_eq!(shelf.resolve_kinds(resolved(&[(r"C:\b", true)])), 0);
+        assert!(shelf.is_empty());
+    }
+
+    #[test]
+    fn re_dropping_a_resolved_chip_does_not_reset_it() {
+        let mut shelf = Shelf::default();
+        shelf.add(paths(&[r"C:\dir"]));
+        shelf.resolve_kinds(resolved(&[(r"C:\dir", true)]));
+        // A duplicate drop adds nothing, so nothing is re-statted or sent back to Unknown.
+        assert!(shelf.add(paths(&[r"C:\DIR"])).is_empty());
+        assert_eq!(shelf.items()[0].kind, Kind::Dir);
     }
 
     #[test]
     fn remove_by_index_and_by_path() {
         let mut shelf = Shelf::default();
-        shelf.add(paths(&[r"C:\a.txt", r"C:\b.txt", r"C:\c.txt"]), files);
+        shelf.add(paths(&[r"C:\a.txt", r"C:\b.txt", r"C:\c.txt"]));
         assert_eq!(shelf.remove(1).unwrap().name(), "b.txt");
         assert!(shelf.remove(9).is_none());
         assert!(shelf.remove_path(Path::new(r"c:\C.TXT")));
@@ -164,7 +238,7 @@ mod tests {
     #[test]
     fn prune_drops_only_missing_files() {
         let mut shelf = Shelf::default();
-        shelf.add(paths(&[r"C:\keep.txt", r"C:\gone.txt"]), files);
+        shelf.add(paths(&[r"C:\keep.txt", r"C:\gone.txt"]));
         let pruned = shelf.prune(|p| p.ends_with("keep.txt"));
         assert_eq!(pruned, 1);
         assert_eq!(shelf.items()[0].name(), "keep.txt");
@@ -173,32 +247,33 @@ mod tests {
     #[test]
     fn clear_empties_the_shelf() {
         let mut shelf = Shelf::default();
-        shelf.add(paths(&[r"C:\a.txt"]), files);
+        shelf.add(paths(&[r"C:\a.txt"]));
         shelf.clear();
         assert!(shelf.is_empty());
     }
 
     #[test]
     fn badge_labels() {
-        let item = |p: &str, is_dir| Item {
+        let item = |p: &str, kind| Item {
             path: PathBuf::from(p),
-            is_dir,
+            kind,
         };
-        assert_eq!(item(r"C:\x\pic.png", false).badge_label(), "PNG");
-        assert_eq!(item(r"C:\x\a.torrent", false).badge_label(), "TORR");
-        assert_eq!(item(r"C:\x\Makefile", false).badge_label(), "FILE");
-        assert_eq!(item(r"C:\x\folder", true).badge_label(), "DIR");
+        assert_eq!(item(r"C:\x\pic.png", Kind::File).badge_label(), "PNG");
+        assert_eq!(item(r"C:\x\a.torrent", Kind::File).badge_label(), "TORR");
+        assert_eq!(item(r"C:\x\Makefile", Kind::File).badge_label(), "FILE");
+        assert_eq!(item(r"C:\x\folder", Kind::Dir).badge_label(), "DIR");
+        assert_eq!(item(r"C:\x\pic.png", Kind::Unknown).badge_label(), "…");
     }
 
     #[test]
     fn badge_hue_is_stable_and_in_range() {
         let a = Item {
             path: PathBuf::from(r"C:\x\a.png"),
-            is_dir: false,
+            kind: Kind::File,
         };
         let b = Item {
             path: PathBuf::from(r"D:\y\b.PNG"),
-            is_dir: false,
+            kind: Kind::File,
         };
         assert_eq!(a.badge_hue(), b.badge_hue());
         assert!((0.0..1.0).contains(&a.badge_hue()));
@@ -208,7 +283,7 @@ mod tests {
     fn name_falls_back_to_the_path_for_a_drive_root() {
         let item = Item {
             path: PathBuf::from(r"C:\"),
-            is_dir: true,
+            kind: Kind::Dir,
         };
         assert_eq!(item.name(), r"C:\");
     }

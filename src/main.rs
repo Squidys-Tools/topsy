@@ -192,10 +192,42 @@ impl Island {
         cx.notify();
     }
 
+    /// Park dropped paths on the shelf; returns how many were new.
+    ///
+    /// Chips go up right away: telling a folder from a file asks the disk, and a
+    /// dead network share could stall the UI thread for its timeout, so the stat
+    /// runs in the background (chips show `Kind::Unknown` meanwhile). Answers are
+    /// merged back by path, so a chip removed or cleared before they arrive stays
+    /// gone.
     fn add_paths(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) -> usize {
-        let added = self.shelf.add(paths, |p| p.is_dir());
+        let added = self.shelf.add(paths);
         self.shelf_changed(cx);
-        added
+        if added.is_empty() {
+            return 0;
+        }
+        let count = added.len();
+        cx.spawn(async move |this, cx| {
+            let resolved: Vec<(PathBuf, bool)> = cx
+                .background_executor()
+                .spawn(async move {
+                    added
+                        .into_iter()
+                        .map(|path| {
+                            let is_dir = path.is_dir();
+                            (path, is_dir)
+                        })
+                        .collect()
+                })
+                .await;
+            this.update(cx, |this, cx| {
+                if this.shelf.resolve_kinds(resolved) > 0 {
+                    cx.notify();
+                }
+            })
+            .ok();
+        })
+        .detach();
+        count
     }
 
     /// Open the tray. `collapse_after` folds it away again unless the cursor arrives; `None`
