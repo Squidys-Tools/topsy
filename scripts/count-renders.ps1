@@ -7,11 +7,12 @@ param(
 $err = Join-Path $env:TEMP 'topsy-render.log'
 Remove-Item $err -ErrorAction SilentlyContinue
 $env:TOPSY_LOG = '1'
+$env:TOPSY_STATE = Join-Path $env:TEMP 'topsy-count-state.txt'
 $app = Start-Process $Exe -PassThru -RedirectStandardError $err
 Start-Sleep -Seconds 6                      # startup + first frames
 $startLines = @(Get-Content $err -ErrorAction SilentlyContinue | Where-Object { $_ -match 'render' }).Count
 Start-Sleep -Seconds $Seconds
 $endLines = @(Get-Content $err -ErrorAction SilentlyContinue | Where-Object { $_ -match 'render' }).Count
 Stop-Process -Id $app.Id -Force
-Remove-Item Env:\TOPSY_LOG -ErrorAction SilentlyContinue
+Remove-Item Env:\TOPSY_LOG, Env:\TOPSY_STATE -ErrorAction SilentlyContinue
 "renders: $startLines during startup, $($endLines - $startLines) over the next ${Seconds}s of idle"

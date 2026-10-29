@@ -182,6 +182,7 @@ Remove-ItemProperty -Path $RunKey -Name topsy -ErrorAction SilentlyContinue
 
 $env:TOPSY_LOG = '1'
 $env:TOPSY_SEED = $files -join ';'
+$env:TOPSY_STATE = Join-Path $work 'shelf.state'
 $app = Start-Process $Exe -PassThru -RedirectStandardError $appLog
 [void]$app.Handle   # cache the handle, or ExitCode reads as empty once the process is gone
 $failed = $null
