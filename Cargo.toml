@@ -6,6 +6,12 @@ description = "A Droppy-style notch/island for Windows: jiggle a drag to get a f
 license = "MIT"
 repository = "https://github.com/Squidys-Tools/topsy"
 
+# CI and scripts/check.ps1 deny warnings, so these fail the build there.
+[lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+unimplemented = "warn"
+
 [dependencies]
 async-channel = "2"
 gpui = "0.2.2"

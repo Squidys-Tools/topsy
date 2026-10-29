@@ -27,7 +27,7 @@ jobs:
           if ((Get-Content rust-toolchain.toml -Raw) -notmatch 'channel\s*=\s*"([^"]+)"') {
             throw 'no channel in rust-toolchain.toml'
           }
-          rustup toolchain install $Matches[1] --profile minimal --component rustfmt --no-self-update
+          rustup toolchain install $Matches[1] --profile minimal --component rustfmt,clippy --no-self-update
           if ($LASTEXITCODE -ne 0) { throw "rustup exited with $LASTEXITCODE" }
           rustc -vV
 
@@ -60,7 +60,9 @@ jobs:
           "GPUI_FXC_PATH=$($fxc.FullName)" | Add-Content $env:GITHUB_ENV
           "fxc: $($fxc.FullName)"
 
+      # The same gates as scripts/check.ps1.
       - run: cargo fmt --check
+      - run: cargo clippy --release --all-targets --locked -- -D warnings
       - run: cargo test --release --locked
       - run: cargo build --release --locked
 
