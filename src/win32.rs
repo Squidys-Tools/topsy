@@ -3,10 +3,11 @@
 
 use std::ffi::c_void;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
 
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, POINTL, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{
     DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND, DwmSetWindowAttribute,
 };
@@ -19,9 +20,10 @@ use windows::Win32::System::Com::{
 };
 use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
 use windows::Win32::System::Ole::{
-    DROPEFFECT_COPY, DROPEFFECT_LINK, DROPEFFECT_MOVE, DROPEFFECT_NONE, IDropTarget,
-    RegisterDragDrop, RevokeDragDrop,
+    DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_LINK, DROPEFFECT_MOVE, DROPEFFECT_NONE, IDropTarget,
+    IDropTarget_Impl, RegisterDragDrop, RevokeDragDrop,
 };
+use windows::Win32::System::SystemServices::MODIFIERKEYS_FLAGS;
 use windows::Win32::UI::Shell::Common::ITEMIDLIST;
 use windows::Win32::UI::Shell::{
     BHID_DataObject, SHCreateShellItemArrayFromIDLists, SHDoDragDrop, SHParseDisplayName,
@@ -35,7 +37,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     TranslateMessage, WH_MOUSE_LL, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WS_EX_NOACTIVATE,
     WS_EX_TOOLWINDOW, WS_POPUP, WS_VISIBLE,
 };
-use windows::core::{Interface, PCWSTR, s, w};
+use windows::core::{Interface, PCWSTR, Ref, implement, s, w};
 
 use crate::jiggle::{JiggleConfig, JiggleDetector};
 
@@ -180,6 +182,13 @@ pub fn wide(s: impl AsRef<std::ffi::OsStr>) -> Vec<u16> {
     s.as_ref().encode_wide().chain(std::iter::once(0)).collect()
 }
 
+/// The `IDropTarget` registered on the window. `RegisterDragDrop` records it in this
+/// window property; GPUI keeps no reference of its own.
+fn registered_drop_target(hwnd: HWND) -> Option<IDropTarget> {
+    let raw = unsafe { GetPropW(hwnd, w!("OleDropTargetInterface")) };
+    unsafe { IDropTarget::from_raw_borrowed(&raw.0) }.cloned()
+}
+
 /// What a drag out of the shelf ended as.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DragOutcome {
@@ -208,9 +217,7 @@ struct PausedDropTarget {
 
 impl PausedDropTarget {
     fn new(hwnd: HWND) -> Self {
-        // `RegisterDragDrop` records the target in this window property.
-        let raw = unsafe { GetPropW(hwnd, w!("OleDropTargetInterface")) };
-        let target = unsafe { IDropTarget::from_raw_borrowed(&raw.0) }.cloned();
+        let target = registered_drop_target(hwnd);
         match &target {
             Some(_) => {
                 let _ = unsafe { RevokeDragDrop(hwnd) };
@@ -230,6 +237,108 @@ impl Drop for PausedDropTarget {
         {
             eprintln!("topsy: could not restore the island as a drop target: {err}");
         }
+    }
+}
+
+/// What the island's drop target reports about a drag.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DropEvent {
+    /// The drag crossing the island was refused: the payload can't be dropped here
+    /// (the hook that fired the jiggle can't tell a text selection from files).
+    Refused,
+}
+
+/// A drop target that forwards everything to GPUI's and reports refusals.
+///
+/// The jiggle hook can't see what a drag carries, so a jiggle during a text drag
+/// opens the tray for nothing. GPUI's own target refuses such drags silently —
+/// `DROPEFFECT_NONE`, no event — so the island swaps its registered target for this
+/// one and learns the refusal over a channel, the same way the hook and tray icon
+/// report in.
+#[implement(IDropTarget)]
+struct WatchingDropTarget {
+    inner: IDropTarget,
+    tx: async_channel::Sender<DropEvent>,
+    /// Did the current drag get an effect at `DragEnter`? Calls are serial on the
+    /// registering thread.
+    accepted: AtomicBool,
+}
+
+#[allow(non_snake_case)]
+impl IDropTarget_Impl for WatchingDropTarget_Impl {
+    fn DragEnter(
+        &self,
+        pdataobj: Ref<IDataObject>,
+        grfkeystate: MODIFIERKEYS_FLAGS,
+        pt: &POINTL,
+        pdweffect: *mut DROPEFFECT,
+    ) -> windows::core::Result<()> {
+        self.accepted.store(false, Ordering::Relaxed);
+        let result = unsafe {
+            self.inner
+                .DragEnter(pdataobj.ok()?, grfkeystate, *pt, pdweffect)
+        };
+        let refused = result.is_ok() && unsafe { *pdweffect } == DROPEFFECT_NONE;
+        self.accepted
+            .store(result.is_ok() && !refused, Ordering::Relaxed);
+        if refused {
+            let _ = self.tx.try_send(DropEvent::Refused);
+        }
+        result
+    }
+
+    fn DragOver(
+        &self,
+        grfkeystate: MODIFIERKEYS_FLAGS,
+        pt: &POINTL,
+        pdweffect: *mut DROPEFFECT,
+    ) -> windows::core::Result<()> {
+        let result = unsafe { self.inner.DragOver(grfkeystate, *pt, pdweffect) };
+        if !self.accepted.load(Ordering::Relaxed) {
+            // GPUI answers COPY unconditionally; a payload refused at entry must keep
+            // the "no" answer, or it shows a copy cursor and takes a drop it can't fulfil.
+            unsafe { *pdweffect = DROPEFFECT_NONE };
+        }
+        result
+    }
+
+    fn DragLeave(&self) -> windows::core::Result<()> {
+        self.accepted.store(false, Ordering::Relaxed);
+        unsafe { self.inner.DragLeave() }
+    }
+
+    fn Drop(
+        &self,
+        pdataobj: Ref<IDataObject>,
+        grfkeystate: MODIFIERKEYS_FLAGS,
+        pt: &POINTL,
+        pdweffect: *mut DROPEFFECT,
+    ) -> windows::core::Result<()> {
+        self.accepted.store(false, Ordering::Relaxed);
+        unsafe { self.inner.Drop(pdataobj.ok()?, grfkeystate, *pt, pdweffect) }
+    }
+}
+
+/// Swap the island's registered drop target for a [`WatchingDropTarget`], so a refused
+/// drag — the payload a jiggle opened the tray for turning out to be undroppable —
+/// reaches the app on `tx`. Call once, on the thread the window belongs to, after GPUI
+/// has registered its own target. Without one to wrap, the window is left as it was.
+pub fn watch_drop_refusals(hwnd: HWND, tx: async_channel::Sender<DropEvent>) {
+    let Some(inner) = registered_drop_target(hwnd) else {
+        eprintln!("topsy: no drop target to watch (is OleDropTargetInterface gone?)");
+        return;
+    };
+    let _ = unsafe { RevokeDragDrop(hwnd) };
+    let watcher: IDropTarget = WatchingDropTarget {
+        inner: inner.clone(),
+        tx,
+        accepted: AtomicBool::new(false),
+    }
+    .into();
+    if let Err(err) = unsafe { RegisterDragDrop(hwnd, &watcher) } {
+        eprintln!("topsy: could not watch the drop target: {err}");
+        // Leave the island as plain a drop target as before: put GPUI's back.
+        let _ = unsafe { RegisterDragDrop(hwnd, &inner) };
     }
 }
 
