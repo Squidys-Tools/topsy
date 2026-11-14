@@ -3,6 +3,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod autostart;
+mod backdrop;
 mod jiggle;
 mod shelf;
 mod spring;
@@ -36,12 +37,13 @@ const TOP_INSET: f32 = 6.0;
 const IDLE: (f32, f32) = (168.0, 34.0);
 const TRAY: (f32, f32) = (400.0, 118.0);
 
-/// Corner radius of the pill. DWM rounds the window itself (and so the acrylic behind it)
-/// by its own fixed small radius, so the drawn pill has to use the same one.
-const CORNER_RADIUS: f32 = 8.0;
+/// The tray's corner radius. Shorter than that, the pill is a capsule (half its height).
+const TRAY_RADIUS: f32 = 24.0;
+/// DWM's fixed window corner, which clips the window-wide acrylic of [`Glass::Acrylic`].
+const DWM_RADIUS: f32 = 8.0;
 
 /// The glass colour (0xRRGGBBAA): dark and fairly strong, so white text stays legible over
-/// bright backdrops. It is the acrylic's tint, and the `tint` control's plain fill.
+/// bright backdrops. It tints the blur, and is the `tint` control's plain fill.
 const GLASS_TINT: u32 = 0x0c101c8c;
 
 const COLLAPSE_AFTER_RELEASE: Duration = Duration::from_millis(1200);
@@ -65,12 +67,16 @@ fn log(message: &str) {
     }
 }
 
-/// How the pill is filled. `TOPSY_GLASS=solid|tint|clear` overrides the default, which is
-/// for A/B comparison and for the automated blur check (`tint` and `clear` are its controls).
+/// How the pill is filled. `TOPSY_GLASS=acrylic|solid|tint|clear` overrides the default, which
+/// is for A/B comparison and for the automated blur check (`tint` and `clear` are its controls).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Glass {
-    /// Acrylic blur of whatever is behind the pill, tinted with [`GLASS_TINT`].
+    /// The compositor's blur of whatever is behind the pill, in the pill's own shape
+    /// ([`backdrop`]), tinted with [`GLASS_TINT`].
     Blur,
+    /// Window-wide acrylic, which only takes DWM's fixed corner. The fallback where the
+    /// compositor glass can't start.
+    Acrylic,
     /// The same colour as a plain translucent fill, no blur: the pill without its blur.
     Tint,
     /// Opaque black.
@@ -82,10 +88,18 @@ enum Glass {
 impl Glass {
     fn from_env() -> Self {
         match std::env::var("TOPSY_GLASS").as_deref() {
+            Ok("acrylic") => Glass::Acrylic,
             Ok("tint") => Glass::Tint,
             Ok("solid") => Glass::Solid,
             Ok("clear") => Glass::Clear,
             _ => Glass::Blur,
+        }
+    }
+
+    fn corner_radius(self, height: f32) -> f32 {
+        match self {
+            Glass::Acrylic => DWM_RADIUS,
+            _ => (height / 2.0).min(TRAY_RADIUS),
         }
     }
 }
@@ -114,6 +128,8 @@ struct Island {
     hwnd: Option<HWND>,
     scale: f32,
     glass: Glass,
+    /// The compositor glass, reshaped with the window ([`Glass::Blur`] only).
+    backdrop: Option<backdrop::Backdrop>,
     /// Where the pill sits: horizontal centre and top edge, in physical screen pixels.
     /// Every resize keeps the window centred on, and hanging from, this point.
     anchor: Option<(i32, i32)>,
@@ -132,7 +148,13 @@ struct Island {
 }
 
 impl Island {
-    fn new(hwnd: Option<HWND>, scale: f32, glass: Glass, persistence: state::Persistence) -> Self {
+    fn new(
+        hwnd: Option<HWND>,
+        scale: f32,
+        glass: Glass,
+        backdrop: Option<backdrop::Backdrop>,
+        persistence: state::Persistence,
+    ) -> Self {
         let anchor = hwnd
             .and_then(win32::monitor_top_center)
             .map(|(center_x, top)| (center_x, top + (TOP_INSET * scale).round() as i32));
@@ -145,6 +167,7 @@ impl Island {
             hwnd,
             scale,
             glass,
+            backdrop,
             anchor,
             applied_size: None,
             tray_cause: TrayCause::Timed(Duration::ZERO),
@@ -451,8 +474,18 @@ impl Island {
             return;
         }
         self.applied_size = Some(size);
+        let shape = self.backdrop.as_ref().map(backdrop::Backdrop::shape);
+        let radius = self.glass.corner_radius(h) * self.scale;
+        // DWM's own corner already clips the acrylic window, clicks included.
+        let clip_clicks = self.glass != Glass::Acrylic;
         cx.spawn(async move |_, _| {
             win32::move_window(hwnd, center_x - size.0 / 2, top, size.0, size.1);
+            if clip_clicks {
+                win32::set_round_region(hwnd, size.0, size.1, radius.round() as i32);
+            }
+            if let Some(shape) = shape {
+                shape.set(size.0 as f32, size.1 as f32, radius);
+            }
         })
         .detach();
     }
@@ -657,10 +690,10 @@ impl Render for Island {
         let viewport = window.viewport_size();
         let show_tray = w > 260.0 && h > 70.0;
 
-        // The acrylic does the work in `Blur`; every mode gets a faint rim for the glass edge.
+        // The acrylic carries its own tint; every mode gets a faint rim for the glass edge.
         let (fill, rim) = match self.glass {
-            Glass::Blur | Glass::Clear => (rgba(0x00000000), rgba(0xffffff38)),
-            Glass::Tint => (rgba(GLASS_TINT), rgba(0xffffff38)),
+            Glass::Acrylic | Glass::Clear => (rgba(0x00000000), rgba(0xffffff38)),
+            Glass::Blur | Glass::Tint => (rgba(GLASS_TINT), rgba(0xffffff38)),
             Glass::Solid => (rgba(0x000000ff), rgba(0xffffff1a)),
         };
 
@@ -673,7 +706,7 @@ impl Render for Island {
             .id("pill")
             .w(viewport.width)
             .h(viewport.height)
-            .rounded(px(CORNER_RADIUS))
+            .rounded(px(self.glass.corner_radius(viewport.height.into())))
             .bg(fill)
             .border_1()
             .border_color(rim)
@@ -740,7 +773,7 @@ fn main() {
         let bounds = Bounds::new(origin, size(px(IDLE.0), px(IDLE.1)));
 
         let previous_foreground = win32::foreground_window();
-        let glass = Glass::from_env();
+        let mut glass = Glass::from_env();
         // Refused drags report here, so a jiggle that opened the tray for a payload
         // the island can't take (the hook can't tell text from files) folds it away.
         let (refuse_tx, refuse_rx) = async_channel::bounded(4);
@@ -771,17 +804,28 @@ fn main() {
                         .window_handle()
                         .ok()
                         .and_then(|h| win32::hwnd_from_raw(h.as_raw()));
+                    let mut backdrop = None;
                     if let Some(hwnd) = hwnd {
                         win32::apply_overlay_styles(hwnd);
-                        win32::round_corners(hwnd);
                         if glass == Glass::Blur {
+                            match backdrop::Backdrop::new(hwnd) {
+                                Ok(b) => backdrop = Some(b),
+                                Err(e) => {
+                                    log(&format!("compositor glass unavailable ({e}); acrylic"));
+                                    glass = Glass::Acrylic;
+                                }
+                            }
+                        }
+                        if glass == Glass::Acrylic {
+                            win32::round_corners(hwnd);
                             // After GPUI has applied its own background appearance, so ours wins.
                             win32::enable_acrylic(hwnd, GLASS_TINT);
                         }
                         win32::watch_drop_refusals(hwnd, refuse_tx);
                         win32::restore_foreground(previous_foreground);
                     }
-                    cx.new(move |_| Island::new(hwnd, window.scale_factor(), glass, persistence))
+                    let scale = window.scale_factor();
+                    cx.new(move |_| Island::new(hwnd, scale, glass, backdrop, persistence))
                 },
             )
             .expect("open island window");
