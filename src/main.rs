@@ -533,6 +533,11 @@ impl Island {
         self.schedule_collapse(COLLAPSE_AFTER_RELEASE, cx);
     }
 
+    /// What the notch is drawn with right now.
+    fn look(&self) -> Glass {
+        if self.black { Glass::Solid } else { self.glass }
+    }
+
     /// Make the OS window exactly the notch (body and ears), hanging from the anchor.
     ///
     /// The window is resized every frame as the spring moves, and its region and the glass's
@@ -542,11 +547,6 @@ impl Island {
     /// The resize runs in a foreground task rather than here: this is called from `render`,
     /// and a resize mid-draw would reach GPUI's window handler where it cannot update the
     /// window (see [`win32::move_window`]).
-    /// What the notch is drawn with right now.
-    fn look(&self) -> Glass {
-        if self.black { Glass::Solid } else { self.glass }
-    }
-
     fn sync_window(&mut self, notch: Notch, cx: &mut Context<Self>) {
         let (Some(hwnd), Some((center_x, top))) = (self.hwnd, self.anchor) else {
             return;
