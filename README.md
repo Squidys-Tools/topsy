@@ -24,6 +24,7 @@ it (see [Notch](#notch)), the tray holds a **shelf** of files you can drag back 
 | `src/edge.rs` | Reaching for the hidden notch: the cursor arriving on the top row above it (pure, unit tested) |
 | `src/backdrop.rs` | The glass: the compositor's blurred backdrop behind GPUI's content, clipped to the notch's shape |
 | `src/win32.rs` | Overlay window styles, the acrylic fallback, window geometry, `WH_MOUSE_LL` hook thread, the drop-target wrapper that reports refused drags, dragging files out, opening them |
+| `src/icon.rs` | A chip's picture: the shell's thumbnail or icon for a file, as Explorer shows it |
 | `src/shelf.rs` | The shelf model: files parked on the island (no UI, no OS calls, unit tested) |
 | `src/state.rs` | The shelf's save file and the thread that writes it |
 | `src/tray_cause.rs` | Why the tray is open, and which events fold it early (pure, unit tested) |
@@ -77,8 +78,8 @@ To build locally without installing the SDK, GPUI only needs one file from it: c
 
 ## Shelf, tray icon and startup
 
-- **Shelf.** Drop files on the notch and they are parked in the tray as chips (an extension badge, the name, and a
-  cross to remove it from the shelf; the file itself is never touched). The chips are references, not copies.
+- **Shelf.** Drop files on the notch and they are parked in the tray as chips (the file's thumbnail or icon as
+  Explorer shows it, the name, and a cross to remove it from the shelf; the file itself is never touched). The chips are references, not copies.
   Drag a chip out and drop it on any window, as you would from Explorer; click a chip to open it; **Clear**
   empties the shelf. A chip leaves the shelf once a drop is accepted. Files that were moved or deleted since they
   were parked are dropped from the shelf when the tray opens (checked off the UI thread). The shelf is saved to
@@ -273,7 +274,8 @@ worth a profile before building on it, because an always-on app should be closer
   acrylic with square corners), behaviour with "Transparency effects" turned off, and light backdrops.
 - Resizing a window every frame is not profiled, and the window trails the spring by a frame. No tearing showed
   in sampled frames, but it was not measured at speed.
-- The shelf shows an extension badge, not the file's own icon or a thumbnail.
+- A chip's picture is fetched once, when it is parked; a file edited while on the shelf keeps its old thumbnail.
+  Until the picture arrives, or if the shell has none, the chip shows an extension badge.
 - The target decides copy, move or link (the default shell drop source offers all three), so a drag to a folder on
   the same drive moves the file, as in Explorer; the chip then leaves the shelf.
 - No settings window or droplets yet. The tray icon is drawn in code and the exe itself has no icon resource.

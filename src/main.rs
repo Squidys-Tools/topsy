@@ -5,6 +5,7 @@
 mod autostart;
 mod backdrop;
 mod edge;
+mod icon;
 mod jiggle;
 mod look;
 mod notch;
@@ -15,17 +16,20 @@ mod tray;
 mod tray_cause;
 mod win32;
 
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui::{
     App, Application, Bounds, ClickEvent, Context, ExternalPaths, FontWeight, MouseButton,
-    MouseDownEvent, MouseMoveEvent, Pixels, Point, TitlebarOptions, Window,
-    WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions, canvas, div, hsla,
+    MouseDownEvent, MouseMoveEvent, ObjectFit, Pixels, Point, RenderImage, TitlebarOptions, Window,
+    WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions, canvas, div, hsla, img,
     linear_color_stop, linear_gradient, point, prelude::*, px, rgb, rgba, size,
 };
 use raw_window_handle::HasWindowHandle;
 use windows::Win32::Foundation::HWND;
+use windows::Win32::System::Com::COINIT_MULTITHREADED;
 
 use crate::edge::EdgeZone;
 use crate::jiggle::JiggleConfig;
@@ -68,6 +72,8 @@ const COLLAPSE_AFTER_CLICK: Duration = Duration::from_millis(5000);
 const DRAG_OUT_THRESHOLD: f32 = 6.0;
 
 const CHIP: (f32, f32) = (72.0, 70.0);
+/// The picture at the top of a chip, square.
+const ICON: f32 = 38.0;
 
 /// Event trace for scripted tests; silent unless TOPSY_LOG is set.
 fn log(message: &str) {
@@ -177,6 +183,8 @@ struct Island {
     drag_out: bool,
     /// Writes the shelf to its state file on a thread of its own; `None` when saving is off.
     writer: Option<state::Writer>,
+    /// Each chip's thumbnail or icon, by its path; a chip without one shows a type badge.
+    icons: HashMap<PathBuf, Arc<RenderImage>>,
 }
 
 impl Island {
@@ -210,6 +218,7 @@ impl Island {
             press: None,
             drag_out: false,
             writer: persistence.writer,
+            icons: HashMap::new(),
         }
     }
 
@@ -255,6 +264,17 @@ impl Island {
 
     fn shelf_changed(&mut self, cx: &mut Context<Self>) {
         log(&format!("shelf now {}", self.shelf.len()));
+        let shelf = &self.shelf;
+        let gone: Vec<PathBuf> = (self.icons.keys())
+            .filter(|path| !shelf.items().iter().any(|item| &item.path == *path))
+            .cloned()
+            .collect();
+        for path in gone {
+            if let Some(icon) = self.icons.remove(&path) {
+                // Frees its texture in the window's atlas, which otherwise keeps it.
+                cx.drop_image(icon, None);
+            }
+        }
         tray::set_shelf_count(self.shelf.len());
         if let Some(writer) = &self.writer {
             writer.send(shelf::serialize(self.shelf.items()));
@@ -280,27 +300,40 @@ impl Island {
         count
     }
 
-    /// Learn whether each chip is a folder or a file, off the UI thread.
+    /// Learn whether each chip is a folder or a file, and fetch its picture, on a worker
+    /// thread of its own (the shell wants COM there). Each chip updates as its answer arrives,
+    /// so one slow video thumbnail doesn't hold up the rest.
     fn resolve_kinds(&mut self, added: Vec<PathBuf>, cx: &mut Context<Self>) {
-        cx.spawn(async move |this, cx| {
-            let resolved: Vec<(PathBuf, bool)> = cx
-                .background_executor()
-                .spawn(async move {
-                    added
-                        .into_iter()
-                        .map(|path| {
-                            let is_dir = path.is_dir();
-                            (path, is_dir)
-                        })
-                        .collect()
-                })
-                .await;
-            this.update(cx, |this, cx| {
-                if this.shelf.resolve_kinds(resolved) > 0 {
-                    cx.notify();
+        let size = (ICON * self.scale).round() as i32;
+        let (tx, rx) = async_channel::unbounded();
+        std::thread::spawn(move || {
+            win32::with_com(COINIT_MULTITHREADED, || {
+                for path in added {
+                    let is_dir = path.is_dir();
+                    let icon = icon::load(&path, size);
+                    if tx.send_blocking((path, is_dir, icon)).is_err() {
+                        break;
+                    }
                 }
             })
-            .ok();
+        });
+        cx.spawn(async move |this, cx| {
+            while let Ok((path, is_dir, icon)) = rx.recv().await {
+                let updated = this.update(cx, |this, cx| {
+                    if this.shelf.resolve_kinds([(path.clone(), is_dir)]) == 0 {
+                        return;
+                    }
+                    if let Some(icon) = icon
+                        && let Some(old) = this.icons.insert(path, icon)
+                    {
+                        cx.drop_image(old, None);
+                    }
+                    cx.notify();
+                });
+                if updated.is_err() {
+                    break;
+                }
+            }
         })
         .detach();
     }
@@ -609,7 +642,8 @@ impl Island {
         .detach();
     }
 
-    /// One file on the shelf: a coloured type badge and the name. Press and drag to take it
+    /// One file on the shelf: its thumbnail or icon (a coloured type badge until that arrives,
+    /// or if the shell has none) and the name. Press and drag to take it
     /// out, click to open it, the corner cross to remove it from the shelf (not from disk).
     fn chip(&self, index: usize, item: &Item, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let remove = div()
@@ -639,16 +673,23 @@ impl Island {
                 this.remove_item(index, cx);
             }));
 
-        let badge = div()
-            .size(px(38.0))
-            .rounded(px(8.0))
-            .bg(hsla(item.badge_hue(), 0.55, 0.45, 1.0))
-            .flex()
-            .items_center()
-            .justify_center()
-            .text_xs()
-            .font_weight(FontWeight::BOLD)
-            .child(item.badge_label());
+        let picture = match self.icons.get(&item.path) {
+            Some(icon) => img(icon.clone())
+                .size(px(ICON))
+                .object_fit(ObjectFit::Contain)
+                .into_any_element(),
+            None => div()
+                .size(px(ICON))
+                .rounded(px(8.0))
+                .bg(hsla(item.badge_hue(), 0.55, 0.45, 1.0))
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_xs()
+                .font_weight(FontWeight::BOLD)
+                .child(item.badge_label())
+                .into_any_element(),
+        };
 
         div()
             .id(("chip", index))
@@ -698,7 +739,7 @@ impl Island {
                 cx.listener(|this, _: &gpui::MouseUpEvent, _window, _cx| this.press = None),
             )
             .on_click(cx.listener(move |this, _: &ClickEvent, _window, _cx| this.open_item(index)))
-            .child(badge)
+            .child(picture)
             .child(
                 div()
                     .w(px(CHIP.0 - 8.0))
