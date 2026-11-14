@@ -1,0 +1,95 @@
+{
+  "$schema": "https://t3.codes/schema/t3.json",
+  "scripts": [
+    {
+      "name": "Fetch dependencies",
+      "command": "cargo fetch",
+      "icon": "configure",
+      "runOnWorktreeCreate": true
+    },
+    {
+      "name": "Run topsy",
+      "command": "cargo run --release",
+      "icon": "play",
+      "runOnWorktreeCreate": false
+    },
+    {
+      "name": "Run topsy with event log",
+      "command": "cmd /c \"set TOPSY_LOG=1&& cargo run --release\"",
+      "icon": "debug",
+      "runOnWorktreeCreate": false
+    },
+    {
+      "name": "Run topsy with a demo shelf (your shelf untouched)",
+      "command": "cmd /c \"set TOPSY_STATE=%TEMP%\\topsy-demo-shelf.txt&& set TOPSY_SEED=%CD%\\README.md;%CD%\\Cargo.toml;%CD%\\src&& cargo run --release\"",
+      "icon": "play",
+      "runOnWorktreeCreate": false
+    },
+    {
+      "name": "Run topsy with the old acrylic glass",
+      "command": "cmd /c \"set TOPSY_GLASS=acrylic&& cargo run --release\"",
+      "icon": "play",
+      "runOnWorktreeCreate": false
+    },
+    {
+      "name": "Build release exe",
+      "command": "cargo build --release",
+      "icon": "build",
+      "runOnWorktreeCreate": false
+    },
+    {
+      "name": "Check before pushing (fmt, clippy, tests)",
+      "command": "pwsh -NoProfile -File scripts/check.ps1",
+      "icon": "test",
+      "runOnWorktreeCreate": false
+    },
+    {
+      "name": "Run unit tests",
+      "command": "cargo test",
+      "icon": "test",
+      "runOnWorktreeCreate": false
+    },
+    {
+      "name": "Live: glass blur proof (shows stripes ~40 s)",
+      "command": "cargo build --release && pwsh -NoProfile -File scripts/check-glass.ps1 -Exe target/release/topsy.exe",
+      "icon": "test",
+      "runOnWorktreeCreate": false
+    },
+    {
+      "name": "Live: focus and click-through",
+      "command": "cargo build --release && pwsh -NoProfile -File scripts/check-overlay.ps1 -Exe target/release/topsy.exe",
+      "icon": "test",
+      "runOnWorktreeCreate": false
+    },
+    {
+      "name": "Live: shelf e2e (moves your mouse)",
+      "command": "cargo build --release && pwsh -NoProfile -File scripts/e2e-shelf.ps1 -Exe target/release/topsy.exe",
+      "icon": "test",
+      "runOnWorktreeCreate": false
+    },
+    {
+      "name": "Live: jiggle and drop e2e (moves your mouse)",
+      "command": "cargo build --release && pwsh -NoProfile -File scripts/e2e-drag.ps1 -Exe target/release/topsy.exe",
+      "icon": "test",
+      "runOnWorktreeCreate": false
+    },
+    {
+      "name": "Live: text drag folds the tray (moves your mouse)",
+      "command": "cargo build --release && pwsh -NoProfile -File scripts/e2e-textdrag.ps1 -Exe target/release/topsy.exe",
+      "icon": "test",
+      "runOnWorktreeCreate": false
+    },
+    {
+      "name": "Live: tray icon and menu (moves your mouse)",
+      "command": "cargo build --release && pwsh -NoProfile -File scripts/e2e-tray.ps1 -Exe target/release/topsy.exe",
+      "icon": "test",
+      "runOnWorktreeCreate": false
+    },
+    {
+      "name": "Measure idle CPU, memory and renders",
+      "command": "cargo build --release && pwsh -NoProfile -File scripts/measure-idle.ps1 -Exe target/release/topsy.exe && pwsh -NoProfile -File scripts/count-renders.ps1 -Exe target/release/topsy.exe",
+      "icon": "debug",
+      "runOnWorktreeCreate": false
+    }
+  ]
+}
