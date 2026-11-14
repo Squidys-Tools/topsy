@@ -30,6 +30,21 @@ impl EdgeZone {
     }
 }
 
+/// Whether a window `rect` (left, top, right, bottom) fills the `monitor` it is on, the way a
+/// fullscreen video, game or presentation does. A maximized window can overhang a monitor
+/// whose taskbar auto-hides by its resize borders, so it never counts.
+pub fn fills_monitor(
+    rect: (i32, i32, i32, i32),
+    monitor: (i32, i32, i32, i32),
+    maximized: bool,
+) -> bool {
+    !maximized
+        && rect.0 <= monitor.0
+        && rect.1 <= monitor.1
+        && rect.2 >= monitor.2
+        && rect.3 >= monitor.3
+}
+
 pub struct EdgeWatch {
     zone: EdgeZone,
     at_edge: bool,
@@ -78,6 +93,28 @@ mod tests {
         assert_eq!(w.moved(1100, 0), None, "right edge is exclusive");
         assert_eq!(w.moved(900, 0), Some(true));
         assert_eq!(w.moved(1100, 0), Some(false));
+    }
+
+    #[test]
+    fn only_a_window_covering_the_whole_monitor_is_fullscreen() {
+        let monitor = (0, 0, 2560, 1440);
+        assert!(fills_monitor(monitor, monitor, false));
+        assert!(
+            fills_monitor((-8, -8, 2568, 1448), monitor, false),
+            "overhanging still fills"
+        );
+        assert!(
+            !fills_monitor((0, 0, 2560, 1392), monitor, false),
+            "the taskbar shows below"
+        );
+        assert!(
+            !fills_monitor((-8, -8, 2568, 1448), monitor, true),
+            "maximized, not fullscreen"
+        );
+        assert!(
+            !fills_monitor(monitor, (2560, 0, 5120, 1440), false),
+            "on another monitor"
+        );
     }
 
     #[test]

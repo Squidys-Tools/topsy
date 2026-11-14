@@ -13,7 +13,8 @@ use windows::Win32::Graphics::Dwm::{
 };
 use windows::Win32::Graphics::Gdi::{
     CombineRgn, CreateRectRgn, CreateRoundRectRgn, DeleteObject, GetMonitorInfoW,
-    MONITOR_DEFAULTTOPRIMARY, MONITORINFO, MonitorFromWindow, PtInRect, RGN_OR, SetWindowRgn,
+    MONITOR_DEFAULTTONULL, MONITOR_DEFAULTTOPRIMARY, MONITORINFO, MonitorFromWindow, PtInRect,
+    RGN_OR, SetWindowRgn,
 };
 use windows::Win32::System::Com::{
     COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE, CoInitializeEx, CoTaskMemFree,
@@ -31,17 +32,54 @@ use windows::Win32::UI::Shell::{
     ShellExecuteW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallNextHookEx, DispatchMessageW, GWL_EXSTYLE, GWL_STYLE, GetCursorPos, GetForegroundWindow,
-    GetMessageW, GetPropW, GetWindowLongPtrW, GetWindowRect, HHOOK, HWND_TOPMOST, MSG,
-    MSLLHOOKSTRUCT, SW_SHOWNORMAL, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-    SWP_NOZORDER, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, SetWindowsHookExW,
-    TranslateMessage, WH_MOUSE_LL, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WS_EX_NOACTIVATE,
-    WS_EX_TOOLWINDOW, WS_POPUP, WS_VISIBLE,
+    CallNextHookEx, DispatchMessageW, GWL_EXSTYLE, GWL_STYLE, GetClassNameW, GetCursorPos,
+    GetForegroundWindow, GetMessageW, GetPropW, GetShellWindow, GetWindowLongPtrW, GetWindowRect,
+    HHOOK, HWND_TOPMOST, IsZoomed, MSG, MSLLHOOKSTRUCT, SW_SHOWNORMAL, SWP_FRAMECHANGED,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetForegroundWindow, SetWindowLongPtrW,
+    SetWindowPos, SetWindowsHookExW, TranslateMessage, WH_MOUSE_LL, WM_LBUTTONDOWN, WM_LBUTTONUP,
+    WM_MOUSEMOVE, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP, WS_VISIBLE,
 };
 use windows::core::{Interface, PCWSTR, Ref, implement, s, w};
 
-use crate::edge::{EdgeWatch, EdgeZone};
+use crate::edge::{EdgeWatch, EdgeZone, fills_monitor};
 use crate::jiggle::{JiggleConfig, JiggleDetector};
+
+/// Whether the foreground window is a fullscreen app on `island`'s monitor. The desktop
+/// counts as neither: it fills the monitor too, but its windows are `Progman` and `WorkerW`.
+pub fn fullscreen_over(island: HWND) -> bool {
+    unsafe {
+        let fg = GetForegroundWindow();
+        if fg.is_invalid() || fg == island || fg == GetShellWindow() {
+            return false;
+        }
+        let mut class = [0u16; 16];
+        let len = GetClassNameW(fg, &mut class) as usize;
+        if matches!(
+            String::from_utf16_lossy(&class[..len]).as_str(),
+            "Progman" | "WorkerW"
+        ) {
+            return false;
+        }
+        let monitor = MonitorFromWindow(island, MONITOR_DEFAULTTOPRIMARY);
+        if MonitorFromWindow(fg, MONITOR_DEFAULTTONULL) != monitor {
+            return false;
+        }
+        let mut info = MONITORINFO {
+            cbSize: size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        let mut rect = RECT::default();
+        if !GetMonitorInfoW(monitor, &mut info).as_bool() || GetWindowRect(fg, &mut rect).is_err() {
+            return false;
+        }
+        let m = info.rcMonitor;
+        fills_monitor(
+            (rect.left, rect.top, rect.right, rect.bottom),
+            (m.left, m.top, m.right, m.bottom),
+            IsZoomed(fg).as_bool(),
+        )
+    }
+}
 
 pub fn hwnd_from_raw(handle: raw_window_handle::RawWindowHandle) -> Option<HWND> {
     match handle {

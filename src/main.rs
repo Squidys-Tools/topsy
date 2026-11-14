@@ -354,10 +354,11 @@ impl Island {
     fn on_hook(&mut self, event: HookEvent, cx: &mut Context<Self>) {
         log(&format!("hook {event:?} (mode {:?})", self.mode));
         match event {
+            HookEvent::Jiggle if self.fullscreen() => {}
             HookEvent::Jiggle => self.open_tray(TrayCause::Drag, cx),
             HookEvent::Edge { at_edge, pressed } => {
                 self.at_edge = at_edge;
-                if at_edge && self.mode == Mode::Hidden {
+                if at_edge && self.mode == Mode::Hidden && !self.fullscreen() {
                     if pressed {
                         // Something is being dragged up here: give it somewhere to land.
                         self.open_tray(TrayCause::Drag, cx);
@@ -374,13 +375,23 @@ impl Island {
         }
     }
 
+    /// A fullscreen video, game or slideshow has the screen: the hook's gestures stay out of its
+    /// way. Read at the moment of the gesture rather than tracked, so nothing runs meanwhile.
+    fn fullscreen(&self) -> bool {
+        let fullscreen = self.hwnd.is_some_and(win32::fullscreen_over);
+        if fullscreen {
+            log("fullscreen app in front: staying hidden");
+        }
+        fullscreen
+    }
+
     /// Bring the notch down if the cursor is still resting on the edge after a moment, so
     /// sweeping across the top of the screen doesn't flash it.
     fn schedule_reveal(&mut self, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
             cx.background_executor().timer(REVEAL_AFTER).await;
             this.update(cx, |this, cx| {
-                if this.at_edge && this.mode == Mode::Hidden {
+                if this.at_edge && this.mode == Mode::Hidden && !this.fullscreen() {
                     this.set_mode(Mode::Peek, cx);
                     this.schedule_collapse(PEEK_LINGER, cx);
                 }
