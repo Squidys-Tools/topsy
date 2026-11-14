@@ -9,7 +9,8 @@ It started as a **feasibility spike** for the riskiest parts of the design, and 
 3. Receiving a real file drag on that window.
 4. A real blur behind the pill, in the pill's shape.
 
-On top of that it is now a usable v1: the tray holds a **shelf** of files you can drag back out, there is a
+On top of that it is now a usable v1: the island is a **notch** that stays out of sight until you reach for
+it (see [Notch](#notch)), the tray holds a **shelf** of files you can drag back out, there is a
 **tray icon** with a menu, **start with Windows**, and a **Quit** item. See
 [Shelf, tray icon and startup](#shelf-tray-icon-and-startup).
 
@@ -19,24 +20,29 @@ On top of that it is now a usable v1: the tray holds a **shelf** of files you ca
 |---|---|
 | `src/spring.rs` | Damped spring (Framer-Motion-style `stiffness/damping/mass`), fixed sub-step, retargetable mid-flight |
 | `src/jiggle.rs` | Pure jiggle detector: direction reversals of a held-button drag inside a time window |
-| `src/backdrop.rs` | The glass: the compositor's blurred backdrop behind GPUI's content, clipped to the pill's shape |
+| `src/notch.rs` | The notch's outline: body, ears and corner radius for a given size (pure, unit tested) |
+| `src/edge.rs` | Reaching for the hidden notch: the cursor arriving on the top row above it (pure, unit tested) |
+| `src/backdrop.rs` | The glass: the compositor's blurred backdrop behind GPUI's content, clipped to the notch's shape |
 | `src/win32.rs` | Overlay window styles, the acrylic fallback, window geometry, `WH_MOUSE_LL` hook thread, the drop-target wrapper that reports refused drags, dragging files out, opening them |
 | `src/shelf.rs` | The shelf model: files parked on the island (no UI, no OS calls, unit tested) |
 | `src/state.rs` | The shelf's save file and the thread that writes it |
 | `src/tray_cause.rs` | Why the tray is open, and which events fold it early (pure, unit tested) |
 | `src/tray.rs` | The notification-area icon and its menu, on their own thread |
 | `src/autostart.rs` | Start with Windows: one `HKCU\...\Run` value |
-| `src/main.rs` | The island view: idle pill, expandable tray with the shelf, file-drop target |
+| `src/look.rs` | The *Black notch* setting: one `HKCU\Software\topsy` value |
+| `src/main.rs` | The island view: hidden, peeking or open as the tray with the shelf; file-drop target |
 | `build.rs` | Copies one import library the GNU toolchain's bundled MinGW lacks (see below) |
 | `rust-toolchain.toml` | Pins the GNU toolchain, `stable-x86_64-pc-windows-gnu` |
 
-Right-click the pill or the tray icon for the menu (Quit is in it). Env vars for testing: `TOPSY_DEMO=1`
+Right-click the notch or the tray icon for the menu (Quit is in it). Env vars for testing: `TOPSY_DEMO=1`
 (auto expand/collapse), `TOPSY_LOG=1` (event trace on stderr), `TOPSY_EXIT_AFTER_MS=<n>`, `TOPSY_NO_HOOK=1` (don't
-install the mouse hook), `TOPSY_NO_TRAY=1` (no tray icon and no menu, so right-clicking the pill quits; start-with-Windows is left
-alone),
+install the mouse hook; the notch then rests peeking, as nothing could reveal it), `TOPSY_NO_TRAY=1` (no tray icon
+and no menu, so right-clicking the notch quits; start-with-Windows is left alone), `TOPSY_IDLE=peek|tray` (what the
+notch rests as, instead of hidden; the live checks use it),
 `TOPSY_SEED=<path;path>` (start with these files on the shelf), `TOPSY_STATE=<path>` (the shelf's save file,
-`%LOCALAPPDATA%\topsy\shelf.txt` by default; set empty to not save), `TOPSY_GLASS=acrylic|tint|solid|clear` (see
-[Glass](#glass); the default is the capsule-shaped blur).
+`%LOCALAPPDATA%\topsy\shelf.txt` by default; set empty to not save), `TOPSY_GLASS=acrylic|tint|solid|clear` (forces
+a fill and ignores the *Black notch* setting; see
+[Glass](#glass); the default is the notch-shaped blur).
 
 ## Running
 
@@ -71,7 +77,7 @@ To build locally without installing the SDK, GPUI only needs one file from it: c
 
 ## Shelf, tray icon and startup
 
-- **Shelf.** Drop files on the pill and they are parked in the tray as chips (an extension badge, the name, and a
+- **Shelf.** Drop files on the notch and they are parked in the tray as chips (an extension badge, the name, and a
   cross to remove it from the shelf; the file itself is never touched). The chips are references, not copies.
   Drag a chip out and drop it on any window, as you would from Explorer; click a chip to open it; **Clear**
   empties the shelf. A chip leaves the shelf once a drop is accepted. Files that were moved or deleted since they
@@ -79,10 +85,12 @@ To build locally without installing the SDK, GPUI only needs one file from it: c
   `%LOCALAPPDATA%\topsy\shelf.txt` on every change and comes back on the next start. Startup never looks at the saved files (a dead share would
   stall launch): chips return as `…` and are settled off the UI thread, which drops entries whose files are gone.
 - **Tray icon.** A small glass-blue pill in the notification area (drawn in code, no asset). Left click opens
-  or closes the shelf. Right click, or right-click the pill itself, opens the menu: *Show shelf*, *Clear shelf (N)*,
-  *Start with Windows* (checked when on) and *Quit topsy*. The icon lives on its own thread with a hidden window,
+  or closes the shelf. Right click, or right-click the notch itself, opens the menu: *Show shelf*, *Clear shelf (N)*,
+  *Black notch* and *Start with Windows* (each checked when on), and *Quit topsy*. The icon lives on its own thread with a hidden window,
   re-adds itself when Explorer restarts, and is removed on Quit. On Windows 11 a new icon starts in the overflow
   flyout; drag it out to keep it visible.
+- **Black notch** draws the notch plain black instead of glass, at once, and is kept in
+  `HKCU\Software\topsy\Look` (`black`; absent means glass).
 - **Start with Windows** writes `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\topsy` (the quoted path of
   the running exe): per-user, no admin, nothing to uninstall. It is off until you turn it on from the menu. If
   the exe has moved since, the stored path is repaired at launch; an entry is never created by itself.
@@ -102,77 +110,105 @@ Two things about dragging out of a window that is itself a drop target, both fou
   drag loop runs from a `cx.spawn` task; opening a chip runs on a thread of its own, which also keeps a slow
   handler (a UAC prompt, a cold network path) from freezing the island.
 
+## Notch
+
+The island hangs from the top edge of the screen like a MacBook's notch: square at the top, rounded at the
+bottom, with a small concave flare (an "ear") either side where it meets the edge. At rest it is **hidden**:
+nothing on screen, nothing to click.
+
+- **Reaching for it.** Resting the cursor on the screen's top row, above where the notch lives, for 150 ms brings
+  it down as a 200x32 peek showing what is on the shelf; the delay keeps a sweep across the top from flashing it.
+  The mouse hook watches for this (`src/edge.rs`), since nothing on screen could: it reports only arriving and
+  leaving, so there is still no polling. Dragging something up to that edge opens the tray straight away, as a
+  jiggle does. Click the peek to open the tray. It folds back 400 ms after the cursor leaves; the timer asks the
+  OS where the cursor is rather than waiting for a hover "leave", which a cursor flicked off the edge doesn't
+  always deliver.
+- **Hidden is a 1 px window with an empty region.** GPUI can't draw into an empty window, and keeping the window
+  avoids recreating it (and the activation that brings, see Findings).
+- **It is raised whenever it appears.** At launch the island hands the foreground back to the app that had it,
+  which puts that app above it if it is topmost too, and other topmost windows can come along while it is hidden.
+  The move that shows the notch also puts it at the top of the topmost band, without activating it.
+- **Black at the edge, glass below, measured from Droppy.** Sampled from Droppy's own screenshots: solid black
+  for the top 62% of the notch, then a straight fade to about 62% black at the bottom edge, so the backdrop's own
+  colour shows through darkened, never greyed; ears that reach out about 14% of the height (16 px on the tray);
+  and a light rim along the bottom edge, fading out up the sides where the notch is black. The closed notch is
+  black all the way down. The ears are GPUI paths with their handles halfway in (softer than a circle, as
+  Droppy's are) and are part of the window region.
+
 ## Glass
 
-The pill is a real blur of whatever is behind it, in the pill's own shape: a capsule when idle, a 24 px
-rounded rectangle as the tray. The shape follows the spring.
+The notch is a real blur of whatever is behind it, in its own shape. The shape follows the spring.
 
 GPUI presents through DirectComposition as the window's *topmost* visual tree. A window can also carry one
 non-topmost tree from Windows.UI.Composition, and DWM composes it underneath GPUI's. `src/backdrop.rs` puts a
 single visual there: the compositor's host backdrop brush (the blurred desktop behind the window, enabled by
-`DWMWA_USE_HOSTBACKDROPBRUSH`) clipped to a rounded rectangle whose radius we choose. GPUI draws the tint and
-rim on top. The blur holds while the window is inactive, which the island always is.
+`DWMWA_USE_HOSTBACKDROPBRUSH`) clipped to a rounded rectangle whose radius we choose. Its top corners sit above
+the window and are cut off with it, which gives the notch its square top. GPUI draws the tint and rim on top. The blur holds while the window is inactive, which the island always is.
 
 The window-wide alternative, `SetWindowCompositionAttribute` with `ACCENT_ENABLE_ACRYLICBLURBEHIND` (what
 GPUI's own `WindowBackgroundAppearance::Blurred` does), blurs the **whole window rectangle** and ignores
 `SetWindowRgn` on the Windows 11 build tested (26300); only DWM's fixed ~8 px corner (`DWMWCP_ROUND`) clips it.
-It is kept as the fallback where host backdrops are missing (before Windows 11) and as `TOPSY_GLASS=acrylic`.
+It is kept as the fallback where host backdrops are missing (before Windows 11) and as `TOPSY_GLASS=acrylic`;
+it can't leave the ears' corners clear, so that notch has no ears and DWM's corners.
 
 Consequences and the GPUI details that had to be got right:
 
-- **The window is still the pill.** It is resized and re-centred every frame as the spring moves, and the
-  backdrop's clip is reshaped in the same step, so nothing outside the pill draws.
-- **The window region only shapes clicks.** `SetWindowRgn` makes the transparent corners outside the capsule
+- **The window is the notch.** It is resized and re-centred every frame as the spring moves, and the
+  backdrop's clip is reshaped in the same step, so nothing outside the notch draws.
+- **The window region shapes clicks.** `SetWindowRgn` (body plus ears) makes the transparent corners
   click-through. It clips drawing too, without anti-aliasing, so its corner is a pixel tighter than the drawn one
   and falls just outside the compositor's smooth edge.
 - **The resize must not happen inside `render`.** `SWP_ASYNCWINDOWPOS` only defers across threads; here it is
   synchronous, so `WM_SIZE` reaches GPUI mid-draw, where its resize callback can't update the window and GPUI
   never learns the new size. The move runs in a foreground task (what GPUI's own `Window::resize` does). The
-  pill is then drawn at the viewport size GPUI reports, so its edge always matches the window's, one frame
+  notch is then drawn at the viewport size GPUI reports, so its edge always matches the window's, one frame
   behind the spring.
 - **GPUI creates popups with window style 0**, which Windows treats as overlapped: it enforces a minimum height
-  (39 px, taller than the idle pill) and adds a caption once the titlebar isn't "transparent". With
+  (39 px, taller than the peek) and adds a caption once the titlebar isn't "transparent". With
   `titlebar: None`, GPUI instead insets the client area by an invisible 8 px resize frame. So: pass
   `appears_transparent: false` and replace the style with a bare `WS_POPUP` right after creation.
 
 `scripts/check-glass.ps1` proves the blur rather than eyeballing it. It puts 6 px black/white stripes behind
-the pill and compares stripe contrast through the pill with the contrast beside it, in four modes:
+the open tray (`TOPSY_IDLE=tray`) and compares stripe contrast through its glass, below the black top, with
+the contrast beside it, in four modes:
 
 | `TOPSY_GLASS` | What it is | Contrast kept |
 |---|---|---|
-| `clear` | transparent pill, no blur | 1.00 (control: proves the measurement) |
-| `tint` | the same colour as a plain fill, no blur | 0.45 (what the dark fill alone does) |
-| *(default)* | compositor backdrop, capsule-clipped | **0.00** (under 1% of what the tint leaves) |
-| `acrylic` | window-wide acrylic, the fallback | 0.02 (4%) |
+| `clear` | transparent fill, no blur | 1.00 (control: proves the measurement) |
+| `tint` | the same fill, no blur | 0.31 (what the dark fill alone does) |
+| *(default)* | compositor backdrop, notch-clipped | **0.04** (13% of what the tint leaves) |
+| `acrylic` | window-wide acrylic, the fallback | 0.06 (19%) |
 
-The `tint` control matters: the fill is ~55% opaque, so it cuts stripe contrast by itself, and without the
-control that would look like blur. A first attempt used `DwmEnableBlurBehindWindow`, which does honour an
-explicit blur region but is a weak blur: 0.30 against the tint's 0.45, with the stripes plainly visible
-through the pill. It was dropped.
+It samples the bottom of the tray, where the fill has faded most. The `tint` control matters: the fill is still
+about 70% opaque there, so it cuts stripe contrast by itself, and without the control that would look like blur. A first attempt used `DwmEnableBlurBehindWindow`, which does honour an
+explicit blur region but is a weak blur (0.30 against the old, lighter tint's 0.45), with the stripes plainly visible
+through it. It was dropped.
 
 ## Live-desktop checks (`scripts/`)
 
 These drive the real desktop, so they move your cursor and/or show a window for a few seconds.
 
 - `e2e-drag.ps1` — starts a genuine OLE file drag from a fixture window, jiggles it with injected input,
-  verifies the tray expands, carries the drag onto the pill, and checks the drop arrives with the right file name.
+  verifies the hidden notch opens as the tray, carries the drag onto it, and checks the drop arrives with the right file name.
   It checks that the window under the drop point is the island's first and aborts otherwise, so a drag is never
-  carried to the top of the screen unless the pill is there to catch it.
-- `e2e-shelf.ps1` — seeds a shelf, clicks the pill open, drags a chip onto a separate app (a fixture window,
+  carried to the top of the screen unless the tray is there to catch it.
+- `e2e-shelf.ps1` — seeds a shelf, clicks the peeking notch open, drags a chip onto a separate app (a fixture window,
   `drop-target.ps1`) and checks it received the file and the chip left, cancels a drag with Escape (the chip stays),
   removes a chip with its cross without opening it, opens a folder chip in Explorer, clears the shelf, and finally
   drops a file from another app onto the island to prove it is still a drop target after being dragged out of.
   Escape is held for 250 ms, as the drag loop polls the key.
 - `e2e-tray.ps1` — checks the real notification area: the icon is registered with the shell and drawn there, left
   click toggles the shelf, the menu's items work (real keystrokes), *Start with Windows* writes and then clears the
-  real Run value, right-clicking the pill opens the menu, and Quit exits cleanly and removes the icon. It handles an
-  auto-hidden taskbar, and briefly sets the shell's "show this icon" flag for topsy under
-  `HKCU\Control Panel\NotifyIconSettings`; that flag and the Run value are restored when it finishes.
-- `check-overlay.ps1` — only the pill is hit-testable, and launching doesn't change the foreground window.
-  Run it on a release build (see above).
+  real Run value, *Black notch* saves the look and turns it back, right-clicking the notch opens the menu, and
+  Quit exits cleanly and removes the icon. It handles an auto-hidden taskbar, and briefly sets the shell's "show
+  this icon" flag for topsy under `HKCU\Control Panel\NotifyIconSettings`; that flag, the Run value and the
+  `Look` value are restored when it finishes.
+- `check-overlay.ps1` — the notch starts hidden (nothing hit-testable), comes down when the cursor rests on the
+  top edge, then only the notch is hit-testable, and it folds once the cursor leaves; neither launching nor the
+  reveal changes the foreground window. Run it on a release build (see above).
 - `check-glass.ps1` — the blur proof described under [Glass](#glass). Shows a stripe window (`stripes.ps1`)
   at the top of the screen for about 40 s.
-- `trace-width.ps1` / `shot.ps1` — sample or screenshot the pill to look at the animation as composited
+- `trace-width.ps1` / `shot.ps1` — sample or screenshot the notch to look at the animation as composited
   (`trace-width.ps1` needs `TOPSY_GLASS=solid`).
 - `measure-idle.ps1` / `count-renders.ps1` — idle footprint and re-render count.
 
@@ -196,7 +232,7 @@ These drive the real desktop, so they move your cursor and/or show a window for 
 - **A drag out with Escape needs the key held a moment.** The system's drag loop polls the key state rather than
   being sent the keystroke, because the island never takes focus. A tap shorter than a frame can be missed;
   releasing the button over something that refuses files cancels too.
-- The GNU build links and runs (41/41 unit tests, all live checks pass); the binary imports `msvcrt.dll`, no
+- The GNU build links and runs (47/47 unit tests, all live checks pass); the binary imports `msvcrt.dll`, no
   VCRUNTIME/MSVCP.
 
 ## Measured (release build, GNU toolchain, Windows 11, one 3440x1440 display, idle)
@@ -218,10 +254,16 @@ worth a profile before building on it, because an always-on app should be closer
 - Real jiggle thresholds are untuned (tested only with synthetic input). A text-selection drag also
   triggers the tray (the hook can't tell what is being dragged); the drop target refuses the payload
   and the tray folds itself away.
-- Multi-monitor and non-100% DPI are handled in code (scale factor, the pill anchors to the monitor it opens on)
-  but only tested on one 100% display.
-- Glass: the tint and rim are untuned, and only tried over a stripe pattern and a dark desktop. The host
-  backdrop is plain blur, without acrylic's luminosity layer and noise. Not verified: Windows 10 (falls back to
+- Multi-monitor and non-100% DPI are handled in code (scale factor, the notch anchors to the monitor it opens on)
+  but only tested on one 100% display. The notch and its edge zone are placed at launch and don't follow a
+  display or DPI change until restart.
+- Reaching the top edge above the notch reveals it over whatever is there, including a maximized app's own
+  controls at the top (tabs, a title bar) and fullscreen apps; there is no "stay hidden in fullscreen" rule yet.
+  A taskbar docked at the top is not handled.
+- Glass: the fill, ears and rim are matched to Droppy's screenshots by sampling them, and compared over a vivid
+  blue and a purple backdrop, not side by side with Droppy itself. The host backdrop's blur is heavier than
+  Droppy's (whose backdrop stays recognisable through the glass) and its strength can't be set; it is plain blur,
+  without acrylic's luminosity layer and noise. No Liquid Glass refraction at the edges. Not verified: Windows 10 (falls back to
   acrylic with square corners), behaviour with "Transparency effects" turned off, and light backdrops.
 - Resizing a window every frame is not profiled, and the window trails the spring by a frame. No tearing showed
   in sampled frames, but it was not measured at speed.

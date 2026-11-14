@@ -10,7 +10,7 @@ sections that touch your change before you change it.
 1. **Light.** No webview, no JS runtime, no background polling. An always-on app should cost close to 0% CPU
    at idle and render nothing when nothing changes (`scripts/measure-idle.ps1`, `scripts/count-renders.ps1`).
    No animation that repaints continuously.
-2. **Out of the way.** The island never takes focus, never activates, and is only hit-testable where the pill
+2. **Out of the way.** The island never takes focus, never activates, and is only hit-testable where the notch
    is. A change that steals the foreground window, even once at launch, is a bug.
 3. **Native feel.** Real acrylic, spring motion, behaviour that matches Explorer (drag out, open, copy/move as
    the target decides). If it looks or acts like a web page in a window, it is wrong.
@@ -26,12 +26,13 @@ front of you, say so plainly and get sign-off before breaking it.
 
 ## Glossary
 
-- **island**: the whole app window at the top of the screen. The OS window *is* the pill (see README, Glass).
-- **pill**: the island collapsed. **tray**: the island expanded, showing the shelf.
+- **island**: the whole app window at the top of the screen. The OS window *is* the notch (see README, Notch).
+- **notch**: the island's shape, hanging from the top edge. **hidden**: folded away, the resting state. **peek**: the
+  small notch revealed by resting the cursor on the top edge. **tray**: the island expanded, showing the shelf.
 - **shelf**: the files parked on the island (`src/shelf.rs`). **chip**: one shelf entry.
 - **jiggle**: the gesture that opens the tray, side-to-side reversals of a held-button drag (`src/jiggle.rs`).
 - **tray icon**: the notification-area icon and its menu (`src/tray.rs`). Not the same thing as the tray.
-- **glass**: the acrylic blur behind the pill.
+- **glass**: the acrylic blur behind the notch.
 
 ## Hard constraints
 
@@ -47,8 +48,8 @@ front of you, say so plainly and get sign-off before breaking it.
 1. **Killing by name.** Never `Stop-Process -Name topsy`, `taskkill /im topsy.exe`, or kill a PID found by
    matching a name or path. The developer's own topsy may be running (it can start with Windows), and other
    worktrees run theirs. Stop only a PID you captured when you started it, as the scripts do.
-2. **Touching real user state.** `HKCU\...\CurrentVersion\Run\topsy` and the shell's `NotifyIconSettings` are
-   the developer's live settings. Unit tests use a scratch key (`Software\topsy-test-<pid>-<tag>`, see
+2. **Touching real user state.** `HKCU\...\CurrentVersion\Run\topsy`, `HKCU\Software\topsy` and the shell's
+   `NotifyIconSettings` are the developer's live settings. Unit tests use a scratch key (`Software\topsy-test-<pid>-<tag>`, see
    `src/autostart.rs`); a live check that has to touch the real value must restore it in a `finally`.
 3. **Pumping messages inside a GPUI handler.** Anything that runs a message loop (`DoDragDrop`, `ShellExecute`,
    modal dialogs, `TrackPopupMenu`) re-enters GPUI while the app is borrowed and aborts the process. Run it from
@@ -62,8 +63,8 @@ front of you, say so plainly and get sign-off before breaking it.
 The most common defect is a change that works on the path you tried and is missing everywhere else. Before
 calling work done, walk this list and say which entries applied:
 
-- **Entry points.** The pill (left click, right-click menu), the tray icon (left click, its menu) and the jiggle
-  gesture often reach the same behaviour. Fixing one is not fixing the feature.
+- **Entry points.** The notch (the top-edge reveal, left click, right-click menu), the tray icon (left click,
+  its menu) and the jiggle gesture often reach the same behaviour. Fixing one is not fixing the feature.
 - **Reverse states.** A way in needs a way out and a way to see it. Add to the shelf needs remove and clear;
   turning startup on needs turning it off and a check mark.
 - **Threads.** The UI thread, the mouse-hook thread, the tray thread and one-off worker threads each own their

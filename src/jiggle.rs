@@ -58,6 +58,11 @@ impl JiggleDetector {
         self.reversal_times.clear();
     }
 
+    /// The left button is held: a drag (or a press) is in progress.
+    pub fn pressed(&self) -> bool {
+        self.pressed_at.is_some()
+    }
+
     pub fn button_up(&mut self) {
         self.pressed_at = None;
         self.direction = 0;
