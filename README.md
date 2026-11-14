@@ -60,8 +60,10 @@ console window it opens takes foreground focus at launch. Release builds use the
 ### No toolchain, or no admin rights?
 
 CI (`.github/workflows/build.yml`) builds the same release exe on a GitHub Windows runner, which has the Windows
-SDK and a MinGW gcc, and uploads it. Open the run for a commit under the repository's **Actions** tab and download
-the `topsy-windows-gnu` artifact: no Rust, MinGW or SDK needed to run it. A cold build takes about 20 minutes.
+SDK and a MinGW gcc. Pull requests only run the gates; the exe is uploaded for every push to `main` and for a run
+you start by hand: `gh workflow run build.yml --ref <branch>`, or **Run workflow** on the repository's **Actions**
+tab. Download the `topsy-windows-gnu` artifact from that run: no Rust, MinGW or SDK needed to run it. A cold build
+takes about 20 minutes.
 
 To build locally without installing the SDK, GPUI only needs one file from it: copy `fxc.exe` (from
 `Windows Kits\10\bin\<version>\x64`) anywhere and set `GPUI_FXC_PATH` to it.

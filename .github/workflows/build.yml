@@ -1,7 +1,9 @@
 name: build
 
-# Builds topsy.exe with the GNU toolchain and uploads it, so it can be tried on a
-# machine that has no Rust, MinGW or Windows SDK (download it from the run's page).
+# Builds topsy.exe with the GNU toolchain and runs the gates on every PR. The exe is uploaded,
+# so it can be tried on a machine with no Rust, MinGW or Windows SDK, only for main and for
+# runs started by hand: `gh workflow run build.yml --ref <branch>` (or Run workflow on the
+# Actions tab).
 
 on:
   pull_request:
@@ -67,6 +69,7 @@ jobs:
       - run: cargo build --release --locked
 
       - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
         with:
           name: topsy-windows-gnu
           path: target/release/topsy.exe

@@ -38,8 +38,9 @@ front of you, say so plainly and get sign-off before breaking it.
 - **Rust only.** No C, C++ or other C-family code, and no C shims to get around a binding.
 - **GNU toolchain** (`x86_64-pc-windows-gnu`, pinned in `rust-toolchain.toml`). Never switch to MSVC or add
   MSVC-only steps. `build.rs` exists because of this; read the README before touching it.
-- The developer often tests from a machine without admin rights, using the CI artifact `topsy-windows-gnu`.
-  CI is part of the product: keep it green and keep the artifact working.
+- The developer often tests from a machine without admin rights, using the CI artifact `topsy-windows-gnu`
+  (uploaded for `main` and for runs started by hand, not for PRs). CI is part of the product: keep it green and
+  keep the artifact working.
 
 ## The ways to hurt yourself
 
