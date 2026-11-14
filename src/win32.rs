@@ -12,7 +12,8 @@ use windows::Win32::Graphics::Dwm::{
     DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND, DwmSetWindowAttribute,
 };
 use windows::Win32::Graphics::Gdi::{
-    GetMonitorInfoW, MONITOR_DEFAULTTOPRIMARY, MONITORINFO, MonitorFromWindow, PtInRect,
+    CreateRoundRectRgn, GetMonitorInfoW, MONITOR_DEFAULTTOPRIMARY, MONITORINFO, MonitorFromWindow,
+    PtInRect, SetWindowRgn,
 };
 use windows::Win32::System::Com::{
     COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE, CoInitializeEx, CoTaskMemFree,
@@ -173,6 +174,21 @@ pub fn monitor_top_center(hwnd: HWND) -> Option<(i32, i32)> {
 pub fn move_window(hwnd: HWND, x: i32, y: i32, w: i32, h: i32) {
     unsafe {
         let _ = SetWindowPos(hwnd, None, x, y, w, h, SWP_NOACTIVATE | SWP_NOZORDER);
+    }
+}
+
+/// Limit the window's hit-testing to a rounded rectangle of `w`×`h` with corner `radius`
+/// (physical pixels), so the transparent corners outside a capsule don't catch clicks.
+///
+/// The region clips drawing too, without anti-aliasing, so its corner is a pixel tighter than
+/// the drawn one: it then falls just outside the compositor's smooth edge instead of cutting it.
+pub fn set_round_region(hwnd: HWND, w: i32, h: i32, radius: i32) {
+    let radius = (radius - 1).max(0);
+    unsafe {
+        // The ellipse is given by its diameter, and the right/bottom edges are exclusive.
+        let region = CreateRoundRectRgn(0, 0, w + 1, h + 1, 2 * radius, 2 * radius);
+        // The system owns the region from here on.
+        SetWindowRgn(hwnd, Some(region), false);
     }
 }
 

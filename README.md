@@ -19,7 +19,8 @@ On top of that it is now a usable v1: the tray holds a **shelf** of files you ca
 |---|---|
 | `src/spring.rs` | Damped spring (Framer-Motion-style `stiffness/damping/mass`), fixed sub-step, retargetable mid-flight |
 | `src/jiggle.rs` | Pure jiggle detector: direction reversals of a held-button drag inside a time window |
-| `src/win32.rs` | Overlay window styles, acrylic glass, window geometry, `WH_MOUSE_LL` hook thread, the drop-target wrapper that reports refused drags, dragging files out, opening them |
+| `src/backdrop.rs` | The glass: the compositor's blurred backdrop behind GPUI's content, clipped to the pill's shape |
+| `src/win32.rs` | Overlay window styles, the acrylic fallback, window geometry, `WH_MOUSE_LL` hook thread, the drop-target wrapper that reports refused drags, dragging files out, opening them |
 | `src/shelf.rs` | The shelf model: files parked on the island (no UI, no OS calls, unit tested) |
 | `src/state.rs` | The shelf's save file and the thread that writes it |
 | `src/tray_cause.rs` | Why the tray is open, and which events fold it early (pure, unit tested) |
@@ -34,8 +35,8 @@ Right-click the pill or the tray icon for the menu (Quit is in it). Env vars for
 install the mouse hook), `TOPSY_NO_TRAY=1` (no tray icon and no menu, so right-clicking the pill quits; start-with-Windows is left
 alone),
 `TOPSY_SEED=<path;path>` (start with these files on the shelf), `TOPSY_STATE=<path>` (the shelf's save file,
-`%LOCALAPPDATA%\topsy\shelf.txt` by default; set empty to not save), `TOPSY_GLASS=tint|solid|clear` (see
-[Glass](#glass); the default is the real blur).
+`%LOCALAPPDATA%\topsy\shelf.txt` by default; set empty to not save), `TOPSY_GLASS=acrylic|tint|solid|clear` (see
+[Glass](#glass); the default is the capsule-shaped blur).
 
 ## Running
 
@@ -103,19 +104,27 @@ Two things about dragging out of a window that is itself a drop target, both fou
 
 ## Glass
 
-The pill is real acrylic blur of whatever is behind it, in the pill's shape, animated.
+The pill is a real blur of whatever is behind it, in the pill's own shape: a capsule when idle, a 24 px
+rounded rectangle as the tray. The shape follows the spring.
 
-`SetWindowCompositionAttribute` with `ACCENT_ENABLE_ACRYLICBLURBEHIND` (the call GPUI's own
-`WindowBackgroundAppearance::Blurred` makes, but with our own tint) blurs the **whole window rectangle** and,
-on the Windows 11 build tested (26300), ignores `SetWindowRgn`. So there is no way to clip the blur to a pill
-inside a larger transparent window; a padded window shows up as a blurred box around the pill. The window
-therefore **is** the pill: it is resized and re-centred every frame as the spring moves, and DWM rounds its
-corners (`DWMWCP_ROUND`), which clips the acrylic with them.
+GPUI presents through DirectComposition as the window's *topmost* visual tree. A window can also carry one
+non-topmost tree from Windows.UI.Composition, and DWM composes it underneath GPUI's. `src/backdrop.rs` puts a
+single visual there: the compositor's host backdrop brush (the blurred desktop behind the window, enabled by
+`DWMWA_USE_HOSTBACKDROPBRUSH`) clipped to a rounded rectangle whose radius we choose. GPUI draws the tint and
+rim on top. The blur holds while the window is inactive, which the island always is.
+
+The window-wide alternative, `SetWindowCompositionAttribute` with `ACCENT_ENABLE_ACRYLICBLURBEHIND` (what
+GPUI's own `WindowBackgroundAppearance::Blurred` does), blurs the **whole window rectangle** and ignores
+`SetWindowRgn` on the Windows 11 build tested (26300); only DWM's fixed ~8 px corner (`DWMWCP_ROUND`) clips it.
+It is kept as the fallback where host backdrops are missing (before Windows 11) and as `TOPSY_GLASS=acrylic`.
 
 Consequences and the GPUI details that had to be got right:
 
-- **The corner radius is DWM's fixed ~8 px**, so this is a rounded rectangle, not a capsule. The drawn pill
-  uses the same radius so its rim lines up with the blur.
+- **The window is still the pill.** It is resized and re-centred every frame as the spring moves, and the
+  backdrop's clip is reshaped in the same step, so nothing outside the pill draws.
+- **The window region only shapes clicks.** `SetWindowRgn` makes the transparent corners outside the capsule
+  click-through. It clips drawing too, without anti-aliasing, so its corner is a pixel tighter than the drawn one
+  and falls just outside the compositor's smooth edge.
 - **The resize must not happen inside `render`.** `SWP_ASYNCWINDOWPOS` only defers across threads; here it is
   synchronous, so `WM_SIZE` reaches GPUI mid-draw, where its resize callback can't update the window and GPUI
   never learns the new size. The move runs in a foreground task (what GPUI's own `Window::resize` does). The
@@ -125,17 +134,16 @@ Consequences and the GPUI details that had to be got right:
   (39 px, taller than the idle pill) and adds a caption once the titlebar isn't "transparent". With
   `titlebar: None`, GPUI instead insets the client area by an invisible 8 px resize frame. So: pass
   `appears_transparent: false` and replace the style with a bare `WS_POPUP` right after creation.
-- Because the window is the pill, nothing around it needs to be click-through any more, and `SetWindowRgn` is
-  gone.
 
 `scripts/check-glass.ps1` proves the blur rather than eyeballing it. It puts 6 px black/white stripes behind
-the pill and compares stripe contrast through the pill with the contrast beside it, in three modes:
+the pill and compares stripe contrast through the pill with the contrast beside it, in four modes:
 
 | `TOPSY_GLASS` | What it is | Contrast kept |
 |---|---|---|
 | `clear` | transparent pill, no blur | 1.00 (control: proves the measurement) |
 | `tint` | the same colour as a plain fill, no blur | 0.45 (what the dark fill alone does) |
-| *(default)* | acrylic | **0.02** (4% of what the tint leaves) |
+| *(default)* | compositor backdrop, capsule-clipped | **0.00** (under 1% of what the tint leaves) |
+| `acrylic` | window-wide acrylic, the fallback | 0.02 (4%) |
 
 The `tint` control matters: the fill is ~55% opaque, so it cuts stripe contrast by itself, and without the
 control that would look like blur. A first attempt used `DwmEnableBlurBehindWindow`, which does honour an
@@ -162,8 +170,8 @@ These drive the real desktop, so they move your cursor and/or show a window for 
   `HKCU\Control Panel\NotifyIconSettings`; that flag and the Run value are restored when it finishes.
 - `check-overlay.ps1` — only the pill is hit-testable, and launching doesn't change the foreground window.
   Run it on a release build (see above).
-- `check-glass.ps1` — the blur proof described under [Glass](#glass). Shows a stripe window at the top of the
-  screen for about 30 s.
+- `check-glass.ps1` — the blur proof described under [Glass](#glass). Shows a stripe window (`stripes.ps1`)
+  at the top of the screen for about 40 s.
 - `trace-width.ps1` / `shot.ps1` — sample or screenshot the pill to look at the animation as composited
   (`trace-width.ps1` needs `TOPSY_GLASS=solid`).
 - `measure-idle.ps1` / `count-renders.ps1` — idle footprint and re-render count.
@@ -212,9 +220,9 @@ worth a profile before building on it, because an always-on app should be closer
   and the tray folds itself away.
 - Multi-monitor and non-100% DPI are handled in code (scale factor, the pill anchors to the monitor it opens on)
   but only tested on one 100% display.
-- Glass: the tint and rim are untuned, and only tried over a stripe pattern and a dark desktop. Not verified:
-  Windows 10 (no `DWMWCP_ROUND`, so square corners), behaviour with "Transparency effects" turned off, and
-  light backdrops. The acrylic call is undocumented API and could change.
+- Glass: the tint and rim are untuned, and only tried over a stripe pattern and a dark desktop. The host
+  backdrop is plain blur, without acrylic's luminosity layer and noise. Not verified: Windows 10 (falls back to
+  acrylic with square corners), behaviour with "Transparency effects" turned off, and light backdrops.
 - Resizing a window every frame is not profiled, and the window trails the spring by a frame. No tearing showed
   in sampled frames, but it was not measured at speed.
 - The shelf shows an extension badge, not the file's own icon or a thumbnail.

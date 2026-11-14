@@ -29,37 +29,17 @@ public static class G {
   [DllImport("user32.dll")] public static extern uint GetDpiForSystem();
   [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT p);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
-  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindow(string cls, string title);
-  [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h, uint msg, IntPtr w, IntPtr l);
+  [DllImport("user32.dll")] public static extern int GetSystemMetrics(int i);
 }
 "@
 [void][G]::SetProcessDPIAware()
 $scale = [G]::GetDpiForSystem() / 96.0
-$screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-$cx = [int]($screen.X + $screen.Width / 2)
+$cx = [int]([G]::GetSystemMetrics(0) / 2)   # SM_CXSCREEN; the primary display starts at (0,0)
 $shots = Join-Path (Split-Path $PSScriptRoot) 'shots'
 New-Item -ItemType Directory $shots -Force | Out-Null
 
-# The stripe backdrop, in a runspace of its own so this script can keep measuring.
-$bd = [powershell]::Create()
-[void]$bd.AddScript({
-    param($cx, $top)
-    Add-Type -AssemblyName System.Windows.Forms, System.Drawing
-    $f = New-Object System.Windows.Forms.Form
-    $f.Text = 'topsy-glass-backdrop'
-    $f.FormBorderStyle = 'None'; $f.StartPosition = 'Manual'; $f.ShowInTaskbar = $false
-    # Safety net: never leave a stripe window on someone's screen.
-    $t = New-Object System.Windows.Forms.Timer; $t.Interval = 60000; $t.Add_Tick({ $f.Close() }); $t.Start()
-    $f.Location = New-Object System.Drawing.Point(($cx - 400), $top)
-    $f.Size = New-Object System.Drawing.Size(800, 220)
-    $f.BackColor = [System.Drawing.Color]::Black
-    $f.Add_Paint({
-        param($s, $e)
-        for ($x = 0; $x -lt 800; $x += 12) { $e.Graphics.FillRectangle([System.Drawing.Brushes]::White, $x, 0, 6, 220) }
-    })
-    [void]$f.ShowDialog()
-}).AddArgument($cx).AddArgument($screen.Y)
-[void]$bd.BeginInvoke()
+# The stripe backdrop, a separate process (like the other fixtures) so it pumps its own messages.
+$bd = Start-Process powershell -ArgumentList @('-NoProfile', '-STA', '-File', "$PSScriptRoot\stripes.ps1", $cx, 0) -PassThru
 
 function Amplitude($left, $top, $width, $height) {
     $bmp = New-Object System.Drawing.Bitmap $width, $height
@@ -112,11 +92,11 @@ function Measure-Mode($mode) {
         # Screenshot for eyeballing.
         $shot = New-Object System.Drawing.Bitmap 520, 80
         $sg = [System.Drawing.Graphics]::FromImage($shot)
-        $sg.CopyFromScreen($cx - 260, $screen.Y, 0, 0, $shot.Size); $sg.Dispose()
+        $sg.CopyFromScreen($cx - 260, 0, 0, 0, $shot.Size); $sg.Dispose()
         $shot.Save((Join-Path $shots "glass-$mode.png")); $shot.Dispose()
 
         $ratio = $inside / $beside
-        Write-Host ("mode={0,-5}  stripe amplitude inside pill={1,3:N0}  beside pill={2,3:N0}  ratio={3:N2}" -f $mode, $inside, $beside, $ratio)
+        Write-Host ("mode={0,-7}  stripe amplitude inside pill={1,3:N0}  beside pill={2,3:N0}  ratio={3:N2}" -f $mode, $inside, $beside, $ratio)
         $ratio
     } finally {
         Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
@@ -131,21 +111,19 @@ try {
     $clear = Measure-Mode 'clear' | Select-Object -Last 1
     $tint = Measure-Mode 'tint' | Select-Object -Last 1
     $blur = Measure-Mode 'blur' | Select-Object -Last 1
-    "tint-only ratio {0:N2}; blurred ratio {1:N2} = {2:N0}% of it (limit {3:P0})" -f $tint, $blur, (100 * $blur / $tint), $MaxBlurShare
+    $acrylic = Measure-Mode 'acrylic' | Select-Object -Last 1
+    "tint-only ratio {0:N2}; blurred ratio {1:N2} = {2:N0}% of it, acrylic fallback {3:N2} (limit {4:P0})" -f $tint, $blur, (100 * $blur / $tint), $acrylic, $MaxBlurShare
 
     if ($clear -lt 0.8) {
         "FAIL: control (clear) lost stripe contrast ($clear); the measurement is not trustworthy"; $code = 1
-    } elseif ($blur -gt $tint * $MaxBlurShare) {
-        "FAIL: the blurred pill keeps too much of the stripe contrast the tint alone leaves: no (strong enough) blur"; $code = 1
+    } elseif ($blur -gt $tint * $MaxBlurShare -or $acrylic -gt $tint * $MaxBlurShare) {
+        "FAIL: a blurred pill keeps too much of the stripe contrast the tint alone leaves: no (strong enough) blur"; $code = 1
     } else {
         "PASS (blurred)"
     }
 } catch {
     "FAIL: $_"; $code = 1
 } finally {
-    $h = [G]::FindWindow($null, 'topsy-glass-backdrop')
-    if ($h -ne [IntPtr]::Zero) { [void][G]::PostMessage($h, 0x10, [IntPtr]::Zero, [IntPtr]::Zero) }   # WM_CLOSE
-    Start-Sleep -Milliseconds 300
+    Stop-Process -Id $bd.Id -Force -ErrorAction SilentlyContinue
 }
-# No $bd.Dispose(): it blocks until the backdrop runspace's pipeline ends. Exiting the process cleans up.
 [Environment]::Exit($code)
