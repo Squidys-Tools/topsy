@@ -3,7 +3,9 @@
 use std::path::Path;
 
 use windows::Win32::System::Com::COINIT_APARTMENTTHREADED;
-use windows::Win32::UI::Shell::ShellExecuteW;
+use windows::Win32::UI::Shell::{
+    ILCreateFromPathW, ILFree, SHOpenFolderAndSelectItems, ShellExecuteW,
+};
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 use windows::core::{PCWSTR, w};
 
@@ -30,4 +32,19 @@ pub fn open_path(path: &Path) -> bool {
     });
     // ShellExecute reports success as a value above 32.
     result.0 as usize > 32
+}
+
+/// Open the folder holding `path` in Explorer with `path` selected, as "Show in folder" does
+/// elsewhere. Pumps messages like [`open_path`]: call it from a thread of its own.
+pub fn show_in_folder(path: &Path) -> bool {
+    let wide = wide(path);
+    with_com(COINIT_APARTMENTTHREADED, || unsafe {
+        let item = ILCreateFromPathW(PCWSTR(wide.as_ptr()));
+        if item.is_null() {
+            return false;
+        }
+        let shown = SHOpenFolderAndSelectItems(item, None, 0).is_ok();
+        ILFree(Some(item.cast_const()));
+        shown
+    })
 }
