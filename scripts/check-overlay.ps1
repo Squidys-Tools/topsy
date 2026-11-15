@@ -94,7 +94,7 @@ try {
     } else {
         Start-Sleep -Milliseconds 300
         Move-Cursor ($cx - 40 * $scale) 0; Start-Sleep -Milliseconds 30; Move-Cursor $cx 0
-        $shown = Wait-For { (Pid-At $cx $notchY) -eq $mine } 1000
+        $shown = Wait-For { (Pid-At $cx $notchY) -eq $mine } 2000
         "revealed over a fullscreen window: $shown"
         if ($shown) { $failures += 'the notch came down over a fullscreen window' }
         Move-Cursor $away[0] $away[1]
