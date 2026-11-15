@@ -30,6 +30,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::{PCWSTR, w};
 
 use crate::autostart;
+use crate::look;
 use crate::win32::wide;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -39,6 +40,8 @@ pub enum TrayEvent {
     /// "Show shelf" in the menu.
     Show,
     ClearShelf,
+    /// "Black notch" was switched; it is saved already.
+    Black(bool),
     Quit,
 }
 
@@ -53,6 +56,7 @@ const ID_SHOW: usize = 1;
 const ID_CLEAR: usize = 2;
 const ID_AUTOSTART: usize = 3;
 const ID_QUIT: usize = 4;
+const ID_BLACK: usize = 5;
 
 /// The hidden window on the tray thread; 0 until it exists.
 static WINDOW: AtomicIsize = AtomicIsize::new(0);
@@ -251,7 +255,13 @@ unsafe fn open_menu(hwnd: HWND, at: POINT) {
         };
         let _ = AppendMenuW(menu, MF_STRING, ID_SHOW, w!("&Show shelf"));
         let _ = AppendMenuW(menu, clear_flags, ID_CLEAR, PCWSTR(clear.as_ptr()));
+        let black_flags = if look::is_black() {
+            MF_STRING | MF_CHECKED
+        } else {
+            MF_STRING
+        };
         let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
+        let _ = AppendMenuW(menu, black_flags, ID_BLACK, w!("&Black notch"));
         let _ = AppendMenuW(
             menu,
             autostart_flags,
@@ -282,6 +292,7 @@ unsafe fn open_menu(hwnd: HWND, at: POINT) {
             ID_CLEAR => send(TrayEvent::ClearShelf),
             ID_QUIT => send(TrayEvent::Quit),
             ID_AUTOSTART => toggle_autostart(),
+            ID_BLACK => toggle_black(),
             _ => {}
         }
     }
@@ -297,6 +308,14 @@ fn toggle_autostart() {
     };
     if let Err(err) = result {
         eprintln!("topsy: could not change start-with-Windows: {err}");
+    }
+}
+
+fn toggle_black() {
+    let black = !look::is_black();
+    match look::set_black(black) {
+        Ok(()) => send(TrayEvent::Black(black)),
+        Err(err) => eprintln!("topsy: could not save the notch's look: {err}"),
     }
 }
 

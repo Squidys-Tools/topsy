@@ -1,11 +1,12 @@
 # End-to-end check of the tray icon, its menu and start-with-Windows on a live desktop:
 #   the icon is registered in the notification area -> left click toggles the shelf -> right click
 #   opens the menu -> "Start with Windows" writes and then removes the real HKCU Run value ->
-#   Show shelf / Clear shelf -> right-clicking the pill opens the same menu -> Quit exits the app
-#   and takes the icon out of the notification area -> without a tray (TOPSY_NO_TRAY) right-clicking
-#   the pill quits instead, as there is no other way out.
-# Moves the real cursor for ~40s. Briefly edits HKCU\...\Run\topsy (start with Windows) and the shell's
-# own "show this icon" flag for topsy under HKCU\Control Panel\NotifyIconSettings; both are restored.
+#   "Black notch" saves the look and turns it back -> Show shelf / Clear shelf -> right-clicking the
+#   notch opens the same menu -> Quit exits the app and takes the icon out of the notification area
+#   -> without a tray (TOPSY_NO_TRAY) right-clicking the notch quits instead, as there is no other way out.
+# Moves the real cursor for ~40s. Briefly edits HKCU\...\Run\topsy (start with Windows),
+# HKCU\Software\topsy\Look (the black notch) and the shell's own "show this icon" flag for topsy under
+# HKCU\Control Panel\NotifyIconSettings; all are restored.
 # Works with an auto-hidden taskbar: the cursor is parked on the screen edge to bring it up.
 # usage: e2e-tray.ps1 [-Exe target\release\topsy.exe]
 param([string]$Exe = "$PSScriptRoot\..\target\release\topsy.exe")
@@ -179,8 +180,14 @@ $IconMenu = { Icon-Click -Right }
 $hadRun = $null -ne (Run-Value)
 $savedRun = Run-Value
 Remove-ItemProperty -Path $RunKey -Name topsy -ErrorAction SilentlyContinue
+$LookKey = 'HKCU:\Software\topsy'
+function Look-Value { (Get-ItemProperty -Path $LookKey -Name Look -ErrorAction SilentlyContinue).Look }
+$savedLook = Look-Value
+Remove-ItemProperty -Path $LookKey -Name Look -ErrorAction SilentlyContinue
 
 $env:TOPSY_LOG = '1'
+# Keep the notch down at rest, so there is something to right-click.
+$env:TOPSY_IDLE = 'peek'
 $env:TOPSY_SEED = $files -join ';'
 $env:TOPSY_STATE = Join-Path $work 'shelf.state'
 $app = Start-Process $Exe -PassThru -RedirectStandardError $appLog
@@ -207,7 +214,7 @@ try {
 
     # 2. Left click toggles the shelf: open, then closed again.
     Icon-Click
-    if (-not (Wait-Log 'tray Toggle \(mode Idle\)' 3000)) { throw 'left-clicking the icon did nothing' }
+    if (-not (Wait-Log 'tray Toggle \(mode Peek\)' 3000)) { throw 'left-clicking the icon did nothing' }
     if (-not (Wait-Until { Island-Open } 3000)) { throw 'the shelf did not open from the icon' }
     Start-Sleep -Milliseconds 400
     & "$PSScriptRoot\shot.ps1" -Out (Join-Path $shots 'tray-1-opened.png')
@@ -224,6 +231,21 @@ try {
     Use-Menu $IconMenu 0x57 'autostart-off'         # W again
     if (-not (Wait-Until { $null -eq (Run-Value) } 3000)) { throw 'Start with Windows did not remove the Run value' }
 
+    # 3b. Black notch: saved, applied straight away, checked in the menu, and turned back.
+    Use-Menu $IconMenu 0x42 'black-on'              # B
+    if (-not (Wait-Until { (Look-Value) -eq 'black' } 3000)) { throw 'Black notch did not save the look' }
+    if (-not (Wait-Log 'tray Black\(true\)' 3000)) { throw 'Black notch did not reach the island' }
+    Use-Menu $IconMenu 0 'black-checked'            # look at it (checked), then Escape
+    Icon-Click
+    if (-not (Wait-Until { Island-Open } 3000)) { throw 'the shelf did not open from the icon' }
+    Start-Sleep -Milliseconds 500
+    & "$PSScriptRoot\shot.ps1" -Out (Join-Path $shots 'tray-black.png')
+    Icon-Click
+    if (-not (Wait-Until { -not (Island-Open) } 3000)) { throw 'the shelf did not close from the icon' }
+    Use-Menu $IconMenu 0x42 'black-off'             # B again
+    if (-not (Wait-Until { $null -eq (Look-Value) } 3000)) { throw 'Black notch did not turn back to glass' }
+    if (-not (Wait-Log 'tray Black\(false\)' 3000)) { throw 'turning Black notch off did not reach the island' }
+
     # 4. Show shelf opens it (a closed island), Clear shelf empties it.
     Use-Menu $IconMenu 0x53 'show'                  # S
     if (-not (Wait-Log 'tray Show' 3000)) { throw 'Show shelf did nothing' }
@@ -234,10 +256,10 @@ try {
     Use-Menu $IconMenu 0 'empty'                    # Clear is greyed out now; look, then Escape
     if ((Log-Count 'tray ClearShelf') -ne 1) { throw 'dismissing the menu must not clear anything' }
 
-    # 5. Right-clicking the pill itself opens the same menu.
-    if (Island-Open) { Icon-Click; [void](Wait-Until { -not (Island-Open) } 3000) }   # fold it so the pill is what is on screen
+    # 5. Right-clicking the notch itself opens the same menu.
+    if (Island-Open) { Icon-Click; [void](Wait-Until { -not (Island-Open) } 3000) }   # fold it so the peek is what is on screen
     Move-Cursor ($screen.Width / 2) 300; Start-Sleep -Milliseconds 400
-    Use-Menu { $r = Island-Rect; Click (($r.Left + $r.Right) / 2) (($r.Top + $r.Bottom) / 2) -Right } 0 'pill'
+    Use-Menu { $r = Island-Rect; Click (($r.Left + $r.Right) / 2) (($r.Top + $r.Bottom) / 2) -Right } 0 'notch'
 
     # 6. Quit exits the app and takes the icon out of the notification area.
     [void](Reveal-Taskbar)
@@ -251,7 +273,7 @@ try {
     Shot-Region $ir (Join-Path $shots 'tray-icon-after-quit.png')
     if ($left -gt 3) { throw "the icon is still in the notification area after Quit ($left blue pixels)" }
 
-    # 7. With no tray there is no menu, so right-clicking the pill quits: the only way out.
+    # 7. With no tray there is no menu, so right-clicking the notch quits: the only way out.
     $env:TOPSY_NO_TRAY = '1'
     $app = Start-Process $Exe -PassThru -RedirectStandardError (Join-Path $work 'notray.log')
     [void]$app.Handle
@@ -261,7 +283,7 @@ try {
     if ([Native]::WindowOf($app.Id, 'topsy-tray', $false) -ne [IntPtr]::Zero) { throw 'TOPSY_NO_TRAY still made a tray window' }
     $r = Island-Rect
     Click (($r.Left + $r.Right) / 2) (($r.Top + $r.Bottom) / 2) -Right
-    if (-not (Wait-Until { $app.HasExited } 4000)) { throw 'right-clicking the pill of a tray-less app did not quit it' }
+    if (-not (Wait-Until { $app.HasExited } 4000)) { throw 'right-clicking the notch of a tray-less app did not quit it' }
     if ($null -ne (Run-Value)) { throw 'a tray-less run must not touch start-with-Windows' }
 } catch {
     $failed = $_
@@ -273,8 +295,10 @@ try {
     if ($promoteKey) { if ($null -ne $hadPromoted) { Set-ItemProperty -Path $promoteKey -Name IsPromoted -Value $hadPromoted -Type DWord } else { Remove-ItemProperty -Path $promoteKey -Name IsPromoted -ErrorAction SilentlyContinue } }
     Move-Cursor ($screen.Width / 2) ($screen.Height / 2)
     if ($hadRun) { Set-ItemProperty -Path $RunKey -Name topsy -Value $savedRun } else { Remove-ItemProperty -Path $RunKey -Name topsy -ErrorAction SilentlyContinue }
+    if ($null -ne $savedLook) { Set-ItemProperty -Path $LookKey -Name Look -Value $savedLook } else { Remove-ItemProperty -Path $LookKey -Name Look -ErrorAction SilentlyContinue }
 }
 "--- app log (render lines omitted)"; if (Test-Path $appLog) { Get-Content $appLog | Where-Object { $_ -notmatch 'topsy: render$' } }
 "--- Run value now: " + $(if ($null -eq (Run-Value)) { '(absent)' } else { Run-Value })
+"--- Look value now: " + $(if ($null -eq (Look-Value)) { '(absent)' } else { Look-Value })
 if ($failed) { "FAIL: $($failed.Exception.Message)"; exit 1 }
 "PASS"

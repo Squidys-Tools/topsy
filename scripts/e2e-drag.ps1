@@ -83,7 +83,7 @@ try {
 
     # Carry the drag up to the pill in steps so DragOver fires along the way.
     $tx = $screen.X + $screen.Width / 2
-    $ty = $screen.Y + (6 + 59) * $scale
+    $ty = $screen.Y + 59 * $scale
 
     # Safety: never carry a drag to the top of the screen unless the island is really
     # there, or the drop lands on whatever app is underneath. The island's window is the

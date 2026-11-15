@@ -1,18 +1,19 @@
-# Does the pill really blur what is behind it?
+# Does the notch really blur what is behind it?
 #
-# Puts a hard black/white stripe pattern (6px stripes) behind the idle pill, then compares
-# the stripe amplitude seen *through* the pill with the amplitude of the same stripes
-# beside it. A blur flattens fine stripes; a tint or a transparent pill does not.
-# Runs the pill three ways against the same backdrop:
+# Puts a hard black/white stripe pattern (6px stripes) behind the open tray, then compares
+# the stripe amplitude seen *through* its glass with the amplitude of the same stripes
+# beside it. A blur flattens fine stripes; a tint or a transparent notch does not.
+# Runs the tray four ways against the same backdrop:
 #
-#   TOPSY_GLASS=clear  control: transparent pill, no blur   -> ratio ~1, proves the measurement
-#   TOPSY_GLASS=tint   control: the pill's fill, no blur    -> ratio set by the fill's opacity alone
-#   (default) blur     the real thing                       -> must beat the tint control
+#   TOPSY_GLASS=clear    control: transparent, no blur   -> ratio ~1, proves the measurement
+#   TOPSY_GLASS=tint     control: the fill, no blur      -> ratio set by the fill's opacity alone
+#   TOPSY_GLASS=blur     the compositor glass            -> must beat the tint control
+#   TOPSY_GLASS=acrylic  the fallback                    -> must beat the tint control too
 #
 # The tint control is what makes the verdict about the blur and not about the dark fill, which
 # would cut stripe contrast by itself.
 #
-# Shows a stripe window at the top of the screen for about 30 seconds.
+# Shows a stripe window at the top of the screen for about 40 seconds.
 # usage: check-glass.ps1 [-Exe target\debug\topsy.exe] [-MaxBlurShare 0.5]
 param(
     [string]$Exe = "$PSScriptRoot\..\target\debug\topsy.exe",
@@ -60,6 +61,9 @@ function Amplitude($left, $top, $width, $height) {
 # Run the pill in one glass mode and return inside/beside stripe amplitude.
 function Measure-Mode($mode) {
     $env:TOPSY_GLASS = $mode
+    # The notch is solid black where it meets the screen edge; the glass is the open tray's
+    # lower part, so keep the tray open.
+    $env:TOPSY_IDLE = 'tray'
     $env:TOPSY_STATE = Join-Path $env:TEMP 'topsy-glass-state.txt'
     $app = Start-Process $Exe -PassThru
     try {
@@ -74,7 +78,7 @@ function Measure-Mode($mode) {
         if ($owner -ne $app.Id) { throw "the pill never appeared (mode $mode)" }
         Start-Sleep -Milliseconds 1200   # first frames, blur settle
 
-        $rowTop = [int]((6 + 12) * $scale); $rows = [int](10 * $scale); $cols = [int](45 * $scale)
+        $rowTop = [int](100 * $scale); $rows = [int](10 * $scale); $cols = [int](40 * $scale)
         # Beside the pill, on the same stripes: the reference. It sits well outside the pill's
         # whole window (220px either side of centre), so nothing the app does can touch it.
         # Wait until the backdrop has actually painted; without it there is nothing to compare,
@@ -86,11 +90,11 @@ function Measure-Mode($mode) {
             if ($beside -lt 200) { Start-Sleep -Milliseconds 250 }
         }
         if ($beside -lt 200) { throw "the stripe backdrop never became visible (amplitude $beside), so there is nothing to measure" }
-        # Inside the idle pill, left of the "topsy" label.
-        $inside = Amplitude ([int]($cx - 70 * $scale)) $rowTop $cols $rows
+        # Inside the tray's glass: its lowest part, where the black has faded the most.
+        $inside = Amplitude ([int]($cx - 185 * $scale)) $rowTop $cols $rows
 
         # Screenshot for eyeballing.
-        $shot = New-Object System.Drawing.Bitmap 520, 80
+        $shot = New-Object System.Drawing.Bitmap 520, 140
         $sg = [System.Drawing.Graphics]::FromImage($shot)
         $sg.CopyFromScreen($cx - 260, 0, 0, 0, $shot.Size); $sg.Dispose()
         $shot.Save((Join-Path $shots "glass-$mode.png")); $shot.Dispose()
@@ -101,13 +105,22 @@ function Measure-Mode($mode) {
     } finally {
         Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
         $app.WaitForExit(3000) | Out-Null
-        Remove-Item Env:TOPSY_GLASS, Env:\TOPSY_STATE -ErrorAction SilentlyContinue
+        Remove-Item Env:TOPSY_GLASS, Env:\TOPSY_IDLE, Env:\TOPSY_STATE -ErrorAction SilentlyContinue
     }
 }
 
 $code = 0
 try {
-    Start-Sleep -Milliseconds 1200
+    # The stripes must be up before the island: both are topmost, and the newer one covers.
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    do {
+        $pt = New-Object G+POINT; $pt.X = $cx + [int](300 * $scale); $pt.Y = [int](50 * $scale)
+        $owner = 0; [void][G]::GetWindowThreadProcessId([G]::WindowFromPoint($pt), [ref]$owner)
+        if ($owner -eq $bd.Id) { break }
+        Start-Sleep -Milliseconds 100
+    } while ($sw.ElapsedMilliseconds -lt 15000)
+    if ($owner -ne $bd.Id) { throw 'the stripe backdrop never came up' }
+    Start-Sleep -Milliseconds 300
     $clear = Measure-Mode 'clear' | Select-Object -Last 1
     $tint = Measure-Mode 'tint' | Select-Object -Last 1
     $blur = Measure-Mode 'blur' | Select-Object -Last 1

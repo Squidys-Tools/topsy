@@ -53,7 +53,8 @@ New-Item -ItemType Directory $shots -Force | Out-Null
 function Wait-Log($path, $pattern, $ms) {
     $sw = [Diagnostics.Stopwatch]::StartNew()
     while ($sw.ElapsedMilliseconds -lt $ms) {
-        if ((Test-Path $path) -and (Select-String -Path $path -Pattern $pattern -Quiet)) { return $true }
+        # A fixture may be writing the log this instant; a locked read is just "not yet".
+        try { if ((Test-Path $path) -and (Select-String -Path $path -Pattern $pattern -Quiet)) { return $true } } catch {}
         Start-Sleep -Milliseconds 25
     }
     return $false
@@ -87,10 +88,11 @@ function Ensure-Open {
         Start-Sleep -Milliseconds 500
     }
 }
-# Where things are inside the open tray, from its layout: 10px padding, 16px header, 6px gap,
-# then a row of 72x70 chips 8px apart.
-function Chip-Center($i) { $r = Pill-Rect; @(($r.Left + (10 + 80 * $i + 36) * $scale), ($r.Top + 67 * $scale)) }
-function Cross-Center($i) { $r = Pill-Rect; @(($r.Left + (10 + 80 * $i + 62) * $scale), ($r.Top + 42 * $scale)) }
+# Where things are inside the open tray, from its layout: the window leaves 16px either side for
+# the notch's ears, then 10px padding, 16px header, 6px gap, and a row of 72x70 chips 8px apart.
+$ear = 16   # notch::EAR
+function Chip-Center($i) { $r = Pill-Rect; @(($r.Left + ($ear + 10 + 80 * $i + 36) * $scale), ($r.Top + 67 * $scale)) }
+function Cross-Center($i) { $r = Pill-Rect; @(($r.Left + ($ear + 10 + 80 * $i + 62) * $scale), ($r.Top + 42 * $scale)) }
 function Assert-Ours($x, $y, $what) {
     $pt = New-Object Native+POINT; $pt.X = [int]$x; $pt.Y = [int]$y
     $ownerPid = 0; [void][Native]::GetWindowThreadProcessId([Native]::WindowFromPoint($pt), [ref]$ownerPid)
@@ -116,6 +118,8 @@ function Drag-Chip($i, [switch]$Escape) {
 
 $tgtX = 300; $tgtY = 500
 $env:TOPSY_LOG = '1'
+# Keep the notch down at rest, so there is something to click.
+$env:TOPSY_IDLE = 'peek'
 $env:TOPSY_SEED = ($files + $dir) -join ';'
 $env:TOPSY_STATE = Join-Path $work 'shelf.state'
 $app = Start-Process $Exe -PassThru -RedirectStandardError $appLog
@@ -170,7 +174,7 @@ try {
 
     # 6. Clear empties the shelf.
     Ensure-Open
-    $r = Pill-Rect; $cx = $r.Left + 372 * $scale; $cy = $r.Top + 18 * $scale
+    $r = Pill-Rect; $cx = $r.Left + ($ear + 372) * $scale; $cy = $r.Top + 18 * $scale
     Assert-Ours $cx $cy 'the Clear button'
     Click $cx $cy
     if (-not (Wait-Log $appLog 'shelf now 0' 2000)) { throw 'Clear did not empty the shelf' }

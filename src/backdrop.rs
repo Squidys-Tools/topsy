@@ -81,7 +81,10 @@ impl Backdrop {
 pub struct Shape(CompositionRoundedRectangleGeometry);
 
 impl Shape {
-    pub fn set(&self, width: f32, height: f32, radius: f32) {
+    /// A rounded rectangle at `(x, y)`. Parts outside the window are cut off with it, which is
+    /// how the notch gets a square top: its rounded top corners sit above the window.
+    pub fn set(&self, x: f32, y: f32, width: f32, height: f32, radius: f32) {
+        let _ = self.0.SetOffset(Vector2 { X: x, Y: y });
         let _ = self.0.SetSize(Vector2 {
             X: width,
             Y: height,

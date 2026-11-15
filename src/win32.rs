@@ -12,8 +12,8 @@ use windows::Win32::Graphics::Dwm::{
     DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND, DwmSetWindowAttribute,
 };
 use windows::Win32::Graphics::Gdi::{
-    CreateRoundRectRgn, GetMonitorInfoW, MONITOR_DEFAULTTOPRIMARY, MONITORINFO, MonitorFromWindow,
-    PtInRect, SetWindowRgn,
+    CombineRgn, CreateRectRgn, CreateRoundRectRgn, DeleteObject, GetMonitorInfoW,
+    MONITOR_DEFAULTTOPRIMARY, MONITORINFO, MonitorFromWindow, PtInRect, RGN_OR, SetWindowRgn,
 };
 use windows::Win32::System::Com::{
     COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE, CoInitializeEx, CoTaskMemFree,
@@ -40,6 +40,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows::core::{Interface, PCWSTR, Ref, implement, s, w};
 
+use crate::edge::{EdgeWatch, EdgeZone};
 use crate::jiggle::{JiggleConfig, JiggleDetector};
 
 pub fn hwnd_from_raw(handle: raw_window_handle::RawWindowHandle) -> Option<HWND> {
@@ -96,6 +97,7 @@ struct CompositionAttribData {
 }
 
 const WCA_ACCENT_POLICY: u32 = 0x13;
+const ACCENT_DISABLED: u32 = 0;
 const ACCENT_ENABLE_ACRYLICBLURBEHIND: u32 = 4;
 
 /// Turn on the system acrylic blur behind the window, tinted with `tint` (0xRRGGBBAA).
@@ -107,7 +109,7 @@ const ACCENT_ENABLE_ACRYLICBLURBEHIND: u32 = 4;
 /// The blur fills the window's whole rectangle and, on current Windows 11, ignores
 /// `SetWindowRgn`, so the window has to *be* the shape that should be blurred
 /// (see `Island::sync_window`) and DWM rounds its corners ([`round_corners`]).
-pub fn enable_acrylic(hwnd: HWND, tint: u32) {
+pub fn set_acrylic(hwnd: HWND, tint: Option<u32>) {
     type SetWindowCompositionAttribute =
         unsafe extern "system" fn(HWND, *mut CompositionAttribData) -> i32;
     unsafe {
@@ -118,9 +120,13 @@ pub fn enable_acrylic(hwnd: HWND, tint: u32) {
             return;
         };
         let set_attr: SetWindowCompositionAttribute = std::mem::transmute(proc);
-        let [r, g, b, a] = tint.to_be_bytes();
+        let [r, g, b, a] = tint.unwrap_or(0).to_be_bytes();
         let mut accent = AccentPolicy {
-            state: ACCENT_ENABLE_ACRYLICBLURBEHIND,
+            state: if tint.is_some() {
+                ACCENT_ENABLE_ACRYLICBLURBEHIND
+            } else {
+                ACCENT_DISABLED
+            },
             flags: 0,
             gradient_color: u32::from_le_bytes([r, g, b, a]),
             animation_id: 0,
@@ -171,24 +177,73 @@ pub fn monitor_top_center(hwnd: HWND) -> Option<(i32, i32)> {
 /// defers across threads), so `WM_SIZE` would reach GPUI mid-draw, where its resize
 /// callback cannot update the window, and GPUI would never learn the new size. Run it
 /// from a foreground task instead, as GPUI's own `Window::resize` does.
-pub fn move_window(hwnd: HWND, x: i32, y: i32, w: i32, h: i32) {
+///
+/// `raise` also puts it above every other topmost window: the one given foreground back at
+/// launch, or any that came along while the notch was hidden, would otherwise cover it.
+pub fn move_window(hwnd: HWND, x: i32, y: i32, w: i32, h: i32, raise: bool) {
+    let (after, order) = if raise {
+        (Some(HWND_TOPMOST), Default::default())
+    } else {
+        (None, SWP_NOZORDER)
+    };
     unsafe {
-        let _ = SetWindowPos(hwnd, None, x, y, w, h, SWP_NOACTIVATE | SWP_NOZORDER);
+        let _ = SetWindowPos(hwnd, after, x, y, w, h, SWP_NOACTIVATE | order);
     }
 }
 
-/// Limit the window's hit-testing to a rounded rectangle of `w`×`h` with corner `radius`
-/// (physical pixels), so the transparent corners outside a capsule don't catch clicks.
+/// What of the window may draw and take clicks, in physical pixels of the window.
+pub enum Clip {
+    /// Nothing: the notch is hidden.
+    Nothing,
+    /// The whole window (the acrylic fallback, which DWM rounds itself).
+    Everything,
+    /// A notch body with square top, rounded bottom and an ear strip along the top edge.
+    Notch {
+        width: i32,
+        height: i32,
+        ear_slot: i32,
+        ear: i32,
+        radius: i32,
+    },
+}
+
+/// Shape the window with a region, so the transparent corners outside the notch are
+/// click-through.
 ///
-/// The region clips drawing too, without anti-aliasing, so its corner is a pixel tighter than
-/// the drawn one: it then falls just outside the compositor's smooth edge instead of cutting it.
-pub fn set_round_region(hwnd: HWND, w: i32, h: i32, radius: i32) {
-    let radius = (radius - 1).max(0);
+/// The region clips drawing too, without anti-aliasing, so its corners are a pixel looser than
+/// the drawn ones: it then falls just outside the compositor's smooth edge instead of cutting it.
+/// The ears get their whole strip: what lies outside their curve is a few pixels.
+pub fn set_clip(hwnd: HWND, clip: Clip) {
     unsafe {
-        // The ellipse is given by its diameter, and the right/bottom edges are exclusive.
-        let region = CreateRoundRectRgn(0, 0, w + 1, h + 1, 2 * radius, 2 * radius);
+        let region = match clip {
+            Clip::Everything => None,
+            Clip::Nothing => Some(CreateRectRgn(0, 0, 0, 0)),
+            Clip::Notch {
+                width,
+                height,
+                ear_slot,
+                ear,
+                radius,
+            } => {
+                let r = (radius - 1).max(0);
+                // Starting the round rectangle above the window squares off its top corners.
+                // The ellipse is given by its diameter, and the right/bottom edges are exclusive.
+                let body = CreateRoundRectRgn(
+                    ear_slot,
+                    -2 * r,
+                    width - ear_slot + 1,
+                    height + 1,
+                    2 * r,
+                    2 * r,
+                );
+                let ears = CreateRectRgn(ear_slot - ear, 0, width - ear_slot + ear, ear);
+                CombineRgn(Some(body), Some(body), Some(ears), RGN_OR);
+                let _ = DeleteObject(ears.into());
+                Some(body)
+            }
+        };
         // The system owns the region from here on.
-        SetWindowRgn(hwnd, Some(region), false);
+        SetWindowRgn(hwnd, region, false);
     }
 }
 
@@ -458,10 +513,16 @@ pub fn restore_foreground(previous: HWND) {
 pub enum HookEvent {
     Jiggle,
     ButtonUp,
+    /// The cursor arrived at (or left) the top edge above the notch; `pressed` while dragging.
+    Edge {
+        at_edge: bool,
+        pressed: bool,
+    },
 }
 
 struct HookState {
     detector: JiggleDetector,
+    edge: Option<EdgeWatch>,
     tx: async_channel::Sender<HookEvent>,
 }
 
@@ -481,8 +542,18 @@ unsafe extern "system" fn mouse_proc(code: i32, wparam: WPARAM, lparam: LPARAM) 
                     state.detector.button_up();
                     let _ = state.tx.try_send(HookEvent::ButtonUp);
                 }
-                WM_MOUSEMOVE if state.detector.moved(now, info.pt.x) => {
-                    let _ = state.tx.try_send(HookEvent::Jiggle);
+                WM_MOUSEMOVE => {
+                    if let Some(at_edge) = state
+                        .edge
+                        .as_mut()
+                        .and_then(|e| e.moved(info.pt.x, info.pt.y))
+                    {
+                        let pressed = state.detector.pressed();
+                        let _ = state.tx.try_send(HookEvent::Edge { at_edge, pressed });
+                    }
+                    if state.detector.moved(now, info.pt.x) {
+                        let _ = state.tx.try_send(HookEvent::Jiggle);
+                    }
                 }
                 _ => {}
             }
@@ -493,13 +564,17 @@ unsafe extern "system" fn mouse_proc(code: i32, wparam: WPARAM, lparam: LPARAM) 
 
 /// Install the low-level mouse hook on a dedicated thread (hooks need a message
 /// loop on the thread that installed them). Safe to call once; later calls are no-ops.
-pub fn spawn_mouse_hook(config: JiggleConfig) -> async_channel::Receiver<HookEvent> {
+pub fn spawn_mouse_hook(
+    config: JiggleConfig,
+    edge: Option<EdgeZone>,
+) -> async_channel::Receiver<HookEvent> {
     let (tx, rx) = async_channel::bounded(8);
     if STARTED.set(()).is_err() {
         return rx;
     }
     *HOOK_STATE.lock().unwrap() = Some(HookState {
         detector: JiggleDetector::new(config),
+        edge: edge.map(EdgeWatch::new),
         tx,
     });
     std::thread::Builder::new()

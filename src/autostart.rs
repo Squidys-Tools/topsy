@@ -15,14 +15,20 @@ use crate::win32::wide;
 const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 const VALUE_NAME: &str = "topsy";
 
-/// A string value under `HKEY_CURRENT_USER`. Everything the app does goes through
-/// [`SYSTEM`]; the tests use a scratch key so they never touch the real startup list.
-pub struct RunEntry<'a> {
+/// A string value under `HKEY_CURRENT_USER`. Startup goes through [`SYSTEM`]; the tests use a
+/// scratch key so they never touch the real startup list.
+pub struct RegString<'a> {
     key: &'a str,
     name: &'a str,
 }
 
-pub const SYSTEM: RunEntry<'static> = RunEntry {
+impl<'a> RegString<'a> {
+    pub const fn new(key: &'a str, name: &'a str) -> Self {
+        Self { key, name }
+    }
+}
+
+pub const SYSTEM: RegString<'static> = RegString {
     key: RUN_KEY,
     name: VALUE_NAME,
 };
@@ -82,7 +88,7 @@ impl Drop for Key {
     }
 }
 
-impl RunEntry<'_> {
+impl RegString<'_> {
     /// The stored command line, if the value exists.
     pub fn value(&self) -> Option<String> {
         let key = Key::open(self.key, KEY_QUERY_VALUE).ok()?;
@@ -188,8 +194,8 @@ mod tests {
             Self(format!("Software\\topsy-test-{}-{tag}", std::process::id()))
         }
 
-        fn entry(&self) -> RunEntry<'_> {
-            RunEntry {
+        fn entry(&self) -> RegString<'_> {
+            RegString {
                 key: &self.0,
                 name: "value",
             }
