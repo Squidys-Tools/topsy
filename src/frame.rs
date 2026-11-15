@@ -28,8 +28,7 @@ const FLOAT_RADIUS: f32 = 16.0;
 pub const ACRYLIC_TINT: u32 = 0x0c101c8c;
 /// Droppy's recipe, measured from its screenshots: solid black for the top 62% of the notch,
 /// then fading to about 62% black at the bottom edge, so the backdrop's own colour shows
-/// through, darkened but not greyed. The floating tray, away from the edge, is the bottom's
-/// glass all over.
+/// through, darkened but not greyed. The floating tray is filled the same way.
 const BLACK_UNTIL: f32 = 0.62;
 const GLASS_FLOOR: u32 = 0x0000009f;
 /// A light rim along the bottom edge, fading out up the sides where the notch turns black.
@@ -281,24 +280,9 @@ impl Frame {
                 .child(content)
         };
 
-        if self.floating() {
-            let fill = match look {
-                Glass::Blur | Glass::Tint => rgba(GLASS_FLOOR).into(),
-                Glass::Solid => black.into(),
-                Glass::Acrylic | Glass::Clear => rgba(0x00000000).into(),
-            };
-            let body = body(fill)
-                .left_0()
-                .size_full()
-                .rounded(px(self.float_radius(notch.height)))
-                .when(look != Glass::Solid, |d| {
-                    d.border_1().border_color(rgba(RIM))
-                });
-            return [body.into_any_element(), div().into_any_element()];
-        }
-
-        // Black at the screen edge, giving way to glass near the bottom. The closed notch is
-        // black all the way down, like the real one.
+        // Black at the top, giving way to glass near the bottom: Droppy's dynamic glass, on the
+        // floating tray as on the notch. The closed notch is black all the way down, like the
+        // real one.
         let h = notch.height.max(1.0);
         let black_until = (h * BLACK_UNTIL).max(PEEK.1).min(h) / h;
         let edge_fill = |floor: u32| {
@@ -314,14 +298,23 @@ impl Frame {
             Glass::Solid => black.into(),
             Glass::Clear => rgba(0x00000000).into(),
         };
-        let ears = look.has_ears();
-        let radius = if ears { notch.radius } else { DWM_RADIUS };
-        let body = body(fill)
-            .left(px(notch.ear_slot))
-            .w(px(notch.body_width))
-            .h(viewport.height)
-            .rounded_bl(px(radius))
-            .rounded_br(px(radius));
+        let (body, radius) = if self.floating() {
+            let radius = self.float_radius(h);
+            (body(fill).left_0().size_full().rounded(px(radius)), radius)
+        } else {
+            let radius = if look.has_ears() {
+                notch.radius
+            } else {
+                DWM_RADIUS
+            };
+            let body = body(fill)
+                .left(px(notch.ear_slot))
+                .w(px(notch.body_width))
+                .h(viewport.height)
+                .rounded_bl(px(radius))
+                .rounded_br(px(radius));
+            (body, radius)
+        };
 
         // The ears, black like the edge they join, and the rim along the bottom. The ears are
         // softer than a circle, as Droppy's are: a cubic with its handles halfway in.

@@ -174,7 +174,7 @@ nothing on screen, nothing to click.
   always deliver.
 - **The floating tray.** Jiggling a drag anywhere opens the tray as a floating panel centred under the pointer, as
   Droppy's *Floating File Tray* does, so letting go there parks the files. It is the same window, moved: rounded
-  all round, no ears, and glass (or black) throughout rather than black at the edge, since it hangs from nothing.
+  all round, no ears, with the notch's dynamic glass (black at the top fading to glass) and its rim.
   It opens on the monitor under the pointer, at that monitor's scale, moved only as far as it takes to stay whole
   inside the work area (`src/model/float.rs`). It folds by the jiggle tray's rules (a release without a drop, a
   refused payload such as text, the timer after a drop), shrinking where it is, and the window then goes back to
