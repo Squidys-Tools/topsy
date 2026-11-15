@@ -4,6 +4,7 @@
 
 pub mod archive;
 pub mod edge;
+pub mod float;
 pub mod jiggle;
 pub mod media;
 pub mod notch;

@@ -7,7 +7,7 @@ use crate::{Island, Mode, now_playing};
 impl Island {
     /// The notch body's size for `mode`; the tray grows by Now Playing's row while it shows.
     pub(crate) fn size_for(&self, mode: Mode) -> (f32, f32) {
-        let (w, h) = mode.size();
+        let (w, h) = self.frame.size(mode);
         if mode == Mode::Tray && self.media.card().is_some() {
             (w, h + now_playing::ROW)
         } else {

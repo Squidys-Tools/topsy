@@ -89,15 +89,15 @@ try {
     Start-Sleep -Milliseconds 450
     & "$PSScriptRoot\shot.ps1" -Out (Join-Path $shots 'textdrag-1-open.png')
 
-    # Carry the drag onto the tray, as the file drag does.
-    $tx = $screen.X + $screen.Width / 2
-    $ty = $screen.Y + 70 * $scale
+    # The floating tray opened under the pointer; move about on it, as the file drag does.
+    $tx = $x + 20 * $scale
+    $ty = $py + 10 * $scale
     $pt = New-Object Native+POINT; $pt.X = [int]$tx; $pt.Y = [int]$ty
     $ownerPid = 0; [void][Native]::GetWindowThreadProcessId([Native]::WindowFromPoint($pt), [ref]$ownerPid)
     if ($ownerPid -ne $app.Id) { throw "the island is not under the drop point (that window belongs to pid $ownerPid); aborting drag" }
     $fx = $x; $fy = $py
-    for ($i = 1; $i -le 20; $i++) {
-        Move-Cursor ($fx + ($tx - $fx) * $i / 20) ($fy + ($ty - $fy) * $i / 20)
+    for ($i = 1; $i -le 5; $i++) {
+        Move-Cursor ($fx + ($tx - $fx) * $i / 5) ($fy + ($ty - $fy) * $i / 5)
         Start-Sleep -Milliseconds 15
     }
 

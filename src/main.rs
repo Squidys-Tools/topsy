@@ -8,6 +8,7 @@ mod autostart;
 mod backdrop;
 mod chip;
 mod config;
+mod frame;
 mod icon;
 mod look;
 mod media;
@@ -26,36 +27,18 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    ClickEvent, Context, ExternalPaths, FontWeight, MouseButton, MouseDownEvent, MouseMoveEvent,
-    ObjectFit, Pixels, Point, RenderImage, Window, canvas, div, hsla, img, linear_color_stop,
-    linear_gradient, point, prelude::*, px, rgb, rgba,
+    ClickEvent, Context, ExternalPaths, MouseButton, MouseDownEvent, Pixels, Point, RenderImage,
+    Window, div, prelude::*, rgb,
 };
 use windows::Win32::Foundation::HWND;
 use windows::Win32::System::Com::COINIT_MULTITHREADED;
 
+use crate::frame::{Frame, Glass, Mode, PEEK};
 use crate::model::media::NowPlaying;
-use crate::model::notch::Notch;
 use crate::model::shelf::{self, Shelf};
 use crate::model::spring::{Spring, SpringConfig};
 use crate::model::tray_cause::TrayCause;
-use crate::win32::{DragOutcome, DropEvent, HookEvent};
-
-/// The notch's body when it peeks down from the top edge, and when it holds the tray.
-const PEEK: (f32, f32) = (200.0, 32.0);
-const TRAY: (f32, f32) = (400.0, 118.0);
-
-/// DWM's fixed window corner, which clips the window-wide acrylic of [`Glass::Acrylic`].
-const DWM_RADIUS: f32 = 8.0;
-
-/// The acrylic fallback's own tint (0xRRGGBBAA).
-const ACRYLIC_TINT: u32 = 0x0c101c8c;
-/// Droppy's recipe, measured from its screenshots: solid black for the top 62% of the notch,
-/// then fading to about 62% black at the bottom edge, so the backdrop's own colour shows
-/// through, darkened but not greyed.
-const BLACK_UNTIL: f32 = 0.62;
-const GLASS_FLOOR: u32 = 0x0000009f;
-/// A light rim along the bottom edge, fading out up the sides where the notch turns black.
-const RIM: u32 = 0xffffff38;
+use crate::win32::{DropEvent, HookEvent};
 
 /// How long the cursor rests on the top edge before the notch comes down.
 const REVEAL_AFTER: Duration = Duration::from_millis(150);
@@ -75,51 +58,6 @@ fn log(message: &str) {
     }
 }
 
-/// How the notch is filled. `TOPSY_GLASS` can force one, for A/B comparison and for the
-/// automated blur check (`tint` and `clear` are its controls).
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Glass {
-    /// The compositor's blur of whatever is behind the notch, in its own shape ([`backdrop`]),
-    /// under Droppy's black-to-glass fill.
-    Blur,
-    /// Window-wide acrylic, which only takes DWM's fixed corner. The fallback where the
-    /// compositor glass can't start.
-    Acrylic,
-    /// The same fill with no blur behind it: the notch without its blur.
-    Tint,
-    /// Opaque black.
-    Solid,
-    /// Fully transparent, no blur.
-    Clear,
-}
-
-impl Glass {
-    /// The window-wide acrylic can't leave the ears' corners clear, so it goes without them.
-    fn has_ears(self) -> bool {
-        self != Glass::Acrylic
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Mode {
-    /// Folded up past the top edge: nothing drawn, nothing to click.
-    Hidden,
-    /// The notch, showing what is on the shelf.
-    Peek,
-    Tray,
-}
-
-impl Mode {
-    /// The notch body's size; hidden keeps the peek's width so it slides straight down.
-    fn size(self) -> (f32, f32) {
-        match self {
-            Mode::Hidden => (PEEK.0, 0.0),
-            Mode::Peek => PEEK,
-            Mode::Tray => TRAY,
-        }
-    }
-}
-
 struct Island {
     mode: Mode,
     /// What the island folds back to.
@@ -132,17 +70,7 @@ struct Island {
     shelf: Shelf,
     hwnd: Option<HWND>,
     scale: f32,
-    glass: Glass,
-    /// The "Black notch" setting: draw [`Glass::Solid`] whatever the glass is.
-    black: bool,
-    /// The compositor glass, reshaped with the window ([`Glass::Blur`] only).
-    backdrop: Option<backdrop::Backdrop>,
-    /// Where the notch hangs: horizontal centre and top edge of its monitor, in physical
-    /// screen pixels. Every resize keeps the window centred on this point.
-    anchor: Option<(i32, i32)>,
-    /// Size in physical pixels last requested from the OS, and whether it was hidden, to skip
-    /// redundant calls.
-    applied: Option<((i32, i32), bool)>,
+    frame: Frame,
     /// What the tray was opened for; decides which events fold it early.
     tray_cause: TrayCause,
     /// Bumped on every state change that schedules a collapse, so stale timers do nothing.
@@ -171,7 +99,6 @@ impl Island {
         backdrop: Option<backdrop::Backdrop>,
         persistence: state::Persistence,
     ) -> Self {
-        let anchor = hwnd.and_then(win32::monitor_top_center);
         let rest = config::get().rest;
         Self {
             mode: rest,
@@ -183,11 +110,7 @@ impl Island {
             shelf: persistence.shelf,
             hwnd,
             scale,
-            glass,
-            black,
-            backdrop,
-            anchor,
-            applied: None,
+            frame: Frame::new(hwnd, scale, glass, black, backdrop),
             tray_cause: TrayCause::Timed(Duration::ZERO),
             collapse_generation: 0,
             press: None,
@@ -364,14 +287,15 @@ impl Island {
         log(&format!("hook {event:?} (mode {:?})", self.mode));
         match event {
             HookEvent::Jiggle if self.fullscreen() => {}
-            HookEvent::Jiggle => self.open_tray(TrayCause::Drag, cx),
+            HookEvent::Jiggle => self.float_tray(cx),
             HookEvent::Edge { at_edge, pressed } => {
                 self.at_edge = at_edge;
-                if at_edge && self.mode == Mode::Hidden && !self.fullscreen() {
+                let away = self.mode == Mode::Hidden || self.frame.floating();
+                if at_edge && away && !self.fullscreen() {
                     if pressed {
                         // Something is being dragged up here: give it somewhere to land.
-                        self.open_tray(TrayCause::Drag, cx);
-                    } else {
+                        self.open_notch_tray(TrayCause::Drag, cx);
+                    } else if self.mode == Mode::Hidden {
                         self.schedule_reveal(cx);
                     }
                 }
@@ -455,71 +379,6 @@ impl Island {
             self.shelf_changed(cx);
         }
     }
-
-    /// What the notch is drawn with right now.
-    fn look(&self) -> Glass {
-        if self.black { Glass::Solid } else { self.glass }
-    }
-
-    /// Make the OS window exactly the notch (body and ears), hanging from the anchor.
-    ///
-    /// The window is resized every frame as the spring moves, and its region and the glass's
-    /// clip are reshaped with it. Hidden, it keeps a 1 px window (GPUI can't draw into an empty
-    /// one) whose region is empty, so nothing shows and nothing takes clicks.
-    ///
-    /// The resize runs in a foreground task rather than here: this is called from `render`,
-    /// and a resize mid-draw would reach GPUI's window handler where it cannot update the
-    /// window (see [`win32::move_window`]).
-    fn sync_window(&mut self, notch: Notch, cx: &mut Context<Self>) {
-        let (Some(hwnd), Some((center_x, top))) = (self.hwnd, self.anchor) else {
-            return;
-        };
-        let s = self.scale;
-        let px = |v: f32| (v * s).round() as i32;
-        let (w, h) = notch.window_size();
-        let size = (px(w).max(1), px(h).max(1));
-        let hidden = notch.is_hidden();
-        if self.applied == Some((size, hidden)) {
-            return;
-        }
-        let appearing = !hidden && self.applied.is_none_or(|(_, was_hidden)| was_hidden);
-        self.applied = Some((size, hidden));
-        let clip = if hidden {
-            win32::Clip::Nothing
-        } else if self.look() == Glass::Acrylic {
-            win32::Clip::Everything
-        } else {
-            win32::Clip::Notch {
-                width: size.0,
-                height: size.1,
-                ear_slot: px(notch.ear_slot),
-                ear: px(notch.ear),
-                radius: px(notch.radius),
-            }
-        };
-        let shape = self.backdrop.as_ref().map(backdrop::Backdrop::shape);
-        let r = notch.radius * s;
-        let glass = (
-            notch.ear_slot * s,
-            -r,
-            notch.body_width * s,
-            if hidden || self.look() != Glass::Blur {
-                0.0
-            } else {
-                size.1 as f32 + r
-            },
-            r,
-        );
-        cx.spawn(async move |_, _| {
-            let x = center_x - size.0 / 2;
-            win32::move_window(hwnd, x, top, size.0, size.1, appearing);
-            win32::set_clip(hwnd, clip);
-            if let Some(shape) = shape {
-                shape.set(glass.0, glass.1, glass.2, glass.3, glass.4);
-            }
-        })
-        .detach();
-    }
 }
 
 impl Render for Island {
@@ -536,37 +395,16 @@ impl Render for Island {
             window.request_animation_frame();
         }
 
-        let look = self.look();
-        let ears = look.has_ears();
-        self.sync_window(
-            Notch::new(self.width.value.max(1.0), self.height.value, ears),
-            cx,
-        );
+        if !moving && self.settle_float() {
+            window.request_animation_frame();
+        }
+        let (width, height) = (self.width.value, self.height.value);
+        self.frame.sync(width, height, window.scale_factor(), cx);
         // The window resizes asynchronously, a moment after this frame. Draw to the size it
         // really has, so the notch's edge always lines up with the window's (and the blur's).
         let viewport = window.viewport_size();
-        let notch = Notch::fitting(viewport.width.into(), viewport.height.into(), ears);
+        let notch = self.frame.outline(viewport);
         let show_tray = notch.body_width > 260.0 && notch.height > 70.0;
-
-        // Black at the screen edge, giving way to glass near the bottom. The closed notch is
-        // black all the way down, like the real one.
-        let black = rgba(0x000000ff);
-        let h = notch.height.max(1.0);
-        let black_until = (h * BLACK_UNTIL).max(PEEK.1).min(h) / h;
-        let edge_fill = |floor: u32| {
-            linear_gradient(
-                180.0,
-                linear_color_stop(black, black_until),
-                linear_color_stop(rgba(floor), 1.0),
-            )
-        };
-        let fill = match look {
-            Glass::Blur | Glass::Tint => edge_fill(GLASS_FLOOR),
-            Glass::Acrylic => edge_fill(0x00000000),
-            Glass::Solid => black.into(),
-            Glass::Clear => rgba(0x00000000).into(),
-        };
-        let radius = if ears { notch.radius } else { DWM_RADIUS };
 
         let content = if show_tray {
             self.tray_content(cx).into_any_element()
@@ -576,87 +414,13 @@ impl Render for Island {
             div().into_any_element()
         };
 
-        let body = div()
-            .absolute()
-            .left(px(notch.ear_slot))
-            .top_0()
-            .w(px(notch.body_width))
-            .h(viewport.height)
-            .rounded_bl(px(radius))
-            .rounded_br(px(radius))
-            .bg(fill)
-            .overflow_hidden()
-            .flex()
-            .flex_col()
-            .items_center()
-            .justify_center()
-            .drag_over::<ExternalPaths>(|style, _, _, _| style.bg(rgb(0x14213d)))
-            .child(content);
-
-        // The ears, black like the edge they join, and the rim along the bottom. The ears are
-        // softer than a circle, as Droppy's are: a cubic with its handles halfway in.
-        let ear = notch.ear;
-        let slot = notch.ear_slot;
-        let rim_from = h * black_until;
-        let rim = look != Glass::Solid && notch.height >= PEEK.1;
-        let shapes = canvas(
-            |_, _, _| {},
-            move |bounds, (), window, _| {
-                let o = bounds.origin;
-                let width: f32 = bounds.size.width.into();
-                let p = |x: f32, y: f32| point(o.x + px(x), o.y + px(y));
-                if ear >= 0.5 {
-                    for (edge, out) in [(slot, -1.0f32), (width - slot, 1.0)] {
-                        let mut path = gpui::PathBuilder::fill();
-                        path.move_to(p(edge + out * ear, 0.0));
-                        path.line_to(p(edge, 0.0));
-                        path.line_to(p(edge, ear));
-                        path.cubic_bezier_to(
-                            p(edge + out * ear, 0.0),
-                            p(edge, ear * 0.5),
-                            p(edge + out * ear * 0.5, 0.0),
-                        );
-                        if let Ok(path) = path.build() {
-                            window.paint_path(path, black);
-                        }
-                    }
-                }
-                if rim {
-                    // The stroke is centred on the path: half a pixel in keeps it whole.
-                    let (l, r, b) = (slot + 0.5, width - slot - 0.5, h - 0.5);
-                    let c = radius.min((b - rim_from).max(0.0));
-                    let k = 0.45;
-                    let mut path = gpui::PathBuilder::stroke(px(1.0));
-                    path.move_to(p(l, rim_from));
-                    path.line_to(p(l, b - c));
-                    path.cubic_bezier_to(p(l + c, b), p(l, b - c * k), p(l + c * k, b));
-                    path.line_to(p(r - c, b));
-                    path.cubic_bezier_to(p(r, b - c), p(r - c * k, b), p(r, b - c * k));
-                    path.line_to(p(r, rim_from));
-                    if let Ok(path) = path.build() {
-                        let glow = linear_gradient(
-                            180.0,
-                            linear_color_stop(rgba(RIM & 0xffffff00), 0.0),
-                            linear_color_stop(rgba(RIM), 1.0),
-                        );
-                        window.paint_path(path, glow);
-                    }
-                }
-            },
-        )
-        .absolute()
-        .top_0()
-        .left_0()
-        .size_full();
-
         div()
             .id("island")
             .relative()
             .w(viewport.width)
             .h(viewport.height)
             .text_color(rgb(0xffffff))
-            .child(body)
-            .child(shapes)
+            .children(self.frame.draw(viewport, content))
             .on_drop(cx.listener(|this, paths: &ExternalPaths, _window, cx| {
                 let names: Vec<String> = paths
                     .paths()

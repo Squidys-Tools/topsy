@@ -10,6 +10,7 @@ use gpui::{
 };
 use raw_window_handle::HasWindowHandle;
 
+use crate::frame::{ACRYLIC_TINT, Glass, PEEK};
 use crate::model::edge::EdgeZone;
 use crate::model::jiggle::JiggleConfig;
 use crate::model::tray_cause::TrayCause;
@@ -17,8 +18,7 @@ use crate::settings::Setting;
 use crate::settings_window::{self, OnChange};
 use crate::tray::{self, TrayEvent};
 use crate::{
-    ACRYLIC_TINT, COLLAPSE_AFTER_CLICK, Glass, Island, Mode, PEEK, autostart, backdrop, config,
-    log, look, state, win32,
+    COLLAPSE_AFTER_CLICK, Island, Mode, autostart, backdrop, config, log, look, state, win32,
 };
 
 impl Island {
@@ -27,7 +27,7 @@ impl Island {
         match event {
             TrayEvent::Toggle if self.mode == Mode::Tray => self.fold(cx),
             TrayEvent::Toggle | TrayEvent::Show => {
-                self.open_tray(TrayCause::Timed(COLLAPSE_AFTER_CLICK), cx)
+                self.open_notch_tray(TrayCause::Timed(COLLAPSE_AFTER_CLICK), cx)
             }
             TrayEvent::Setting(setting, on) => {
                 self.on_setting(setting, on, cx);
@@ -51,15 +51,7 @@ impl Island {
         log(&format!("setting {setting:?} {on}"));
         match setting {
             Setting::Black => {
-                self.black = on;
-                // Reshape (or empty) the glass on the next frame.
-                self.applied = None;
-                if let (Glass::Acrylic, Some(hwnd)) = (self.glass, self.hwnd) {
-                    cx.spawn(async move |_, _| {
-                        win32::set_acrylic(hwnd, (!on).then_some(ACRYLIC_TINT))
-                    })
-                    .detach();
-                }
+                self.frame.set_black(on, cx);
                 cx.notify();
             }
             Setting::Autostart => {}
@@ -69,7 +61,7 @@ impl Island {
 
 /// Hand each event from a thread's channel to the island, on the UI thread, until either
 /// side goes away.
-fn forward<E: 'static>(
+pub(crate) fn forward<E: 'static>(
     cx: &mut App,
     island: &Entity<Island>,
     events: async_channel::Receiver<E>,
@@ -217,14 +209,14 @@ pub fn run() {
             .detach();
         }
 
-        now_playing::start(cx, &island);
+        crate::now_playing::start(cx, &island);
 
         // Real input: the global mouse hook reports jiggles, the top edge and button releases.
         let events = if config.no_hook {
             async_channel::bounded(1).1
         } else {
             // The top row above the notch reveals it.
-            let zone = island.read(cx).anchor.map(|(center_x, top)| {
+            let zone = island.read(cx).frame.anchor.map(|(center_x, top)| {
                 EdgeZone::centered(
                     center_x,
                     top,

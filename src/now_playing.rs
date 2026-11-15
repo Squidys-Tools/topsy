@@ -25,7 +25,7 @@ pub fn start(cx: &mut App, island: &Entity<Island>) {
         return;
     }
     let art_size = (ART * island.read(cx).scale).round() as u32;
-    crate::forward(cx, island, media::spawn(art_size), Island::on_media);
+    crate::app::forward(cx, island, media::spawn(art_size), Island::on_media);
 }
 
 impl Island {
