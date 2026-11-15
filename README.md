@@ -123,6 +123,11 @@ nothing on screen, nothing to click.
   jiggle does. Click the peek to open the tray. It folds back 400 ms after the cursor leaves; the timer asks the
   OS where the cursor is rather than waiting for a hover "leave", which a cursor flicked off the edge doesn't
   always deliver.
+- **Not over fullscreen apps.** While the foreground window fills the notch's monitor (a video, a game, a
+  slideshow), the top edge, a drag to it and the jiggle all do nothing, since games drag the mouse about freely.
+  It is checked when one of them happens rather than tracked, so it costs nothing in between. A maximized window
+  doesn't count (with an auto-hidden taskbar it overhangs the monitor too), nor does the desktop. The tray icon
+  still opens the tray.
 - **Hidden is a 1 px window with an empty region.** GPUI can't draw into an empty window, and keeping the window
   avoids recreating it (and the activation that brings, see Findings).
 - **It is raised whenever it appears.** At launch the island hands the foreground back to the app that had it,
@@ -205,7 +210,8 @@ These drive the real desktop, so they move your cursor and/or show a window for 
   `Look` value are restored when it finishes.
 - `check-overlay.ps1` — the notch starts hidden (nothing hit-testable), comes down when the cursor rests on the
   top edge, then only the notch is hit-testable, and it folds once the cursor leaves; neither launching nor the
-  reveal changes the foreground window. Run it on a release build (see above).
+  reveal changes the foreground window. Last, it puts a borderless fullscreen window in front (`fullscreen.ps1`)
+  and checks the edge no longer reveals. Run it on a release build (see above).
 - `check-glass.ps1` — the blur proof described under [Glass](#glass). Shows a stripe window (`stripes.ps1`)
   at the top of the screen for about 40 s.
 - `trace-width.ps1` / `shot.ps1` — sample or screenshot the notch to look at the animation as composited
@@ -257,8 +263,8 @@ worth a profile before building on it, because an always-on app should be closer
 - Multi-monitor and non-100% DPI are handled in code (scale factor, the notch anchors to the monitor it opens on)
   but only tested on one 100% display. The notch and its edge zone are placed at launch and don't follow a
   display or DPI change until restart.
-- Reaching the top edge above the notch reveals it over whatever is there, including a maximized app's own
-  controls at the top (tabs, a title bar) and fullscreen apps; there is no "stay hidden in fullscreen" rule yet.
+- Reaching the top edge above the notch reveals it over a maximized app's own controls at the top (tabs, a
+  title bar). Fullscreen is only detected as a window covering the monitor, so exclusive-mode games are untested.
   A taskbar docked at the top is not handled.
 - Glass: the fill, ears and rim are matched to Droppy's screenshots by sampling them, and compared over a vivid
   blue and a purple backdrop, not side by side with Droppy itself. The host backdrop's blur is heavier than

@@ -5,7 +5,8 @@
 #   3. Moving away folds it up again.
 #   4. The overlay never takes foreground focus from the app the user is working in: the
 #      foreground window must be the very same one after launch and after the reveal.
-# Moves the real cursor along the top of the screen for about two seconds.
+#   5. With a fullscreen window in front (scripts/fullscreen.ps1), the top edge does nothing.
+# Moves the real cursor along the top of the screen and covers it for a few seconds.
 # Use a release build. A debug build is a console app, and its console window takes focus.
 # usage: check-overlay.ps1 [-Exe target\release\topsy.exe]
 param([string]$Exe = "$PSScriptRoot\..\target\release\topsy.exe")
@@ -86,8 +87,21 @@ try {
     "foreground before launch: $(Owner-Pid $fgBefore) ($(Pname (Owner-Pid $fgBefore))), after: $(Owner-Pid $fgNow) ($(Pname (Owner-Pid $fgNow)))"
     if ((Owner-Pid $fgNow) -eq $mine -or (Owner-Pid $fgRevealed) -eq $mine) { $failures += 'overlay stole foreground focus' }
     elseif ($fgNow -ne $fgBefore) { $failures += 'the foreground window changed (is this a debug build? its console window takes focus)' }
+
+    $full = Start-Process powershell -ArgumentList @('-NoProfile', '-STA', '-File', "$PSScriptRoot\fullscreen.ps1") -PassThru
+    if (-not (Wait-For { (Owner-Pid ([N]::GetForegroundWindow())) -eq $full.Id } 10000)) {
+        $failures += 'the fullscreen fixture never came to the front, so the fullscreen case went unchecked'
+    } else {
+        Start-Sleep -Milliseconds 300
+        Move-Cursor ($cx - 40 * $scale) 0; Start-Sleep -Milliseconds 30; Move-Cursor $cx 0
+        $shown = Wait-For { (Pid-At $cx $notchY) -eq $mine } 2000
+        "revealed over a fullscreen window: $shown"
+        if ($shown) { $failures += 'the notch came down over a fullscreen window' }
+        Move-Cursor $away[0] $away[1]
+    }
 } finally {
     Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
+    if ($full) { Stop-Process -Id $full.Id -Force -ErrorAction SilentlyContinue }
 }
 if ($failures) { "FAIL: " + ($failures -join '; '); exit 1 }
 "PASS"
