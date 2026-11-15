@@ -105,7 +105,9 @@ pub fn remove() {
 
 /// Start the tray thread. Later calls are no-ops that return a receiver which never fires.
 pub fn spawn() -> async_channel::Receiver<TrayEvent> {
-    let (tx, rx) = async_channel::bounded(8);
+    // Unbounded: a setting is saved before its event is sent, so a dropped event would leave
+    // the island disagreeing with the registry.
+    let (tx, rx) = async_channel::unbounded();
     if EVENTS.set(tx).is_err() {
         return rx;
     }

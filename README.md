@@ -16,18 +16,22 @@ it (see [Notch](#notch)), the tray holds a **shelf** of files you can drag back 
 
 ## What's here
 
+`src/model/` holds the rules, pure and unit tested: no Win32, no GPUI, no clock, no environment
+(`scripts/check-structure.ps1` checks).
+
 | File | Purpose |
 |---|---|
-| `src/spring.rs` | Damped spring (Framer-Motion-style `stiffness/damping/mass`), fixed sub-step, retargetable mid-flight |
-| `src/jiggle.rs` | Pure jiggle detector: direction reversals of a held-button drag inside a time window |
-| `src/notch.rs` | The notch's outline: body, ears and corner radius for a given size (pure, unit tested) |
-| `src/edge.rs` | Reaching for the hidden notch: the cursor arriving on the top row above it (pure, unit tested) |
+| `src/model/spring.rs` | Damped spring (Framer-Motion-style `stiffness/damping/mass`), fixed sub-step, retargetable mid-flight |
+| `src/model/jiggle.rs` | Jiggle detector: direction reversals of a held-button drag inside a time window |
+| `src/model/notch.rs` | The notch's outline: body, ears and corner radius for a given size |
+| `src/model/edge.rs` | Reaching for the hidden notch: the cursor arriving on the top row above it; what counts as fullscreen |
+| `src/model/shelf.rs` | The shelf: files parked on the island, and its save format |
+| `src/model/tray_cause.rs` | Why the tray is open, and which events fold it early |
+| `src/config.rs` | Every `TOPSY_*` switch, read once at startup |
 | `src/backdrop.rs` | The glass: the compositor's blurred backdrop behind GPUI's content, clipped to the notch's shape |
-| `src/win32.rs` | Overlay window styles, the acrylic fallback, window geometry, `WH_MOUSE_LL` hook thread, the drop-target wrapper that reports refused drags, dragging files out, opening them |
+| `src/win32/` | Win32 glue GPUI doesn't expose: `window` (overlay styles, acrylic fallback, geometry, fullscreen), `dragdrop` (the drop-target wrapper that reports refused drags, dragging files out), `hook` (`WH_MOUSE_LL` thread), `shell` (opening files) |
 | `src/icon.rs` | A chip's picture: the shell's thumbnail or icon for a file, as Explorer shows it |
-| `src/shelf.rs` | The shelf model: files parked on the island (no UI, no OS calls, unit tested) |
 | `src/state.rs` | The shelf's save file and the thread that writes it |
-| `src/tray_cause.rs` | Why the tray is open, and which events fold it early (pure, unit tested) |
 | `src/tray.rs` | The notification-area icon and its menu, on their own thread |
 | `src/autostart.rs` | Start with Windows: one `HKCU\...\Run` value |
 | `src/look.rs` | The *Black notch* setting: one `HKCU\Software\topsy` value |
@@ -50,7 +54,7 @@ a fill and ignores the *Black notch* setting; see
 ```powershell
 cargo run            # then hold the left mouse button on a file and jiggle it side to side
 cargo test           # spring, jiggle, shelf and its save file, tray icon and start-with-Windows unit tests
-scripts/check.ps1    # fmt, clippy and tests, the same gates as CI; run it before pushing
+scripts/check.ps1    # fmt, clippy, tests and structure, the same gates as CI; run it before pushing
 ```
 
 This builds with the **GNU toolchain** (`x86_64-pc-windows-gnu`), pinned in `rust-toolchain.toml`. No MSVC.
@@ -119,7 +123,7 @@ nothing on screen, nothing to click.
 
 - **Reaching for it.** Resting the cursor on the screen's top row, above where the notch lives, for 150 ms brings
   it down as a 200x32 peek showing what is on the shelf; the delay keeps a sweep across the top from flashing it.
-  The mouse hook watches for this (`src/edge.rs`), since nothing on screen could: it reports only arriving and
+  The mouse hook watches for this (`src/model/edge.rs`), since nothing on screen could: it reports only arriving and
   leaving, so there is still no polling. Dragging something up to that edge opens the tray straight away, as a
   jiggle does. Click the peek to open the tray. It folds back 400 ms after the cursor leaves; the timer asks the
   OS where the cursor is rather than waiting for a hover "leave", which a cursor flicked off the edge doesn't

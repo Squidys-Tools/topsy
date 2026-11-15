@@ -4,16 +4,12 @@
 
 mod autostart;
 mod backdrop;
-mod edge;
+mod config;
 mod icon;
-mod jiggle;
 mod look;
-mod notch;
-mod shelf;
-mod spring;
+mod model;
 mod state;
 mod tray;
-mod tray_cause;
 mod win32;
 
 use std::collections::HashMap;
@@ -22,7 +18,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    App, Application, Bounds, ClickEvent, Context, ExternalPaths, FontWeight, MouseButton,
+    App, Application, Bounds, ClickEvent, Context, Entity, ExternalPaths, FontWeight, MouseButton,
     MouseDownEvent, MouseMoveEvent, ObjectFit, Pixels, Point, RenderImage, TitlebarOptions, Window,
     WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions, canvas, div, hsla, img,
     linear_color_stop, linear_gradient, point, prelude::*, px, rgb, rgba, size,
@@ -31,13 +27,13 @@ use raw_window_handle::HasWindowHandle;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::System::Com::COINIT_MULTITHREADED;
 
-use crate::edge::EdgeZone;
-use crate::jiggle::JiggleConfig;
-use crate::notch::Notch;
-use crate::shelf::{Item, Shelf};
-use crate::spring::{Spring, SpringConfig};
+use crate::model::edge::EdgeZone;
+use crate::model::jiggle::JiggleConfig;
+use crate::model::notch::Notch;
+use crate::model::shelf::{self, Item, Shelf};
+use crate::model::spring::{Spring, SpringConfig};
+use crate::model::tray_cause::TrayCause;
 use crate::tray::TrayEvent;
-use crate::tray_cause::TrayCause;
 use crate::win32::{DragOutcome, DropEvent, HookEvent};
 
 /// The notch's body when it peeks down from the top edge, and when it holds the tray.
@@ -77,15 +73,13 @@ const ICON: f32 = 38.0;
 
 /// Event trace for scripted tests; silent unless TOPSY_LOG is set.
 fn log(message: &str) {
-    use std::sync::OnceLock;
-    static ENABLED: OnceLock<bool> = OnceLock::new();
-    if *ENABLED.get_or_init(|| std::env::var_os("TOPSY_LOG").is_some()) {
+    if config::get().log {
         eprintln!("topsy: {message}");
     }
 }
 
-/// How the pill is filled. `TOPSY_GLASS=acrylic|solid|tint|clear` overrides the default, which
-/// is for A/B comparison and for the automated blur check (`tint` and `clear` are its controls).
+/// How the notch is filled. `TOPSY_GLASS` can force one, for A/B comparison and for the
+/// automated blur check (`tint` and `clear` are its controls).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Glass {
     /// The compositor's blur of whatever is behind the notch, in its own shape ([`backdrop`]),
@@ -103,16 +97,6 @@ enum Glass {
 }
 
 impl Glass {
-    fn from_env() -> Self {
-        match std::env::var("TOPSY_GLASS").as_deref() {
-            Ok("acrylic") => Glass::Acrylic,
-            Ok("tint") => Glass::Tint,
-            Ok("solid") => Glass::Solid,
-            Ok("clear") => Glass::Clear,
-            _ => Glass::Blur,
-        }
-    }
-
     /// The window-wide acrylic can't leave the ears' corners clear, so it goes without them.
     fn has_ears(self) -> bool {
         self != Glass::Acrylic
@@ -135,17 +119,6 @@ impl Mode {
             Mode::Hidden => (PEEK.0, 0.0),
             Mode::Peek => PEEK,
             Mode::Tray => TRAY,
-        }
-    }
-
-    /// What the island returns to when nothing is happening. `TOPSY_IDLE=peek|tray` keeps it
-    /// down for the live checks; without the mouse hook nothing could reveal it, so it peeks.
-    fn rest_from_env() -> Self {
-        match std::env::var("TOPSY_IDLE").as_deref() {
-            Ok("peek") => Mode::Peek,
-            Ok("tray") => Mode::Tray,
-            _ if std::env::var_os("TOPSY_NO_HOOK").is_some() => Mode::Peek,
-            _ => Mode::Hidden,
         }
     }
 }
@@ -197,7 +170,7 @@ impl Island {
         persistence: state::Persistence,
     ) -> Self {
         let anchor = hwnd.and_then(win32::monitor_top_center);
-        let rest = Mode::rest_from_env();
+        let rest = config::get().rest;
         Self {
             mode: rest,
             rest,
@@ -273,7 +246,7 @@ impl Island {
             .iter()
             .filter_map(|path| self.icons.remove(path))
             .collect();
-        forget_icons(icons, cx);
+        icon::forget(icons, cx);
         tray::set_shelf_count(self.shelf.len());
         if let Some(writer) = &self.writer {
             writer.send(shelf::serialize(self.shelf.items()));
@@ -324,7 +297,7 @@ impl Island {
                     if let Some(icon) = icon
                         && let Some(old) = this.icons.insert(path, icon)
                     {
-                        forget_icons(vec![old], cx);
+                        icon::forget(vec![old], cx);
                     }
                     cx.notify();
                 });
@@ -435,10 +408,7 @@ impl Island {
     fn on_tray(&mut self, event: TrayEvent, cx: &mut Context<Self>) {
         log(&format!("tray {event:?} (mode {:?})", self.mode));
         match event {
-            TrayEvent::Toggle if self.mode == Mode::Tray => {
-                self.collapse_generation += 1;
-                self.set_mode(self.rest, cx);
-            }
+            TrayEvent::Toggle if self.mode == Mode::Tray => self.fold(cx),
             TrayEvent::Toggle | TrayEvent::Show => {
                 self.open_tray(TrayCause::Timed(COLLAPSE_AFTER_CLICK), cx)
             }
@@ -454,10 +424,7 @@ impl Island {
                 }
                 cx.notify();
             }
-            TrayEvent::ClearShelf => {
-                self.shelf.clear();
-                self.shelf_changed(cx);
-            }
+            TrayEvent::ClearShelf => self.clear_shelf(cx),
             TrayEvent::Quit => cx.quit(),
         }
     }
@@ -470,9 +437,19 @@ impl Island {
             && self.mode == Mode::Tray
             && self.tray_cause.closed_by_refusal()
         {
-            self.collapse_generation += 1;
-            self.set_mode(self.rest, cx);
+            self.fold(cx);
         }
+    }
+
+    /// Fold back to rest now, cancelling any collapse already scheduled.
+    fn fold(&mut self, cx: &mut Context<Self>) {
+        self.collapse_generation += 1;
+        self.set_mode(self.rest, cx);
+    }
+
+    fn clear_shelf(&mut self, cx: &mut Context<Self>) {
+        self.shelf.clear();
+        self.shelf_changed(cx);
     }
 
     fn on_hover(&mut self, hovered: bool, cx: &mut Context<Self>) {
@@ -767,10 +744,7 @@ impl Island {
                 .cursor_pointer()
                 .hover(|style| style.bg(rgba(0xffffff1a)).text_color(rgb(0xffffff)))
                 .child("Clear")
-                .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                    this.shelf.clear();
-                    this.shelf_changed(cx);
-                }))
+                .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| this.clear_shelf(cx)))
         });
 
         let body = if self.shelf.is_empty() {
@@ -997,22 +971,33 @@ impl Render for Island {
     }
 }
 
-/// Free chip pictures' textures in the window's atlas, which otherwise keeps them. Deferred:
-/// inside a window's event handler GPUI has lent the window out, and `drop_image` can't reach it.
-fn forget_icons(icons: Vec<Arc<RenderImage>>, cx: &mut App) {
-    if !icons.is_empty() {
-        cx.defer(move |cx| {
-            for icon in icons {
-                cx.drop_image(icon, None);
+/// Hand each event from a thread's channel to the island, on the UI thread, until either
+/// side goes away.
+fn forward<E: 'static>(
+    cx: &mut App,
+    island: &Entity<Island>,
+    events: async_channel::Receiver<E>,
+    handle: fn(&mut Island, E, &mut Context<Island>),
+) {
+    let island = island.clone();
+    cx.spawn(async move |cx| {
+        while let Ok(event) = events.recv().await {
+            if island
+                .update(cx, |island, cx| handle(island, event, cx))
+                .is_err()
+            {
+                break;
             }
-        });
-    }
+        }
+    })
+    .detach();
 }
 
 fn main() {
     // The shelf comes back before the window opens, without touching the disk for its files
     // (a dead share would stall launch); `settle_restored` checks them in the background.
-    let persistence = state::start();
+    let config = config::get();
+    let persistence = state::start(config.state.as_deref());
     log(&format!("restored {}", persistence.shelf.len()));
     Application::new().run(move |cx: &mut App| {
         let display = cx.primary_display();
@@ -1029,9 +1014,9 @@ fn main() {
         let bounds = Bounds::new(origin, size(px(PEEK.0), px(PEEK.1)));
 
         let previous_foreground = win32::foreground_window();
-        let mut glass = Glass::from_env();
+        let mut glass = config.glass.unwrap_or(Glass::Blur);
         // A forced glass (the live checks) wins over the setting.
-        let black = std::env::var_os("TOPSY_GLASS").is_none() && look::is_black();
+        let black = config.glass.is_none() && look::is_black();
         // Refused drags report here, so a jiggle that opened the tray for a payload
         // the island can't take (the hook can't tell text from files) folds it away.
         let (refuse_tx, refuse_rx) = async_channel::bounded(4);
@@ -1113,47 +1098,21 @@ fn main() {
         }
 
         // The wrapped drop target reports refusals while an external drag runs.
-        let refuse_island = island.clone();
-        cx.spawn(async move |cx| {
-            while let Ok(event) = refuse_rx.recv().await {
-                if refuse_island
-                    .update(cx, |island, cx| island.on_drop_event(event, cx))
-                    .is_err()
-                {
-                    break;
-                }
-            }
-        })
-        .detach();
+        forward(cx, &island, refuse_rx, Island::on_drop_event);
 
-        // Test hook: TOPSY_SEED=path;path puts files on the shelf at startup, so a drag out
-        // can be tested without first dragging in.
-        if let Some(seed) = std::env::var_os("TOPSY_SEED") {
-            let paths: Vec<PathBuf> = std::env::split_paths(&seed).collect();
+        // Lets a drag out be tested without first dragging in.
+        if let Some(paths) = config.seed.clone() {
             island.update(cx, |island, cx| {
                 let added = island.add_paths(paths, cx);
                 log(&format!("seeded {added}"));
             });
         }
 
-        // The notification-area icon and its menu. TOPSY_NO_TRAY skips it (for measuring).
-        if std::env::var_os("TOPSY_NO_TRAY").is_none() {
+        if !config.no_tray {
             if let Ok(exe) = std::env::current_exe() {
                 autostart::refresh(&exe);
             }
-            let tray_events = tray::spawn();
-            let tray_island = island.clone();
-            cx.spawn(async move |cx| {
-                while let Ok(event) = tray_events.recv().await {
-                    if tray_island
-                        .update(cx, |island, cx| island.on_tray(event, cx))
-                        .is_err()
-                    {
-                        break;
-                    }
-                }
-            })
-            .detach();
+            forward(cx, &island, tray::spawn(), Island::on_tray);
             // However the app ends, don't leave a dead icon in the notification area.
             cx.on_app_quit(|_| {
                 tray::remove();
@@ -1162,9 +1121,8 @@ fn main() {
             .detach();
         }
 
-        // Real input: the global mouse hook reports jiggles and button releases.
-        // TOPSY_NO_HOOK skips it, to measure the app's idle cost without hook traffic.
-        let events = if std::env::var_os("TOPSY_NO_HOOK").is_some() {
+        // Real input: the global mouse hook reports jiggles, the top edge and button releases.
+        let events = if config.no_hook {
             async_channel::bounded(1).1
         } else {
             // The top row above the notch reveals it.
@@ -1177,22 +1135,9 @@ fn main() {
             });
             win32::spawn_mouse_hook(JiggleConfig::default(), zone)
         };
-        let hook_island = island.clone();
-        cx.spawn(async move |cx| {
-            while let Ok(event) = events.recv().await {
-                if hook_island
-                    .update(cx, |island, cx| island.on_hook(event, cx))
-                    .is_err()
-                {
-                    break;
-                }
-            }
-        })
-        .detach();
+        forward(cx, &island, events, Island::on_hook);
 
-        // Demo/test mode: expand and collapse on a timer so the animation can be
-        // observed without a mouse. TOPSY_DEMO=1 enables it.
-        if std::env::var_os("TOPSY_DEMO").is_some() {
+        if config.demo {
             let demo_island = island.clone();
             cx.spawn(async move |cx| {
                 loop {
@@ -1219,14 +1164,9 @@ fn main() {
             .detach();
         }
 
-        if let Some(ms) = std::env::var("TOPSY_EXIT_AFTER_MS")
-            .ok()
-            .and_then(|v| v.parse::<u64>().ok())
-        {
+        if let Some(after) = config.exit_after {
             cx.spawn(async move |cx| {
-                cx.background_executor()
-                    .timer(Duration::from_millis(ms))
-                    .await;
+                cx.background_executor().timer(after).await;
                 cx.update(|cx| cx.quit()).ok();
             })
             .detach();

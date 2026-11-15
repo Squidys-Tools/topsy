@@ -8,7 +8,7 @@ use std::ffi::c_void;
 use std::path::Path;
 use std::sync::Arc;
 
-use gpui::RenderImage;
+use gpui::{App, RenderImage};
 use image::{Frame, RgbaImage};
 use windows::Win32::Foundation::SIZE;
 use windows::Win32::Graphics::Gdi::{
@@ -28,6 +28,18 @@ pub fn load(path: &Path, size: i32) -> Option<Arc<RenderImage>> {
     // GPUI's images are BGRA with straight alpha, whatever the buffer's type says.
     let buffer = RgbaImage::from_raw(width, height, pixels)?;
     Some(Arc::new(RenderImage::new(vec![Frame::new(buffer)])))
+}
+
+/// Free chip pictures' textures in the window's atlas, which otherwise keeps them. Deferred:
+/// inside a window's event handler GPUI has lent the window out, and `drop_image` can't reach it.
+pub fn forget(icons: Vec<Arc<RenderImage>>, cx: &mut App) {
+    if !icons.is_empty() {
+        cx.defer(move |cx| {
+            for icon in icons {
+                cx.drop_image(icon, None);
+            }
+        });
+    }
 }
 
 unsafe fn shell_bitmap(path: &Path, size: i32) -> Option<(u32, u32, Vec<u8>)> {

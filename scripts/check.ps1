@@ -13,4 +13,7 @@ foreach ($step in @(
     & cargo @step
     if ($LASTEXITCODE -ne 0) { throw "cargo $($step[0]) failed ($LASTEXITCODE)" }
 }
+Write-Host '> check-structure'
+& "$PSScriptRoot\check-structure.ps1"
+if ($LASTEXITCODE -ne 0) { throw 'check-structure failed' }
 Write-Host 'All checks passed.'

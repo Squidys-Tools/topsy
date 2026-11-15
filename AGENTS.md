@@ -29,8 +29,8 @@ front of you, say so plainly and get sign-off before breaking it.
 - **island**: the whole app window at the top of the screen. The OS window *is* the notch (see README, Notch).
 - **notch**: the island's shape, hanging from the top edge. **hidden**: folded away, the resting state. **peek**: the
   small notch revealed by resting the cursor on the top edge. **tray**: the island expanded, showing the shelf.
-- **shelf**: the files parked on the island (`src/shelf.rs`). **chip**: one shelf entry.
-- **jiggle**: the gesture that opens the tray, side-to-side reversals of a held-button drag (`src/jiggle.rs`).
+- **shelf**: the files parked on the island (`src/model/shelf.rs`). **chip**: one shelf entry.
+- **jiggle**: the gesture that opens the tray, side-to-side reversals of a held-button drag (`src/model/jiggle.rs`).
 - **tray icon**: the notification-area icon and its menu (`src/tray.rs`). Not the same thing as the tray.
 - **glass**: the acrylic blur behind the notch.
 
@@ -72,17 +72,27 @@ calling work done, walk this list and say which entries applied:
   shared statics are atomics, `OnceLock` or a `Mutex`, never `static mut`.
 - **Displays.** Multi-monitor and non-100% DPI are real. Use the scale factor; never hard-code pixels as
   physical.
-- **Test switches.** The `TOPSY_*` env vars (README, Running) must keep working; a new one goes in the README.
+- **Test switches.** The `TOPSY_*` env vars (README, Running) must keep working; a new one is a field in
+  `src/config.rs` and a line in the README.
 - **Docs.** Check whether the change makes the README wrong (see Documentation).
+
+## Structure
+
+- `src/model/` is the rules: pure, unit tested, no `windows`, `gpui`, clock or environment. A feature's logic
+  starts here with its tests; the glue that feeds it events and draws its result stays thin.
+- `src/win32/` is Win32 glue split by job (`window`, `dragdrop`, `hook`, `shell`); `src/config.rs` is every
+  `TOPSY_*` switch. `src/main.rs` is the island view and the app's wiring.
+- No file over 500 lines. `scripts/check-structure.ps1` (in `check.ps1` and CI) enforces that and the purity of
+  `src/model/`. `main.rs` is still over and has a ceiling that only comes down: lower it when it shrinks, never
+  raise it. When a file nears the limit, split it by job, not by size.
 
 ## Verifying
 
-- Before you push, run `scripts/check.ps1`: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`
-  and `cargo test`, the same gates as CI. While iterating, `cargo test <name>`.
+- Before you push, run `scripts/check.ps1`: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`,
+  `cargo test` and `check-structure.ps1`, the same gates as CI. While iterating, `cargo test <name>`.
 - A cold build of GPUI takes about 10 minutes in a fresh worktree. Run long builds in the background.
-- Keep logic in pure modules with no OS calls and no clock reads (`shelf`, `jiggle`, `spring`): take
-  `now: Instant` or a step as an argument, so tests drive time instead of sleeping. Win32 and GPUI glue stays
-  thin around them.
+- Keep logic in `src/model/`, with no OS calls and no clock reads: take `now: Instant` or a step as an argument,
+  so tests drive time instead of sleeping. Win32 and GPUI glue stays thin around it (see Structure).
 - Test behaviour that can break: gesture detection, spring physics, shelf rules, registry round trips, parsing.
   Leave out tests for what types already guarantee, trivial getters, and wiring. Extend an existing test before
   adding one, and test at the lowest layer that fails without the fix.
