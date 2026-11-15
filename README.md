@@ -251,7 +251,10 @@ through it. It was dropped.
 
 ## Live-desktop checks (`scripts/`)
 
-These drive the real desktop, so they move your cursor and/or show a window for a few seconds.
+These drive the real desktop, so they move your cursor and/or show a window for a few seconds. Keep your hands off
+the mouse while one runs: a real click lands among the injected ones and fails it (the `e2e-shelf` "flake" was
+exactly that). The checks that click inside the tray or measure it run with `TOPSY_NO_MEDIA`, since whatever is
+playing adds a row there.
 
 - `e2e-drag.ps1` — starts a genuine OLE file drag from a fixture window, jiggles it with injected input,
   verifies the floating tray opens under the pointer, releases the drag on it, and checks the drop arrives with the

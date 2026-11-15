@@ -122,6 +122,8 @@ $env:TOPSY_LOG = '1'
 $env:TOPSY_IDLE = 'peek'
 $env:TOPSY_SEED = ($files + $dir) -join ';'
 $env:TOPSY_STATE = Join-Path $work 'shelf.state'
+# A playing song adds a row to the tray and moves the chips this clicks.
+$env:TOPSY_NO_MEDIA = '1'
 $app = Start-Process $Exe -PassThru -RedirectStandardError $appLog
 $tgt = Start-Process powershell -ArgumentList @('-NoProfile', '-STA', '-File', "$PSScriptRoot\drop-target.ps1", $tgtX, $tgtY, $tgtLog) -PassThru
 $failed = $null
