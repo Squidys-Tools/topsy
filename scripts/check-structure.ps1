@@ -13,7 +13,7 @@ $Ceilings = @{
 $failures = @()
 foreach ($file in Get-ChildItem (Join-Path $root 'src') -Recurse -Filter *.rs) {
     $rel = $file.FullName.Substring($root.Length + 1).Replace('\', '/')
-    $lines = @(Get-Content $file.FullName).Count
+    $lines = @(Get-Content -LiteralPath $file.FullName).Count
     $limit = if ($Ceilings.ContainsKey($rel)) { $Ceilings[$rel] } else { $MaxLines }
     if ($lines -gt $limit) {
         $failures += "$rel has $lines lines (limit $limit): split it by job, see AGENTS.md (Structure)"
@@ -33,12 +33,12 @@ if (Test-Path $model) {
     foreach ($file in Get-ChildItem $model -Recurse -Filter *.rs) {
         $rel = $file.FullName.Substring($root.Length + 1).Replace('\', '/')
         $n = 0
-        foreach ($line in Get-Content $file.FullName) {
+        foreach ($line in Get-Content -LiteralPath $file.FullName) {
             $n++
             # Tests may take a real clock as their starting point.
             if ($line -match '^#\[cfg\(test\)\]') { break }
             foreach ($word in $banned) {
-                if ($line.Contains($word)) { $failures += "${rel}:$n is in src/model/, which must stay pure: $($line.Trim())" }
+                if ($line.Contains($word)) { $failures += "${rel}:$n is in src/model/, which must stay pure: $($line.Trim())"; break }
             }
         }
     }

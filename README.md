@@ -54,7 +54,7 @@ a fill and ignores the *Black notch* setting; see
 ```powershell
 cargo run            # then hold the left mouse button on a file and jiggle it side to side
 cargo test           # spring, jiggle, shelf and its save file, tray icon and start-with-Windows unit tests
-scripts/check.ps1    # fmt, clippy and tests, the same gates as CI; run it before pushing
+scripts/check.ps1    # fmt, clippy, tests and structure, the same gates as CI; run it before pushing
 ```
 
 This builds with the **GNU toolchain** (`x86_64-pc-windows-gnu`), pinned in `rust-toolchain.toml`. No MSVC.
