@@ -1,11 +1,13 @@
-//! The Win32 glue GPUI doesn't expose: the overlay window, drag and drop, the shell, and the
-//! global mouse hook, plus the small helpers they share.
+//! The Win32 glue GPUI doesn't expose: the overlay window, the settings window, drag and drop,
+//! the shell, and the global mouse hook, plus the small helpers they share.
 
+mod dialog;
 mod dragdrop;
 mod hook;
 mod shell;
 mod window;
 
+pub use dialog::{bring_to_front, dark_title_bar};
 pub use dragdrop::{DragOutcome, DropEvent, drag_files_out, watch_drop_refusals};
 pub use hook::{HookEvent, spawn_mouse_hook};
 pub use shell::open_path;

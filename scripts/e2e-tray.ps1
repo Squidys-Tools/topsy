@@ -234,7 +234,7 @@ try {
     # 3b. Black notch: saved, applied straight away, checked in the menu, and turned back.
     Use-Menu $IconMenu 0x42 'black-on'              # B
     if (-not (Wait-Until { (Look-Value) -eq 'black' } 3000)) { throw 'Black notch did not save the look' }
-    if (-not (Wait-Log 'tray Black\(true\)' 3000)) { throw 'Black notch did not reach the island' }
+    if (-not (Wait-Log 'tray Setting\(Black, true\)' 3000)) { throw 'Black notch did not reach the island' }
     Use-Menu $IconMenu 0 'black-checked'            # look at it (checked), then Escape
     Icon-Click
     if (-not (Wait-Until { Island-Open } 3000)) { throw 'the shelf did not open from the icon' }
@@ -244,7 +244,7 @@ try {
     if (-not (Wait-Until { -not (Island-Open) } 3000)) { throw 'the shelf did not close from the icon' }
     Use-Menu $IconMenu 0x42 'black-off'             # B again
     if (-not (Wait-Until { $null -eq (Look-Value) } 3000)) { throw 'Black notch did not turn back to glass' }
-    if (-not (Wait-Log 'tray Black\(false\)' 3000)) { throw 'turning Black notch off did not reach the island' }
+    if (-not (Wait-Log 'tray Setting\(Black, false\)' 3000)) { throw 'turning Black notch off did not reach the island' }
 
     # 4. Show shelf opens it (a closed island), Clear shelf empties it.
     Use-Menu $IconMenu 0x53 'show'                  # S
