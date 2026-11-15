@@ -12,7 +12,8 @@ It started as a **feasibility spike** for the riskiest parts of the design, and 
 On top of that it is now a usable v1: the island is a **notch** that stays out of sight until you reach for
 it (see [Notch](#notch)), the tray holds a **shelf** of files you can drag back out, there is a
 **tray icon** with a menu, **start with Windows**, and a **Quit** item. See
-[Shelf, tray icon and startup](#shelf-tray-icon-and-startup).
+[Shelf, tray icon and startup](#shelf-tray-icon-and-startup). It also shows what is playing, with its controls
+(see [Now Playing](#now-playing)).
 
 ## What's here
 
@@ -27,6 +28,7 @@ it (see [Notch](#notch)), the tray holds a **shelf** of files you can drag back 
 | `src/model/edge.rs` | Reaching for the hidden notch: the cursor arriving on the top row above it; what counts as fullscreen |
 | `src/model/shelf.rs` | The shelf: files parked on the island, and its save format |
 | `src/model/archive.rs` | Naming a chip's zip (`report.zip`, `report (2).zip`) and the entries inside it |
+| `src/model/media.rs` | Now Playing: the media session's events reduced to what the tray and the peek show |
 | `src/model/tray_cause.rs` | Why the tray is open, and which events fold it early |
 | `src/config.rs` | Every `TOPSY_*` switch, read once at startup |
 | `src/backdrop.rs` | The glass: the compositor's blurred backdrop behind GPUI's content, clipped to the notch's shape |
@@ -40,6 +42,9 @@ it (see [Notch](#notch)), the tray holds a **shelf** of files you can drag back 
 | `src/settings_window.rs` | The settings window: a switch per setting, the version, Quit |
 | `src/app.rs` | The app's wiring: opens the island and connects the threads, tray icon and settings window to it |
 | `src/autostart.rs` | Start with Windows: one `HKCU\...\Run` value |
+| `src/media.rs` | The system's media session (WinRT `GlobalSystemMediaTransportControlsSessionManager`) on its own thread |
+| `src/now_playing.rs` | Now Playing's tray row, its buttons and the peek's hint |
+| `src/tray_view.rs` | The tray's layout: Now Playing above the shelf's header and chips |
 | `src/look.rs` | The *Black notch* setting: one `HKCU\Software\topsy` value |
 | `src/main.rs` | The island view: hidden, peeking or open as the tray with the shelf; file-drop target |
 | `build.rs` | Copies one import library the GNU toolchain's bundled MinGW lacks (see below) |
@@ -48,7 +53,8 @@ it (see [Notch](#notch)), the tray holds a **shelf** of files you can drag back 
 Right-click the notch or the tray icon for the menu (Quit is in it). Env vars for testing: `TOPSY_DEMO=1`
 (auto expand/collapse), `TOPSY_LOG=1` (event trace on stderr), `TOPSY_EXIT_AFTER_MS=<n>`, `TOPSY_NO_HOOK=1` (don't
 install the mouse hook; the notch then rests peeking, as nothing could reveal it), `TOPSY_NO_TRAY=1` (no tray icon
-and no menu, so right-clicking the notch quits; start-with-Windows is left alone), `TOPSY_IDLE=peek|tray` (what the
+and no menu, so right-clicking the notch quits; start-with-Windows is left alone), `TOPSY_NO_MEDIA=1` (don't watch
+the system's media session; no Now Playing), `TOPSY_IDLE=peek|tray` (what the
 notch rests as, instead of hidden; the live checks use it),
 `TOPSY_SEED=<path;path>` (start with these files on the shelf), `TOPSY_STATE=<path>` (the shelf's save file,
 `%LOCALAPPDATA%\topsy\shelf.txt` by default; set empty to not save), `TOPSY_GLASS=acrylic|tint|solid|clear` (forces
@@ -134,6 +140,22 @@ Two things about dragging out of a window that is itself a drop target, both fou
   handler (a UAC prompt, a cold network path) from freezing the island. A chip's menu (`TrackPopupMenu`) and
   *Show in folder* do the same: the menu is owned by a hidden window on its own thread, which is made
   foreground so the menu closes on a click elsewhere, and hands foreground back to the window that had it.
+
+## Now Playing
+
+The tray shows what the system's current media session is playing (the one the volume flyout shows: Spotify, a
+browser tab, the Media Player): the art, title and artist, and previous, play/pause and next buttons, greyed
+where the app doesn't take them. It sits above the shelf, and the tray grows by its row only while there is one.
+While something is playing (not paused) the peek shows its art and title instead of the shelf count, with the
+count beside it. Stopped or no session shows nothing, as before.
+
+- **Event-driven only.** `src/media.rs` subscribes to `CurrentSessionChanged`, `MediaPropertiesChanged` and
+  `PlaybackInfoChanged`. WinRT raises them on thread-pool threads, whose handlers only wake one `topsy-media`
+  thread; it reads the session (and decodes the art, scaled down by WIC) and sends the result to the UI thread
+  over a channel. Between events nothing runs, and a change while the notch is hidden doesn't render.
+- **No progress bar.** Timeline events are not subscribed: a moving position would repaint continuously.
+- **Buttons** go to the same thread, which calls the session's `Try*Async` without waiting; the glyph changes
+  when the app reports its new state.
 
 ## Notch
 
@@ -304,6 +326,9 @@ worth a profile before building on it, because an always-on app should be closer
   the same drive moves the file, as in Explorer; the chip then leaves the shelf.
 - *Compress to ZIP file* shows no progress, and a big folder can take a while before its chip appears. Errors only
   go to stderr. Quitting mid-zip leaves the partial zip behind.
+- Now Playing follows only the system's *current* session (the one Windows picks), with no way to switch between
+  several. Its art is fetched on every properties change, not cached by track. Not checked on the desktop yet:
+  apps that report art late or not at all, and an app that never answers a button.
 - No droplets yet. The settings window is a plain dark fill, not Mica. The tray icon is drawn in code and the exe itself has no icon resource.
 
 ## License

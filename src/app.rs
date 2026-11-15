@@ -217,6 +217,8 @@ pub fn run() {
             .detach();
         }
 
+        now_playing::start(cx, &island);
+
         // Real input: the global mouse hook reports jiggles, the top edge and button releases.
         let events = if config.no_hook {
             async_channel::bounded(1).1
