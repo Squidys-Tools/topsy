@@ -291,33 +291,39 @@ These drive the real desktop, so they move your cursor and/or show a window for 
   never painted. What works: create visible, apply `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW` + topmost right away,
   and `SetForegroundWindow` back to whatever had focus. After that nothing activates the island, including
   expanding the tray mid-drag (checked in the e2e).
+- **`WS_EX_NOACTIVATE` only keeps a click from taking the foreground from another app.** While topsy holds the
+  foreground itself (its settings window is in front), a click on the island still made it the active window,
+  as GPUI leaves `WM_MOUSEACTIVATE` to `DefWindowProc`. The island's window is subclassed to answer
+  `MA_NOACTIVATE`. Likewise the tray icon's menu makes its hidden owner foreground (or the menu won't close) and
+  must hand foreground back after, or keys go nowhere until the next click.
 - **`SetCursorPos` does not reliably reach `WH_MOUSE_LL`**; test input must be `mouse_event`/`SendInput`.
 - Low-level hooks do see button-up and moves during an OLE drag loop.
 - **A drag out with Escape needs the key held a moment.** The system's drag loop polls the key state rather than
   being sent the keystroke, because the island never takes focus. A tap shorter than a frame can be missed;
   releasing the button over something that refuses files cancels too.
-- The GNU build links and runs (47/47 unit tests, all live checks pass); the binary imports `msvcrt.dll`, no
+- The GNU build links and runs (77/77 unit tests, all live checks pass); the binary imports `msvcrt.dll`, no
   VCRUNTIME/MSVCP.
 
 ## Measured (release build, GNU toolchain, Windows 11, one 3440x1440 display, idle)
 
 | | |
 |---|---|
-| Working set | ~59 MB (private ~55 MB) |
-| Threads | 13 (12 without the mouse hook) |
-| Binary | 32.4 MB (unstripped; the earlier MSVC build was 10.6 MB) |
-| Idle CPU | ~0.5–0.7% of one core, with or without the hook |
+| Working set | ~70 MB (private ~56 MB) |
+| Threads | 16 (15 without the mouse hook), Now Playing's and WinRT's included |
+| Binary | 37.1 MB (unstripped; the earlier MSVC build was 10.6 MB) |
+| Idle CPU | ~1–2% of one core, with or without the hook or Now Playing (a busy machine; see below) |
 | Island re-renders at idle | 0 over 10 s |
 
-An earlier MSVC build measured ~1.5–2% idle CPU. The cause was never found (not our render loop, not the hook),
-and the toolchain, the window design and machine load all differ now, so don't read 0.5–0.7% as a fix. It is
-worth a profile before building on it, because an always-on app should be closer to 0%.
+Idle CPU swings with machine load: the GNU build once measured ~0.5–0.7%, an earlier MSVC build ~1.5–2%, and
+the build before Now Playing, the floating tray, chip actions and the settings window measured the same 0.7–2%
+as the build after, back to back on a busy machine. The cause was never found (not our render loop, not the
+hook, not the media thread). It is worth a profile, because an always-on app should be closer to 0%.
 
 ## Not done / known gaps
 
 - Real jiggle thresholds are untuned (tested only with synthetic input). A text-selection drag also
-  triggers the tray (the hook can't tell what is being dragged); the drop target refuses the payload
-  and the tray folds itself away.
+  opens the floating tray (the hook can't tell what is being dragged); the drop target refuses the payload at
+  once, the tray folds itself away, and further jiggles of that drag are ignored until the button is released.
 - Multi-monitor and non-100% DPI are handled in code (scale factor, the notch anchors to the monitor it opens on,
   the floating tray opens on the pointer's monitor at its scale) but only tested on one 100% display. A floating
   tray on a monitor of another DPI relies on GPUI's DPI-change handling, then is put back to its own size and
@@ -346,5 +352,5 @@ worth a profile before building on it, because an always-on app should be closer
 
 ## License
 
-[MIT](LICENSE). The crates this builds on (GPUI and its dependency tree, 482 packages on Windows) are all
+[MIT](LICENSE). The crates this builds on (GPUI and its dependency tree, 485 packages on Windows) are all
 permissively licensed (MIT, Apache-2.0, BSD, Zlib, ISC and similar); a distributed binary should ship their notices.
