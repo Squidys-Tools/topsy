@@ -4,6 +4,7 @@
 
 pub mod edge;
 pub mod jiggle;
+pub mod media;
 pub mod notch;
 pub mod shelf;
 pub mod spring;

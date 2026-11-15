@@ -7,9 +7,12 @@ mod backdrop;
 mod config;
 mod icon;
 mod look;
+mod media;
 mod model;
+mod now_playing;
 mod state;
 mod tray;
+mod tray_view;
 mod win32;
 
 use std::collections::HashMap;
@@ -29,6 +32,7 @@ use windows::Win32::System::Com::COINIT_MULTITHREADED;
 
 use crate::model::edge::EdgeZone;
 use crate::model::jiggle::JiggleConfig;
+use crate::model::media::NowPlaying;
 use crate::model::notch::Notch;
 use crate::model::shelf::{self, Item, Shelf};
 use crate::model::spring::{Spring, SpringConfig};
@@ -158,6 +162,9 @@ struct Island {
     writer: Option<state::Writer>,
     /// Each chip's thumbnail or icon, by its path; a chip without one shows a type badge.
     icons: HashMap<PathBuf, Arc<RenderImage>>,
+    /// What the system's media session is playing, and its art.
+    media: NowPlaying,
+    art: Option<Arc<RenderImage>>,
 }
 
 impl Island {
@@ -192,12 +199,14 @@ impl Island {
             drag_out: false,
             writer: persistence.writer,
             icons: HashMap::new(),
+            media: NowPlaying::default(),
+            art: None,
         }
     }
 
     fn set_mode(&mut self, mode: Mode, cx: &mut Context<Self>) {
         self.mode = mode;
-        let (w, h) = mode.size();
+        let (w, h) = self.size_for(mode);
         self.width.set_target(w);
         self.height.set_target(h);
         if mode == Mode::Tray {
@@ -725,79 +734,6 @@ impl Island {
             )
             .child(remove)
     }
-
-    /// The expanded tray: a header and a row of chips (or the hint, when the shelf is empty).
-    fn tray_content(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        let count = self.shelf.len();
-        let title = if count == 0 {
-            "Shelf".to_string()
-        } else {
-            format!("Shelf · {count}")
-        };
-        let clear = (count > 0).then(|| {
-            div()
-                .id("clear")
-                .px(px(6.0))
-                .rounded(px(4.0))
-                .text_xs()
-                .text_color(rgba(0xffffffb3))
-                .cursor_pointer()
-                .hover(|style| style.bg(rgba(0xffffff1a)).text_color(rgb(0xffffff)))
-                .child("Clear")
-                .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| this.clear_shelf(cx)))
-        });
-
-        let body = if self.shelf.is_empty() {
-            div()
-                .flex_1()
-                .flex()
-                .items_center()
-                .justify_center()
-                .text_sm()
-                .child("Drop files to park them")
-                .into_any_element()
-        } else {
-            let chips: Vec<_> = self
-                .shelf
-                .items()
-                .iter()
-                .enumerate()
-                .map(|(i, item)| self.chip(i, item, cx))
-                .collect();
-            div()
-                .id("chips")
-                .w_full()
-                .flex()
-                .flex_row()
-                .gap(px(8.0))
-                .overflow_x_scroll()
-                .children(chips)
-                .into_any_element()
-        };
-
-        // Fixed size and centred in the window, so it is revealed (not squashed) while the
-        // pill springs open.
-        div()
-            .w(px(TRAY.0))
-            .h(px(TRAY.1))
-            .flex_shrink_0()
-            .flex()
-            .flex_col()
-            .p(px(10.0))
-            .gap(px(6.0))
-            .child(
-                div()
-                    .w_full()
-                    .h(px(16.0))
-                    .flex()
-                    .flex_row()
-                    .items_center()
-                    .justify_between()
-                    .child(div().text_xs().text_color(rgba(0xffffffb3)).child(title))
-                    .children(clear),
-            )
-            .child(body)
-    }
 }
 
 impl Render for Island {
@@ -846,14 +782,10 @@ impl Render for Island {
         };
         let radius = if ears { notch.radius } else { DWM_RADIUS };
 
-        let peek_label = match self.shelf.len() {
-            0 => "topsy".to_string(),
-            n => format!("{n} on shelf"),
-        };
         let content = if show_tray {
             self.tray_content(cx).into_any_element()
         } else if notch.height >= 20.0 {
-            div().text_xs().child(peek_label).into_any_element()
+            self.peek_content().into_any_element()
         } else {
             div().into_any_element()
         };
@@ -1120,6 +1052,8 @@ fn main() {
             })
             .detach();
         }
+
+        now_playing::start(cx, &island);
 
         // Real input: the global mouse hook reports jiggles, the top edge and button releases.
         let events = if config.no_hook {

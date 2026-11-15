@@ -21,6 +21,8 @@ pub struct Config {
     pub no_hook: bool,
     /// `TOPSY_NO_TRAY`: no notification-area icon.
     pub no_tray: bool,
+    /// `TOPSY_NO_MEDIA`: don't watch the system's media session (Now Playing).
+    pub no_media: bool,
     /// `TOPSY_DEMO`: open and fold on a timer, to watch the motion without a mouse.
     pub demo: bool,
     /// `TOPSY_SEED=path;path`: files put on the shelf at startup.
@@ -52,6 +54,7 @@ impl Config {
             },
             no_hook,
             no_tray: var("TOPSY_NO_TRAY").is_some(),
+            no_media: var("TOPSY_NO_MEDIA").is_some(),
             demo: var("TOPSY_DEMO").is_some(),
             seed: var("TOPSY_SEED").map(|s| std::env::split_paths(&s).collect()),
             exit_after: text("TOPSY_EXIT_AFTER_MS")
@@ -84,7 +87,8 @@ mod tests {
         let c = config(&[]);
         assert_eq!(c.rest, Mode::Hidden);
         assert_eq!(c.glass, None);
-        assert!(!c.no_hook && !c.no_tray && !c.demo && !c.log);
+        assert!(!c.no_hook && !c.no_tray && !c.no_media && !c.demo && !c.log);
+        assert!(config(&[("TOPSY_NO_MEDIA", "1")]).no_media);
         assert!(c.seed.is_none() && c.exit_after.is_none() && c.state.is_none());
     }
 
