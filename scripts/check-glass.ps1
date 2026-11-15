@@ -1,18 +1,19 @@
-# Does the pill really blur what is behind it?
+# Does the notch really blur what is behind it?
 #
 # Puts a hard black/white stripe pattern (6px stripes) behind the open tray, then compares
 # the stripe amplitude seen *through* its glass with the amplitude of the same stripes
-# beside it. A blur flattens fine stripes; a tint or a transparent pill does not.
-# Runs the pill three ways against the same backdrop:
+# beside it. A blur flattens fine stripes; a tint or a transparent notch does not.
+# Runs the tray four ways against the same backdrop:
 #
-#   TOPSY_GLASS=clear  control: transparent pill, no blur   -> ratio ~1, proves the measurement
-#   TOPSY_GLASS=tint   control: the pill's fill, no blur    -> ratio set by the fill's opacity alone
-#   (default) blur     the real thing                       -> must beat the tint control
+#   TOPSY_GLASS=clear    control: transparent, no blur   -> ratio ~1, proves the measurement
+#   TOPSY_GLASS=tint     control: the fill, no blur      -> ratio set by the fill's opacity alone
+#   TOPSY_GLASS=blur     the compositor glass            -> must beat the tint control
+#   TOPSY_GLASS=acrylic  the fallback                    -> must beat the tint control too
 #
 # The tint control is what makes the verdict about the blur and not about the dark fill, which
 # would cut stripe contrast by itself.
 #
-# Shows a stripe window at the top of the screen for about 30 seconds.
+# Shows a stripe window at the top of the screen for about 40 seconds.
 # usage: check-glass.ps1 [-Exe target\debug\topsy.exe] [-MaxBlurShare 0.5]
 param(
     [string]$Exe = "$PSScriptRoot\..\target\debug\topsy.exe",
