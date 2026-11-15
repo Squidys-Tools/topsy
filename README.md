@@ -321,9 +321,10 @@ hook, not the media thread). It is worth a profile, because an always-on app sho
 
 ## Not done / known gaps
 
-- Real jiggle thresholds are untuned (tested only with synthetic input). A text-selection drag also
-  opens the floating tray (the hook can't tell what is being dragged); the drop target refuses the payload at
-  once, the tray folds itself away, and further jiggles of that drag are ignored until the button is released.
+- Real jiggle thresholds are untuned (tested only with synthetic input). The shelf takes files only, by choice:
+  a jiggled text or link drag still opens the floating tray (the hook can't tell what is being dragged), the drop
+  target refuses the payload at once, the tray folds itself away, and further jiggles of that drag are ignored
+  until the button is released.
 - Multi-monitor and non-100% DPI are handled in code (scale factor, the notch anchors to the monitor it opens on,
   the floating tray opens on the pointer's monitor at its scale) but only tested on one 100% display. A floating
   tray on a monitor of another DPI relies on GPUI's DPI-change handling, then is put back to its own size and
