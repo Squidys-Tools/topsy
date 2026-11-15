@@ -1,7 +1,8 @@
 # End-to-end check of a drag that carries text, not files, on a live desktop:
-#   real OLE text drag -> synthetic jiggle -> the hook opens the tray (it can't tell what is being
-#   dragged) -> carry the drag onto the island -> the drop target refuses it -> the tray must fold
-#   at once, while the button is still down -> release: nothing lands on the shelf.
+#   real OLE text drag -> synthetic jiggle -> the hook opens the floating tray under the pointer (it
+#   can't tell what is being dragged) -> the drop target refuses the drag -> the tray must fold at
+#   once, while the button is still down -> jiggle again: the same refused drag must not reopen it
+#   -> release: nothing lands on the shelf.
 # Moves the real cursor for ~4s. All input stays inside the fixture window and the island.
 # usage: e2e-textdrag.ps1 [-Exe target\release\topsy.exe]
 param([string]$Exe = "$PSScriptRoot\..\target\release\topsy.exe")
@@ -84,28 +85,28 @@ try {
         for ($i = 0; $i -lt 6; $i++) { $x += $dir * 14; Move-Cursor $x $py; Start-Sleep -Milliseconds 8 }
     }
     if (-not (Wait-Log $appLog 'hook Jiggle' 1500)) { throw 'jiggle was not detected by the hook' }
-    $sw = [Diagnostics.Stopwatch]::StartNew()
-    while (-not (Is-Open)) { if ($sw.ElapsedMilliseconds -gt 3000) { throw 'the jiggle did not open the tray' }; Start-Sleep -Milliseconds 30 }
-    Start-Sleep -Milliseconds 450
-    & "$PSScriptRoot\shot.ps1" -Out (Join-Path $shots 'textdrag-1-open.png')
+    if (-not (Wait-Log $appLog 'floating tray at' 1500)) { throw 'the jiggle did not open the floating tray' }
 
-    # The floating tray opened under the pointer; move about on it, as the file drag does.
-    $tx = $x + 20 * $scale
-    $ty = $py + 10 * $scale
-    $pt = New-Object Native+POINT; $pt.X = [int]$tx; $pt.Y = [int]$ty
-    $ownerPid = 0; [void][Native]::GetWindowThreadProcessId([Native]::WindowFromPoint($pt), [ref]$ownerPid)
-    if ($ownerPid -ne $app.Id) { throw "the island is not under the drop point (that window belongs to pid $ownerPid); aborting drag" }
-    $fx = $x; $fy = $py
-    for ($i = 1; $i -le 5; $i++) {
-        Move-Cursor ($fx + ($tx - $fx) * $i / 5) ($fy + ($ty - $fy) * $i / 5)
-        Start-Sleep -Milliseconds 15
-    }
-
-    # The button is still down: the refusal alone must fold the tray, not the release.
+    # The tray opened under the pointer, so the drag is already over it. The button is still down:
+    # the refusal alone must fold the tray, not the release.
     if (-not (Wait-Log $appLog 'drop-target Refused \(mode Tray\)' 1500)) { throw 'the drop target never reported the text drag as refused' }
     $sw = [Diagnostics.Stopwatch]::StartNew()
     while (Is-Open) { if ($sw.ElapsedMilliseconds -gt 1000) { throw 'the tray stayed open after the drag was refused' }; Start-Sleep -Milliseconds 30 }
     if (Select-String -Path $appLog -Pattern 'hook ButtonUp' -Quiet) { throw 'the tray folded only after the button was released' }
+
+    # Jiggling the same refused drag again must not bring the tray back (it would flash each time).
+    $jiggles = @(Select-String -Path $appLog -Pattern 'hook Jiggle').Count
+    for ($stroke = 0; $stroke -lt 7; $stroke++) {
+        $dir = if ($stroke % 2 -eq 0) { 1 } else { -1 }
+        for ($i = 0; $i -lt 6; $i++) { $x += $dir * 14; Move-Cursor $x $py; Start-Sleep -Milliseconds 8 }
+    }
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    while (@(Select-String -Path $appLog -Pattern 'hook Jiggle').Count -le $jiggles) {
+        if ($sw.ElapsedMilliseconds -gt 1500) { throw 'the second jiggle was not detected by the hook' }; Start-Sleep -Milliseconds 30
+    }
+    Start-Sleep -Milliseconds 300
+    if (@(Select-String -Path $appLog -Pattern 'floating tray at').Count -ne 1) { throw 'a jiggle of the refused drag reopened the tray' }
+    if (Is-Open) { throw 'the tray is open again after the second jiggle' }
     Start-Sleep -Milliseconds 300
     & "$PSScriptRoot\shot.ps1" -Out (Join-Path $shots 'textdrag-2-folded.png')
 

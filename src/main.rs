@@ -37,7 +37,7 @@ use crate::frame::{Frame, Glass, Mode, PEEK};
 use crate::model::media::NowPlaying;
 use crate::model::shelf::{self, Shelf};
 use crate::model::spring::{Spring, SpringConfig};
-use crate::model::tray_cause::TrayCause;
+use crate::model::tray_cause::{HeldDrag, TrayCause};
 use crate::win32::{DropEvent, HookEvent};
 
 /// How long the cursor rests on the top edge before the notch comes down.
@@ -73,6 +73,7 @@ struct Island {
     frame: Frame,
     /// What the tray was opened for; decides which events fold it early.
     tray_cause: TrayCause,
+    held: HeldDrag,
     /// Bumped on every state change that schedules a collapse, so stale timers do nothing.
     collapse_generation: u64,
     /// The chip the left button went down on, and where: it becomes a drag out once moved.
@@ -112,6 +113,7 @@ impl Island {
             scale,
             frame: Frame::new(hwnd, scale, glass, black, backdrop),
             tray_cause: TrayCause::Timed(Duration::ZERO),
+            held: HeldDrag::default(),
             collapse_generation: 0,
             press: None,
             drag_out: false,
@@ -286,7 +288,7 @@ impl Island {
     fn on_hook(&mut self, event: HookEvent, cx: &mut Context<Self>) {
         log(&format!("hook {event:?} (mode {:?})", self.mode));
         match event {
-            HookEvent::Jiggle if self.fullscreen() => {}
+            HookEvent::Jiggle if !self.held.may_open_tray() || self.fullscreen() => {}
             HookEvent::Jiggle => self.float_tray(cx),
             HookEvent::Edge { at_edge, pressed } => {
                 self.at_edge = at_edge;
@@ -294,13 +296,16 @@ impl Island {
                 if at_edge && away && !self.fullscreen() {
                     if pressed {
                         // Something is being dragged up here: give it somewhere to land.
-                        self.open_notch_tray(TrayCause::Drag, cx);
+                        if self.held.may_open_tray() {
+                            self.open_notch_tray(TrayCause::Drag, cx);
+                        }
                     } else if self.mode == Mode::Hidden {
                         self.schedule_reveal(cx);
                     }
                 }
             }
             HookEvent::ButtonUp => {
+                self.held.release();
                 if self.mode == Mode::Tray && !self.drag_out {
                     self.schedule_collapse(COLLAPSE_AFTER_RELEASE, cx);
                 }
@@ -338,6 +343,9 @@ impl Island {
     /// for that drag (a jiggle), its payload can never land: fold it away.
     fn on_drop_event(&mut self, event: DropEvent, cx: &mut Context<Self>) {
         log(&format!("drop-target {event:?} (mode {:?})", self.mode));
+        if event == DropEvent::Refused {
+            self.held.refuse();
+        }
         if event == DropEvent::Refused
             && self.mode == Mode::Tray
             && self.tray_cause.closed_by_refusal()

@@ -24,6 +24,28 @@ impl TrayCause {
     }
 }
 
+/// The held drag, as far as the tray is concerned. Once the drop target has refused it, its
+/// payload can never land, so nothing reopens the tray for it until the button comes up: the
+/// floating tray opens under the pointer, and would otherwise flash on every jiggle.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct HeldDrag {
+    refused: bool,
+}
+
+impl HeldDrag {
+    pub fn refuse(&mut self) {
+        self.refused = true;
+    }
+
+    pub fn release(&mut self) {
+        self.refused = false;
+    }
+
+    pub fn may_open_tray(self) -> bool {
+        !self.refused
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -41,5 +63,15 @@ mod tests {
         // It didn't open for the drag: a click-opened shelf shouldn't vanish
         // because a text selection happened to cross it.
         assert!(!TrayCause::Timed(Duration::from_secs(4)).closed_by_refusal());
+    }
+
+    #[test]
+    fn a_refused_drag_cannot_reopen_the_tray_until_released() {
+        let mut drag = HeldDrag::default();
+        assert!(drag.may_open_tray());
+        drag.refuse();
+        assert!(!drag.may_open_tray(), "a further jiggle of the same drag");
+        drag.release();
+        assert!(drag.may_open_tray(), "the next drag starts fresh");
     }
 }
