@@ -29,10 +29,13 @@ it (see [Notch](#notch)), the tray holds a **shelf** of files you can drag back 
 | `src/model/tray_cause.rs` | Why the tray is open, and which events fold it early |
 | `src/config.rs` | Every `TOPSY_*` switch, read once at startup |
 | `src/backdrop.rs` | The glass: the compositor's blurred backdrop behind GPUI's content, clipped to the notch's shape |
-| `src/win32/` | Win32 glue GPUI doesn't expose: `window` (overlay styles, acrylic fallback, geometry, fullscreen), `dragdrop` (the drop-target wrapper that reports refused drags, dragging files out), `hook` (`WH_MOUSE_LL` thread), `shell` (opening files) |
+| `src/win32/` | Win32 glue GPUI doesn't expose: `window` (overlay styles, acrylic fallback, geometry, fullscreen), `dialog` (the settings window's dark caption and raising it), `dragdrop` (the drop-target wrapper that reports refused drags, dragging files out), `hook` (`WH_MOUSE_LL` thread), `shell` (opening files) |
 | `src/icon.rs` | A chip's picture: the shell's thumbnail or icon for a file, as Explorer shows it |
 | `src/state.rs` | The shelf's save file and the thread that writes it |
 | `src/tray.rs` | The notification-area icon and its menu, on their own thread |
+| `src/settings.rs` | The on/off settings, one list shared by the menu and the settings window |
+| `src/settings_window.rs` | The settings window: a switch per setting, the version, Quit |
+| `src/app.rs` | The app's wiring: opens the island and connects the threads, tray icon and settings window to it |
 | `src/autostart.rs` | Start with Windows: one `HKCU\...\Run` value |
 | `src/look.rs` | The *Black notch* setting: one `HKCU\Software\topsy` value |
 | `src/main.rs` | The island view: hidden, peeking or open as the tray with the shelf; file-drop target |
@@ -91,9 +94,15 @@ To build locally without installing the SDK, GPUI only needs one file from it: c
   stall launch): chips return as `…` and are settled off the UI thread, which drops entries whose files are gone.
 - **Tray icon.** A small glass-blue pill in the notification area (drawn in code, no asset). Left click opens
   or closes the shelf. Right click, or right-click the notch itself, opens the menu: *Show shelf*, *Clear shelf (N)*,
-  *Black notch* and *Start with Windows* (each checked when on), and *Quit topsy*. The icon lives on its own thread with a hidden window,
+  *Black notch* and *Start with Windows* (each checked when on), *Settings…* and *Quit topsy*. The icon lives on its own thread with a hidden window,
   re-adds itself when Explorer restarts, and is removed on Quit. On Windows 11 a new icon starts in the overflow
   flyout; drag it out to keep it visible.
+- **Settings window.** *Settings…* opens a small dark window, *topsy settings*, with a switch for each setting,
+  the version and *Quit topsy*. There is one at a time: asking again brings it to the front. It is an ordinary
+  window and takes focus when it opens, which the island never does; closing it leaves the app running. The
+  menu and the window are both built from the list in `src/settings.rs` and read each value from where it is
+  saved, so a switch in one shows in the other; a new toggle is a variant there and an arm in each of its
+  matches, plus what the island does about it (`Island::on_setting`).
 - **Black notch** draws the notch plain black instead of glass, at once, and is kept in
   `HKCU\Software\topsy\Look` (`black`; absent means glass).
 - **Start with Windows** writes `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\topsy` (the quoted path of
@@ -282,7 +291,7 @@ worth a profile before building on it, because an always-on app should be closer
   Until the picture arrives, or if the shell has none, the chip shows an extension badge.
 - The target decides copy, move or link (the default shell drop source offers all three), so a drag to a folder on
   the same drive moves the file, as in Explorer; the chip then leaves the shelf.
-- No settings window or droplets yet. The tray icon is drawn in code and the exe itself has no icon resource.
+- No droplets yet. The settings window is a plain dark fill, not Mica. The tray icon is drawn in code and the exe itself has no icon resource.
 
 ## License
 
