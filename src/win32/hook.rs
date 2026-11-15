@@ -9,8 +9,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     TranslateMessage, WH_MOUSE_LL, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
 };
 
-use crate::edge::{EdgeWatch, EdgeZone};
-use crate::jiggle::{JiggleConfig, JiggleDetector};
+use crate::model::edge::{EdgeWatch, EdgeZone};
+use crate::model::jiggle::{JiggleConfig, JiggleDetector};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HookEvent {

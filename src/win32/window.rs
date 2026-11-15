@@ -20,7 +20,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows::core::{s, w};
 
-use crate::edge::fills_monitor;
+use crate::model::edge::fills_monitor;
 
 /// Whether the foreground window is a fullscreen app on `island`'s monitor. The desktop
 /// counts as neither: it fills the monitor too, but its windows are `Progman` and `WorkerW`.

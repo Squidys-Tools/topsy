@@ -7,7 +7,7 @@
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
-use crate::shelf::{self, Shelf};
+use crate::model::shelf::{self, Shelf};
 
 /// Everything persistence needs, ready at startup: the shelf as it was saved, and the
 /// writer that keeps the file in step. `writer` is `None` when persistence is off.

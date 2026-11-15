@@ -5,16 +5,11 @@
 mod autostart;
 mod backdrop;
 mod config;
-mod edge;
 mod icon;
-mod jiggle;
 mod look;
-mod notch;
-mod shelf;
-mod spring;
+mod model;
 mod state;
 mod tray;
-mod tray_cause;
 mod win32;
 
 use std::collections::HashMap;
@@ -32,13 +27,13 @@ use raw_window_handle::HasWindowHandle;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::System::Com::COINIT_MULTITHREADED;
 
-use crate::edge::EdgeZone;
-use crate::jiggle::JiggleConfig;
-use crate::notch::Notch;
-use crate::shelf::{Item, Shelf};
-use crate::spring::{Spring, SpringConfig};
+use crate::model::edge::EdgeZone;
+use crate::model::jiggle::JiggleConfig;
+use crate::model::notch::Notch;
+use crate::model::shelf::{self, Item, Shelf};
+use crate::model::spring::{Spring, SpringConfig};
+use crate::model::tray_cause::TrayCause;
 use crate::tray::TrayEvent;
-use crate::tray_cause::TrayCause;
 use crate::win32::{DragOutcome, DropEvent, HookEvent};
 
 /// The notch's body when it peeks down from the top edge, and when it holds the tray.
