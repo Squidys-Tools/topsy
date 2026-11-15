@@ -3,8 +3,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod archive;
 mod autostart;
 mod backdrop;
+mod chip;
 mod config;
 mod icon;
 mod look;
@@ -29,7 +31,7 @@ use windows::Win32::Foundation::HWND;
 use windows::Win32::System::Com::COINIT_MULTITHREADED;
 
 use crate::model::notch::Notch;
-use crate::model::shelf::{self, Item, Shelf};
+use crate::model::shelf::{self, Shelf};
 use crate::model::spring::{Spring, SpringConfig};
 use crate::model::tray_cause::TrayCause;
 use crate::win32::{DragOutcome, DropEvent, HookEvent};
@@ -61,13 +63,6 @@ const COLLAPSE_AFTER_DROP: Duration = Duration::from_millis(4000);
 const COLLAPSE_AFTER_LEAVE: Duration = Duration::from_millis(1500);
 /// How long a tray opened by a click (on the pill or the tray icon) waits for the cursor to arrive.
 const COLLAPSE_AFTER_CLICK: Duration = Duration::from_millis(5000);
-
-/// How far (logical pixels) a pressed chip must be dragged before it becomes a drag out.
-const DRAG_OUT_THRESHOLD: f32 = 6.0;
-
-const CHIP: (f32, f32) = (72.0, 70.0);
-/// The picture at the top of a chip, square.
-const ICON: f32 = 38.0;
 
 /// Event trace for scripted tests; silent unless TOPSY_LOG is set.
 fn log(message: &str) {
@@ -152,6 +147,8 @@ struct Island {
     press: Option<(usize, Point<Pixels>)>,
     /// A chip is being dragged out; the system's drag loop is running.
     drag_out: bool,
+    /// A chip's right-click menu is up.
+    chip_menu: bool,
     /// Writes the shelf to its state file on a thread of its own; `None` when saving is off.
     writer: Option<state::Writer>,
     /// Each chip's thumbnail or icon, by its path; a chip without one shows a type badge.
@@ -188,6 +185,7 @@ impl Island {
             collapse_generation: 0,
             press: None,
             drag_out: false,
+            chip_menu: false,
             writer: persistence.writer,
             icons: HashMap::new(),
         }
@@ -273,7 +271,7 @@ impl Island {
     /// Learn whether each chip is a folder or a file, and fetch its picture, on a worker
     /// thread of its own (the shell wants COM there). Each chip updates as its answer arrives.
     fn resolve_kinds(&mut self, added: Vec<PathBuf>, cx: &mut Context<Self>) {
-        let size = (ICON * self.scale).round() as i32;
+        let size = (chip::ICON * self.scale).round() as i32;
         let (tx, rx) = async_channel::unbounded();
         std::thread::spawn(move || {
             win32::with_com(COINIT_MULTITHREADED, || {
@@ -336,7 +334,7 @@ impl Island {
         cx.spawn(async move |this, cx| {
             cx.background_executor().timer(after).await;
             this.update(cx, |this, cx| {
-                if this.collapse_generation != generation || this.drag_out {
+                if this.collapse_generation != generation || this.drag_out || this.chip_menu {
                     return;
                 }
                 // The cursor is asked directly rather than remembered: a hover state that
@@ -427,7 +425,7 @@ impl Island {
     }
 
     fn on_hover(&mut self, hovered: bool, cx: &mut Context<Self>) {
-        if self.drag_out || self.mode == self.rest {
+        if self.drag_out || self.chip_menu || self.mode == self.rest {
         } else if self.mode == Mode::Peek {
             // The linger re-checks the cursor itself, so it needs no "leave", which a cursor
             // flicked off the top edge doesn't always deliver.
@@ -447,83 +445,6 @@ impl Island {
             log(&format!("removed {}", item.name()));
             self.shelf_changed(cx);
         }
-    }
-
-    /// Open a chip's file or folder with its default handler.
-    ///
-    /// On a thread of its own: `ShellExecute` can wait on the handler for a while and pumps
-    /// messages meanwhile. Inline, that freezes the island, and a message for this window
-    /// reaching GPUI from inside the click handler that got us here finds the app already
-    /// borrowed and aborts the process.
-    fn open_item(&self, index: usize) {
-        let Some(item) = self.shelf.items().get(index).cloned() else {
-            return;
-        };
-        let spawned = std::thread::Builder::new()
-            .name("topsy-open".into())
-            .spawn(move || {
-                let opened = win32::open_path(&item.path);
-                log(&format!(
-                    "open {} ({})",
-                    item.name(),
-                    if opened { "ok" } else { "failed" }
-                ));
-                if !opened {
-                    eprintln!("topsy: could not open {}", item.path.display());
-                }
-            });
-        if let Err(err) = spawned {
-            eprintln!("topsy: could not start opening the file: {err}");
-        }
-    }
-
-    /// Hand a chip's file to the system's drag loop, so it can be dropped on any window.
-    ///
-    /// The loop blocks until the button is released, and dispatches this window's messages
-    /// while it runs, so it can't run inside the event handler that got us here: that would
-    /// re-enter GPUI. It runs from a task instead, outside any borrow of this entity.
-    fn begin_drag_out(&mut self, index: usize, cx: &mut Context<Self>) {
-        let (Some(hwnd), Some(item)) = (self.hwnd, self.shelf.items().get(index).cloned()) else {
-            return;
-        };
-        if self.drag_out {
-            return;
-        }
-        self.drag_out = true;
-        // Whatever was about to fold the tray away must not, mid-drag.
-        self.collapse_generation += 1;
-        log(&format!("dragout start {}", item.name()));
-        cx.spawn(async move |this, cx| {
-            let outcome = win32::drag_files_out(hwnd, std::slice::from_ref(&item.path));
-            this.update(cx, |this, cx| this.finish_drag_out(&item, outcome, cx))
-                .ok();
-        })
-        .detach();
-    }
-
-    fn finish_drag_out(
-        &mut self,
-        item: &Item,
-        outcome: windows::core::Result<DragOutcome>,
-        cx: &mut Context<Self>,
-    ) {
-        self.drag_out = false;
-        self.press = None;
-        let moved = matches!(outcome, Ok(DragOutcome::Dropped));
-        if let Err(err) = &outcome {
-            eprintln!("topsy: drag out failed: {err}");
-        }
-        log(&format!(
-            "dragout done {} ({})",
-            item.name(),
-            if moved { "dropped" } else { "cancelled" }
-        ));
-        if moved {
-            self.shelf.remove_path(&item.path);
-            self.shelf_changed(cx);
-        }
-        // The button is up and the cursor is usually elsewhere by now.
-        self.schedule_collapse(COLLAPSE_AFTER_RELEASE, cx);
     }
 
     /// What the notch is drawn with right now.
@@ -589,115 +510,6 @@ impl Island {
             }
         })
         .detach();
-    }
-
-    /// One file on the shelf: its thumbnail or icon (a coloured type badge until that arrives,
-    /// or if the shell has none) and the name. Press and drag to take it
-    /// out, click to open it, the corner cross to remove it from the shelf (not from disk).
-    fn chip(&self, index: usize, item: &Item, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        let remove = div()
-            .id(("remove", index))
-            .absolute()
-            .top(px(2.0))
-            .right(px(2.0))
-            .size(px(16.0))
-            .rounded_full()
-            .bg(rgba(0x000000b8))
-            .flex()
-            .items_center()
-            .justify_center()
-            .text_xs()
-            .child("×")
-            .invisible()
-            .group_hover("chip", |style| style.visible())
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|this, _: &MouseDownEvent, _window, cx| {
-                    this.press = None;
-                    cx.stop_propagation();
-                }),
-            )
-            .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                cx.stop_propagation();
-                this.remove_item(index, cx);
-            }));
-
-        let picture = match self.icons.get(&item.path) {
-            Some(icon) => img(icon.clone())
-                .size(px(ICON))
-                .object_fit(ObjectFit::Contain)
-                .into_any_element(),
-            None => div()
-                .size(px(ICON))
-                .rounded(px(8.0))
-                .bg(hsla(item.badge_hue(), 0.55, 0.45, 1.0))
-                .flex()
-                .items_center()
-                .justify_center()
-                .text_xs()
-                .font_weight(FontWeight::BOLD)
-                .child(item.badge_label())
-                .into_any_element(),
-        };
-
-        div()
-            .id(("chip", index))
-            .group("chip")
-            .relative()
-            .w(px(CHIP.0))
-            .h(px(CHIP.1))
-            .flex_shrink_0()
-            .flex()
-            .flex_col()
-            .items_center()
-            .gap(px(4.0))
-            .pt(px(6.0))
-            .rounded(px(8.0))
-            .cursor_pointer()
-            .hover(|style| style.bg(rgba(0xffffff1a)))
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(move |this, event: &MouseDownEvent, _window, _cx| {
-                    this.press = Some((index, event.position));
-                }),
-            )
-            .on_mouse_move(
-                cx.listener(move |this, event: &MouseMoveEvent, _window, cx| {
-                    if !event.dragging() {
-                        this.press = None;
-                        return;
-                    }
-                    let Some((pressed, start)) = this.press else {
-                        return;
-                    };
-                    let dx = f32::from(event.position.x - start.x);
-                    let dy = f32::from(event.position.y - start.y);
-                    if pressed == index && dx * dx + dy * dy >= DRAG_OUT_THRESHOLD.powi(2) {
-                        this.press = None;
-                        this.begin_drag_out(index, cx);
-                    }
-                }),
-            )
-            .on_mouse_up(
-                MouseButton::Left,
-                cx.listener(|this, _: &gpui::MouseUpEvent, _window, _cx| this.press = None),
-            )
-            // Released somewhere else (slid off the chip first): that press is over too.
-            .on_mouse_up_out(
-                MouseButton::Left,
-                cx.listener(|this, _: &gpui::MouseUpEvent, _window, _cx| this.press = None),
-            )
-            .on_click(cx.listener(move |this, _: &ClickEvent, _window, _cx| this.open_item(index)))
-            .child(picture)
-            .child(
-                div()
-                    .w(px(CHIP.0 - 8.0))
-                    .text_xs()
-                    .text_center()
-                    .truncate()
-                    .child(item.name()),
-            )
-            .child(remove)
     }
 
     /// The expanded tray: a header and a row of chips (or the hint, when the shelf is empty).

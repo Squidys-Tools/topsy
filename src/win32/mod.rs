@@ -4,13 +4,15 @@
 mod dialog;
 mod dragdrop;
 mod hook;
+mod menu;
 mod shell;
 mod window;
 
 pub use dialog::{bring_to_front, dark_title_bar};
 pub use dragdrop::{DragOutcome, DropEvent, drag_files_out, watch_drop_refusals};
 pub use hook::{HookEvent, spawn_mouse_hook};
-pub use shell::open_path;
+pub use menu::{Entry as MenuEntry, popup as popup_menu};
+pub use shell::{open_path, show_in_folder};
 pub use window::{
     Clip, apply_overlay_styles, cursor_over, foreground_window, fullscreen_over,
     monitor_top_center, move_window, restore_foreground, round_corners, set_acrylic, set_clip,

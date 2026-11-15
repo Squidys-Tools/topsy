@@ -26,10 +26,13 @@ it (see [Notch](#notch)), the tray holds a **shelf** of files you can drag back 
 | `src/model/notch.rs` | The notch's outline: body, ears and corner radius for a given size |
 | `src/model/edge.rs` | Reaching for the hidden notch: the cursor arriving on the top row above it; what counts as fullscreen |
 | `src/model/shelf.rs` | The shelf: files parked on the island, and its save format |
+| `src/model/archive.rs` | Naming a chip's zip (`report.zip`, `report (2).zip`) and the entries inside it |
 | `src/model/tray_cause.rs` | Why the tray is open, and which events fold it early |
 | `src/config.rs` | Every `TOPSY_*` switch, read once at startup |
 | `src/backdrop.rs` | The glass: the compositor's blurred backdrop behind GPUI's content, clipped to the notch's shape |
-| `src/win32/` | Win32 glue GPUI doesn't expose: `window` (overlay styles, acrylic fallback, geometry, fullscreen), `dialog` (the settings window's dark caption and raising it), `dragdrop` (the drop-target wrapper that reports refused drags, dragging files out), `hook` (`WH_MOUSE_LL` thread), `shell` (opening files) |
+| `src/win32/` | Win32 glue GPUI doesn't expose: `window` (overlay styles, acrylic fallback, geometry, fullscreen), `dialog` (the settings window's dark caption and raising it), `dragdrop` (the drop-target wrapper that reports refused drags, dragging files out), `hook` (`WH_MOUSE_LL` thread), `shell` (opening files, showing them in Explorer), `menu` (a popup menu on a thread of its own) |
+| `src/chip.rs` | A chip: how it is drawn, opening it, dragging it out, and its right-click actions |
+| `src/archive.rs` | *Compress to ZIP file*: a chip's file or folder zipped beside it ([`zip`](https://crates.io/crates/zip), MIT) |
 | `src/icon.rs` | A chip's picture: the shell's thumbnail or icon for a file, as Explorer shows it |
 | `src/state.rs` | The shelf's save file and the thread that writes it |
 | `src/tray.rs` | The notification-area icon and its menu, on their own thread |
@@ -88,7 +91,13 @@ To build locally without installing the SDK, GPUI only needs one file from it: c
 - **Shelf.** Drop files on the notch and they are parked in the tray as chips (the file's thumbnail or icon as
   Explorer shows it, the name, and a cross to remove it from the shelf; the file itself is never touched). The chips are references, not copies.
   Drag a chip out and drop it on any window, as you would from Explorer; click a chip to open it; **Clear**
-  empties the shelf. A chip leaves the shelf once a drop is accepted. Files that were moved or deleted since they
+  empties the shelf. Right-click a chip for *Show in folder* (Explorer opens with it selected), *Copy as path*
+  (quoted, as Explorer copies it), *Compress to ZIP file* and *Remove from shelf*. The zip is written beside the
+  original, named as Explorer would (`report.zip` for `report.pdf`, a folder keeps its name and is zipped whole,
+  `report (2).zip` if the name is taken, never overwriting), on a worker thread, and is parked on the shelf when
+  it is done; if it fails (a locked file, no room), the half-written zip is deleted and no chip appears. Links and
+  junctions inside a folder are left out of its zip. There is no rename: the island never takes focus, so it can't
+  hold a text field. A chip leaves the shelf once a drop is accepted. Files that were moved or deleted since they
   were parked are dropped from the shelf when the tray opens (checked off the UI thread). The shelf is saved to
   `%LOCALAPPDATA%\topsy\shelf.txt` on every change and comes back on the next start. Startup never looks at the saved files (a dead share would
   stall launch): chips return as `…` and are settled off the UI thread, which drops entries whose files are gone.
@@ -122,7 +131,9 @@ Two things about dragging out of a window that is itself a drop target, both fou
   `ShellExecute` (opening a chip): a message for the window reaching GPUI while it is inside a click handler finds
   the app already borrowed and aborts the process. That crashed the app about one run in five in the e2e. The
   drag loop runs from a `cx.spawn` task; opening a chip runs on a thread of its own, which also keeps a slow
-  handler (a UAC prompt, a cold network path) from freezing the island.
+  handler (a UAC prompt, a cold network path) from freezing the island. A chip's menu (`TrackPopupMenu`) and
+  *Show in folder* do the same: the menu is owned by a hidden window on its own thread, which is made
+  foreground so the menu closes on a click elsewhere, and hands foreground back to the window that had it.
 
 ## Notch
 
@@ -291,6 +302,8 @@ worth a profile before building on it, because an always-on app should be closer
   Until the picture arrives, or if the shell has none, the chip shows an extension badge.
 - The target decides copy, move or link (the default shell drop source offers all three), so a drag to a folder on
   the same drive moves the file, as in Explorer; the chip then leaves the shelf.
+- *Compress to ZIP file* shows no progress, and a big folder can take a while before its chip appears. Errors only
+  go to stderr. Quitting mid-zip leaves the partial zip behind.
 - No droplets yet. The settings window is a plain dark fill, not Mica. The tray icon is drawn in code and the exe itself has no icon resource.
 
 ## License
