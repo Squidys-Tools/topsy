@@ -24,6 +24,7 @@ it (see [Notch](#notch)), the tray holds a **shelf** of files you can drag back 
 | `src/model/spring.rs` | Damped spring (Framer-Motion-style `stiffness/damping/mass`), fixed sub-step, retargetable mid-flight |
 | `src/model/jiggle.rs` | Jiggle detector: direction reversals of a held-button drag inside a time window |
 | `src/model/notch.rs` | The notch's outline: body, ears and corner radius for a given size |
+| `src/model/float.rs` | Where the floating tray opens: centred under the pointer, kept whole on its monitor's work area |
 | `src/model/edge.rs` | Reaching for the hidden notch: the cursor arriving on the top row above it; what counts as fullscreen |
 | `src/model/shelf.rs` | The shelf: files parked on the island, and its save format |
 | `src/model/tray_cause.rs` | Why the tray is open, and which events fold it early |
@@ -35,6 +36,7 @@ it (see [Notch](#notch)), the tray holds a **shelf** of files you can drag back 
 | `src/tray.rs` | The notification-area icon and its menu, on their own thread |
 | `src/autostart.rs` | Start with Windows: one `HKCU\...\Run` value |
 | `src/look.rs` | The *Black notch* setting: one `HKCU\Software\topsy` value |
+| `src/frame.rs` | The island's window and shape: where it sits (the notch, or the floating tray), its size, fill, ears and rim, kept in step with the spring |
 | `src/main.rs` | The island view: hidden, peeking or open as the tray with the shelf; file-drop target |
 | `build.rs` | Copies one import library the GNU toolchain's bundled MinGW lacks (see below) |
 | `rust-toolchain.toml` | Pins the GNU toolchain, `stable-x86_64-pc-windows-gnu` |
@@ -124,11 +126,20 @@ nothing on screen, nothing to click.
 - **Reaching for it.** Resting the cursor on the screen's top row, above where the notch lives, for 150 ms brings
   it down as a 200x32 peek showing what is on the shelf; the delay keeps a sweep across the top from flashing it.
   The mouse hook watches for this (`src/model/edge.rs`), since nothing on screen could: it reports only arriving and
-  leaving, so there is still no polling. Dragging something up to that edge opens the tray straight away, as a
-  jiggle does. Click the peek to open the tray. It folds back 400 ms after the cursor leaves; the timer asks the
+  leaving, so there is still no polling. Dragging something up to that edge opens the tray straight away (and
+  brings a floating tray up to the notch). Click the peek to open the tray. It folds back 400 ms after the cursor leaves; the timer asks the
   OS where the cursor is rather than waiting for a hover "leave", which a cursor flicked off the edge doesn't
   always deliver.
-- **Not over fullscreen apps.** While the foreground window fills the notch's monitor (a video, a game, a
+- **The floating tray.** Jiggling a drag anywhere opens the tray as a floating panel centred under the pointer, as
+  Droppy's *Floating File Tray* does, so letting go there parks the files. It is the same window, moved: rounded
+  all round, no ears, and glass (or black) throughout rather than black at the edge, since it hangs from nothing.
+  It opens on the monitor under the pointer, at that monitor's scale, moved only as far as it takes to stay whole
+  inside the work area (`src/model/float.rs`). It folds by the jiggle tray's rules (a release without a drop, a
+  refused payload such as text, the timer after a drop), shrinking where it is, and the window then goes back to
+  the notch. One window rather than two: a second would need its own glass, drop-target wrapper and
+  non-activating setup, and could still be on screen with the notch. The top edge and the tray icon open the
+  notch tray as before. A jiggle while the tray is already open leaves it where it is.
+- **Not over fullscreen apps.** While the foreground window fills the monitor under the cursor (a video, a game, a
   slideshow), the top edge, a drag to it and the jiggle all do nothing, since games drag the mouse about freely.
   It is checked when one of them happens rather than tracked, so it costs nothing in between. A maximized window
   doesn't count (with an auto-hidden taskbar it overhangs the monitor too), nor does the desktop. The tray icon
@@ -199,9 +210,9 @@ through it. It was dropped.
 These drive the real desktop, so they move your cursor and/or show a window for a few seconds.
 
 - `e2e-drag.ps1` — starts a genuine OLE file drag from a fixture window, jiggles it with injected input,
-  verifies the hidden notch opens as the tray, carries the drag onto it, and checks the drop arrives with the right file name.
-  It checks that the window under the drop point is the island's first and aborts otherwise, so a drag is never
-  carried to the top of the screen unless the tray is there to catch it.
+  verifies the floating tray opens under the pointer, releases the drag on it, and checks the drop arrives with the
+  right file name. It checks that the window under the drop point is the island's first and aborts otherwise, so a
+  drag is never released unless the tray is there to catch it.
 - `e2e-shelf.ps1` — seeds a shelf, clicks the peeking notch open, drags a chip onto a separate app (a fixture window,
   `drop-target.ps1`) and checks it received the file and the chip left, cancels a drag with Escape (the chip stays),
   removes a chip with its cross without opening it, opens a folder chip in Explorer, clears the shelf, and finally
@@ -265,8 +276,10 @@ worth a profile before building on it, because an always-on app should be closer
 - Real jiggle thresholds are untuned (tested only with synthetic input). A text-selection drag also
   triggers the tray (the hook can't tell what is being dragged); the drop target refuses the payload
   and the tray folds itself away.
-- Multi-monitor and non-100% DPI are handled in code (scale factor, the notch anchors to the monitor it opens on)
-  but only tested on one 100% display. The notch and its edge zone are placed at launch and don't follow a
+- Multi-monitor and non-100% DPI are handled in code (scale factor, the notch anchors to the monitor it opens on,
+  the floating tray opens on the pointer's monitor at its scale) but only tested on one 100% display. A floating
+  tray on a monitor of another DPI relies on GPUI's DPI-change handling, then is put back to its own size and
+  place; that hand-off is untested. The notch and its edge zone are placed at launch and don't follow a
   display or DPI change until restart.
 - Reaching the top edge above the notch reveals it over a maximized app's own controls at the top (tabs, a
   title bar). Fullscreen is only detected as a window covering the monitor, so exclusive-mode games are untested.

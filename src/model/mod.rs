@@ -3,6 +3,7 @@
 //! holds this folder to that.
 
 pub mod edge;
+pub mod float;
 pub mod jiggle;
 pub mod notch;
 pub mod shelf;

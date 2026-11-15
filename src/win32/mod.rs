@@ -10,7 +10,7 @@ pub use dragdrop::{DragOutcome, DropEvent, drag_files_out, watch_drop_refusals};
 pub use hook::{HookEvent, spawn_mouse_hook};
 pub use shell::open_path;
 pub use window::{
-    Clip, apply_overlay_styles, cursor_over, foreground_window, fullscreen_over,
+    Clip, apply_overlay_styles, cursor_monitor, cursor_over, foreground_window, fullscreen_over,
     monitor_top_center, move_window, restore_foreground, round_corners, set_acrylic, set_clip,
 };
 
