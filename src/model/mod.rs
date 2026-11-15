@@ -8,6 +8,9 @@ pub mod float;
 pub mod jiggle;
 pub mod media;
 pub mod notch;
+// Drawn by build.rs into the exe's icon; here only for its tests.
+#[cfg(test)]
+pub mod pill;
 pub mod shelf;
 pub mod spring;
 pub mod tray_cause;

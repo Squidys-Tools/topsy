@@ -49,7 +49,7 @@ it (see [Notch](#notch)), the tray holds a **shelf** of files you can drag back 
 | `src/look.rs` | The *Black notch* setting: one `HKCU\Software\topsy` value |
 | `src/frame.rs` | The island's window and shape: where it sits (the notch, or the floating tray), its size, fill, ears and rim, kept in step with the spring |
 | `src/main.rs` | The island view: hidden, peeking or open as the tray with the shelf; file-drop target |
-| `build.rs` | Copies one import library the GNU toolchain's bundled MinGW lacks (see below) |
+| `build.rs` | Copies one import library the GNU toolchain's bundled MinGW lacks, and builds the exe's icon (see below) |
 | `rust-toolchain.toml` | Pins the GNU toolchain, `stable-x86_64-pc-windows-gnu` |
 
 Right-click the notch or the tray icon for the menu (Quit is in it). Env vars for testing: `TOPSY_DEMO=1`
@@ -77,7 +77,9 @@ You need:
 - A MinGW-w64 `gcc` on `PATH` (e.g. `scoop install gcc`, or MSYS2). `build.rs` asks it where `libktmw32.a`
   lives: rustc's bundled MinGW ships only some of the Windows import libraries and a GPUI dependency links
   `ktmw32`. Only that one file is copied, so the build doesn't mix two MinGW runtimes. Pointing rustc's
-  linker at the system gcc instead does not work: scoop's gcc has no `libgcc_eh.a`.
+  linker at the system gcc instead does not work: scoop's gcc has no `libgcc_eh.a`. The same MinGW's `windres`
+  turns the icon `build.rs` draws (`src/model/pill.rs`, written as a binary `.res`) into an object linked into the
+  exe, so no `.rc` script and no preprocessor are involved. GPUI's windows and the tray icon load it as resource 1.
 - The Windows SDK, for `fxc.exe` (GPUI compiles its HLSL shaders with it; set `GPUI_FXC_PATH` if it isn't found).
 
 Use a release build to judge anything about focus or footprint. A debug build is a console app, and the
@@ -109,7 +111,7 @@ To build locally without installing the SDK, GPUI only needs one file from it: c
   were parked are dropped from the shelf when the tray opens (checked off the UI thread). The shelf is saved to
   `%LOCALAPPDATA%\topsy\shelf.txt` on every change and comes back on the next start. Startup never looks at the saved files (a dead share would
   stall launch): chips return as `…` and are settled off the UI thread, which drops entries whose files are gone.
-- **Tray icon.** A small glass-blue pill in the notification area (drawn in code, no asset). Left click opens
+- **Tray icon.** A small glass-blue pill in the notification area, the exe's own icon (drawn in code, no asset). Left click opens
   or closes the shelf. Right click, or right-click the notch itself, opens the menu: *Show shelf*, *Clear shelf (N)*,
   *Black notch* and *Start with Windows* (each checked when on), *Settings…* and *Quit topsy*. The icon lives on its own thread with a hidden window,
   re-adds itself when Explorer restarts, and is removed on Quit. On Windows 11 a new icon starts in the overflow
@@ -349,7 +351,7 @@ hook, not the media thread). It is worth a profile, because an always-on app sho
 - Now Playing follows only the system's *current* session (the one Windows picks), with no way to switch between
   several. Its art is fetched on every properties change, not cached by track. Not checked on the desktop yet:
   apps that report art late or not at all, and an app that never answers a button.
-- No droplets yet. The settings window is a plain dark fill, not Mica. The tray icon is drawn in code and the exe itself has no icon resource.
+- No droplets yet. The settings window is a plain dark fill, not Mica.
 
 ## License
 

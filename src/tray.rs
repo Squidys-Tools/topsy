@@ -10,22 +10,19 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicIsize, AtomicU32, AtomicUsize, Ordering};
 
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
-use windows::Win32::Graphics::Gdi::{
-    BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CreateBitmap, CreateDIBSection, DIB_RGB_COLORS,
-    DeleteObject, HGDIOBJ,
-};
+
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Shell::{
     NIF_ICON, NIF_MESSAGE, NIF_SHOWTIP, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_SETVERSION, NIN_SELECT,
     NOTIFYICON_VERSION_4, NOTIFYICONDATAW, Shell_NotifyIconW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    AppendMenuW, CreateIconIndirect, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu,
-    DispatchMessageW, GetCursorPos, GetMessageW, HICON, ICONINFO, MF_CHECKED, MF_GRAYED,
-    MF_SEPARATOR, MF_STRING, MSG, PostMessageW, PostQuitMessage, RegisterClassW,
-    RegisterWindowMessageW, SetForegroundWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu,
-    TranslateMessage, WM_APP, WM_CONTEXTMENU, WM_DESTROY, WM_NULL, WNDCLASSW, WS_EX_TOOLWINDOW,
-    WS_POPUP,
+    AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DispatchMessageW,
+    GetCursorPos, GetMessageW, GetSystemMetrics, HICON, IMAGE_ICON, LR_DEFAULTCOLOR, LoadImageW,
+    MF_CHECKED, MF_GRAYED, MF_SEPARATOR, MF_STRING, MSG, PostMessageW, PostQuitMessage,
+    RegisterClassW, RegisterWindowMessageW, SM_CXSMICON, SetForegroundWindow, TPM_RETURNCMD,
+    TPM_RIGHTBUTTON, TrackPopupMenu, TranslateMessage, WM_APP, WM_CONTEXTMENU, WM_DESTROY, WM_NULL,
+    WNDCLASSW, WS_EX_TOOLWINDOW, WS_POPUP,
 };
 use windows::core::{PCWSTR, w};
 
@@ -308,108 +305,29 @@ unsafe fn open_menu(hwnd: HWND, at: POINT) {
     }
 }
 
-const ICON_SIZE: usize = 32;
-
-/// The icon, drawn in code so there is no binary asset to ship: a glass-blue pill with a
-/// lighter top edge, like the island. BGRA, top-down, straight alpha.
-fn icon_pixels() -> Vec<u8> {
-    let (cx, cy) = (ICON_SIZE as f32 / 2.0, ICON_SIZE as f32 / 2.0);
-    let (half_length, radius) = (6.0_f32, 8.0_f32);
-    let mut pixels = Vec::with_capacity(ICON_SIZE * ICON_SIZE * 4);
-    for y in 0..ICON_SIZE {
-        for x in 0..ICON_SIZE {
-            let (px, py) = (x as f32 + 0.5 - cx, y as f32 + 0.5 - cy);
-            // Distance to the capsule's spine, minus its radius: negative inside.
-            let along = px.clamp(-half_length, half_length);
-            let distance = ((px - along).powi(2) + py.powi(2)).sqrt() - radius;
-            let coverage = (0.5 - distance).clamp(0.0, 1.0);
-            // Top (lighter) to bottom (deeper) across the pill's height.
-            let t = ((py + radius) / (2.0 * radius)).clamp(0.0, 1.0);
-            let mix = |top: f32, bottom: f32| (top + (bottom - top) * t) as u8;
-            pixels.extend_from_slice(&[
-                mix(255.0, 224.0),
-                mix(155.0, 102.0),
-                mix(142.0, 90.0),
-                (coverage * 255.0).round() as u8,
-            ]);
-        }
-    }
-    pixels
-}
-
+/// The exe's own icon (resource 1, written by `build.rs`) at the shell's small-icon size.
 fn make_icon() -> Option<HICON> {
-    let pixels = icon_pixels();
-    let header = BITMAPINFOHEADER {
-        biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-        biWidth: ICON_SIZE as i32,
-        biHeight: -(ICON_SIZE as i32), // top-down
-        biPlanes: 1,
-        biBitCount: 32,
-        biCompression: BI_RGB.0,
-        ..Default::default()
-    };
-    let info = BITMAPINFO {
-        bmiHeader: header,
-        ..Default::default()
-    };
     unsafe {
-        let mut bits: *mut c_void = std::ptr::null_mut();
-        let color = CreateDIBSection(None, &info, DIB_RGB_COLORS, &mut bits, None, 0).ok()?;
-        std::ptr::copy_nonoverlapping(pixels.as_ptr(), bits.cast::<u8>(), pixels.len());
-        // The mask is ignored for a 32-bit icon with alpha, but the call insists on one.
-        let mask = CreateBitmap(ICON_SIZE as i32, ICON_SIZE as i32, 1, 1, None);
-        let icon = CreateIconIndirect(&ICONINFO {
-            fIcon: true.into(),
-            xHotspot: 0,
-            yHotspot: 0,
-            hbmMask: mask,
-            hbmColor: color,
-        })
-        .ok();
-        let _ = DeleteObject(HGDIOBJ(color.0));
-        let _ = DeleteObject(HGDIOBJ(mask.0));
-        icon
+        let module = GetModuleHandleW(None).ok()?;
+        let side = GetSystemMetrics(SM_CXSMICON);
+        let handle = LoadImageW(
+            Some(module.into()),
+            PCWSTR(1 as _),
+            IMAGE_ICON,
+            side,
+            side,
+            LR_DEFAULTCOLOR,
+        )
+        .ok()?;
+        Some(HICON(handle.0))
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn alpha(pixels: &[u8], x: usize, y: usize) -> u8 {
-        pixels[(y * ICON_SIZE + x) * 4 + 3]
-    }
-
     #[test]
-    fn icon_is_a_centred_pill() {
-        let pixels = icon_pixels();
-        assert_eq!(pixels.len(), ICON_SIZE * ICON_SIZE * 4);
-        // Solid in the middle, clear in the corners and above/below the pill.
-        assert_eq!(alpha(&pixels, 16, 16), 255);
-        assert_eq!(alpha(&pixels, 0, 0), 0);
-        assert_eq!(alpha(&pixels, 31, 31), 0);
-        assert_eq!(alpha(&pixels, 16, 2), 0);
-        // Wider than tall: the pill reaches further sideways than vertically.
-        assert!(alpha(&pixels, 28, 16) > 200);
-        assert_eq!(alpha(&pixels, 16, 4), 0);
-    }
-
-    #[test]
-    fn icon_is_mirror_symmetric() {
-        let pixels = icon_pixels();
-        for y in 0..ICON_SIZE {
-            for x in 0..ICON_SIZE / 2 {
-                assert_eq!(
-                    alpha(&pixels, x, y),
-                    alpha(&pixels, ICON_SIZE - 1 - x, y),
-                    "row {y}, column {x}"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn a_real_icon_handle_can_be_made() {
+    fn the_exe_carries_its_icon() {
         assert!(make_icon().is_some());
     }
 }
