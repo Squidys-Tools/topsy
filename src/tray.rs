@@ -41,8 +41,10 @@ pub enum TrayEvent {
     ClearShelf,
     /// A setting was switched to this value; it is saved already.
     Setting(Setting, bool),
-    /// "Settings…": open the settings window, or bring it to the front.
-    OpenSettings,
+    /// "Settings…": open the settings window, or bring it to the front. Carries the window that
+    /// was foreground before the menu (as an address: `HWND` can't cross threads), to hand
+    /// foreground back to when the settings window closes.
+    OpenSettings(usize),
     Quit,
 }
 
@@ -269,7 +271,9 @@ unsafe fn open_menu(hwnd: HWND, at: POINT) {
         let _ = AppendMenuW(menu, MF_STRING, ID_QUIT, w!("&Quit topsy"));
 
         // The owner has to be foreground or the menu won't close when you click elsewhere.
-        // This is the hidden window, so it takes focus from nothing visible.
+        // This is the hidden window, so it takes focus from nothing visible; it is handed back
+        // afterwards, or keys would go nowhere until the next click.
+        let previous = crate::win32::foreground_window();
         let _ = SetForegroundWindow(hwnd);
         let choice = TrackPopupMenu(
             menu,
@@ -283,12 +287,16 @@ unsafe fn open_menu(hwnd: HWND, at: POINT) {
         // Documented companion to the above: lets the menu dismiss properly next time.
         let _ = PostMessageW(Some(hwnd), WM_NULL, WPARAM(0), LPARAM(0));
         let _ = DestroyMenu(menu);
+        // The settings window takes foreground itself, which needs the app to still hold it.
+        if choice.0 as usize != ID_SETTINGS {
+            crate::win32::restore_foreground(previous);
+        }
 
         match choice.0 as usize {
             ID_SHOW => send(TrayEvent::Show),
             ID_CLEAR => send(TrayEvent::ClearShelf),
             ID_QUIT => send(TrayEvent::Quit),
-            ID_SETTINGS => send(TrayEvent::OpenSettings),
+            ID_SETTINGS => send(TrayEvent::OpenSettings(previous.0 as usize)),
             id => {
                 if let Some(&setting) = id.checked_sub(ID_SETTING).and_then(|i| Setting::ALL.get(i))
                     && let Some(on) = setting.toggle()

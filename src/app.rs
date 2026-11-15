@@ -33,13 +33,13 @@ impl Island {
                 self.on_setting(setting, on, cx);
                 settings_window::refresh(cx);
             }
-            TrayEvent::OpenSettings => {
+            TrayEvent::OpenSettings(previous) => {
                 let island = cx.entity().downgrade();
                 let on_change: OnChange = Rc::new(move |setting, on, cx| {
                     let _ = island.update(cx, |island, cx| island.on_setting(setting, on, cx));
                 });
                 // Out of the island's update: a new window must not be made while it is leased.
-                cx.defer(move |cx| settings_window::open(cx, on_change));
+                cx.defer(move |cx| settings_window::open(cx, on_change, previous));
             }
             TrayEvent::ClearShelf => self.clear_shelf(cx),
             TrayEvent::Quit => cx.quit(),

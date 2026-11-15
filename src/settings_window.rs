@@ -42,7 +42,7 @@ fn hwnd(window: &Window) -> Option<HWND> {
 }
 
 /// Open the window, or bring the open one to the front.
-pub fn open(cx: &mut App, on_change: OnChange) {
+pub fn open(cx: &mut App, on_change: OnChange, previous: usize) {
     if let Some(handle) = cx.try_global::<Open>().map(|open| open.0)
         && handle
             .update(cx, |view, window, cx| {
@@ -79,6 +79,14 @@ pub fn open(cx: &mut App, on_change: OnChange) {
         if let Some(hwnd) = hwnd(window) {
             win32::dark_title_bar(hwnd);
             win32::bring_to_front(hwnd);
+            // Closing it would otherwise activate the tray icon's hidden window, the last one
+            // active before it. Only while it is in front, so a close from elsewhere steals nothing.
+            window.on_window_should_close(cx, move |_, _| {
+                if win32::foreground_window() == hwnd {
+                    win32::restore_foreground(HWND(previous as *mut _));
+                }
+                true
+            });
         }
         cx.new(|_| {
             let mut view = SettingsWindow {
