@@ -269,12 +269,11 @@ impl Island {
             .filter(|path| !shelf.items().iter().any(|item| &item.path == *path))
             .cloned()
             .collect();
-        for path in gone {
-            if let Some(icon) = self.icons.remove(&path) {
-                // Frees its texture in the window's atlas, which otherwise keeps it.
-                cx.drop_image(icon, None);
-            }
-        }
+        let icons = gone
+            .iter()
+            .filter_map(|path| self.icons.remove(path))
+            .collect();
+        forget_icons(icons, cx);
         tray::set_shelf_count(self.shelf.len());
         if let Some(writer) = &self.writer {
             writer.send(shelf::serialize(self.shelf.items()));
@@ -301,8 +300,7 @@ impl Island {
     }
 
     /// Learn whether each chip is a folder or a file, and fetch its picture, on a worker
-    /// thread of its own (the shell wants COM there). Each chip updates as its answer arrives,
-    /// so one slow video thumbnail doesn't hold up the rest.
+    /// thread of its own (the shell wants COM there). Each chip updates as its answer arrives.
     fn resolve_kinds(&mut self, added: Vec<PathBuf>, cx: &mut Context<Self>) {
         let size = (ICON * self.scale).round() as i32;
         let (tx, rx) = async_channel::unbounded();
@@ -326,7 +324,7 @@ impl Island {
                     if let Some(icon) = icon
                         && let Some(old) = this.icons.insert(path, icon)
                     {
-                        cx.drop_image(old, None);
+                        forget_icons(vec![old], cx);
                     }
                     cx.notify();
                 });
@@ -996,6 +994,18 @@ impl Render for Island {
                     }
                 }),
             )
+    }
+}
+
+/// Free chip pictures' textures in the window's atlas, which otherwise keeps them. Deferred:
+/// inside a window's event handler GPUI has lent the window out, and `drop_image` can't reach it.
+fn forget_icons(icons: Vec<Arc<RenderImage>>, cx: &mut App) {
+    if !icons.is_empty() {
+        cx.defer(move |cx| {
+            for icon in icons {
+                cx.drop_image(icon, None);
+            }
+        });
     }
 }
 
