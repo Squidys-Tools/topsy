@@ -5587,6 +5587,7 @@ version = "0.1.0"
 dependencies = [
  "async-channel 2.5.0",
  "gpui",
+ "image",
  "raw-window-handle",
  "windows 0.62.2",
  "windows-core 0.62.2",

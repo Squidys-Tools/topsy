@@ -17,7 +17,7 @@ use windows::Win32::Graphics::Gdi::{
     RGN_OR, SetWindowRgn,
 };
 use windows::Win32::System::Com::{
-    COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE, CoInitializeEx, CoTaskMemFree,
+    COINIT, COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE, CoInitializeEx, CoTaskMemFree,
     CoUninitialize, IDataObject,
 };
 use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
@@ -495,6 +495,19 @@ pub fn drag_files_out(hwnd: HWND, paths: &[PathBuf]) -> windows::core::Result<Dr
     }
 }
 
+/// Run `f` with COM set up on this thread, which a fresh thread doesn't have and the shell's
+/// APIs need. A single-threaded apartment only answers calls from other apartments while it
+/// pumps messages, so a thread that doesn't pump and calls out-of-process handlers (thumbnails)
+/// wants `COINIT_MULTITHREADED`.
+pub fn with_com<T>(apartment: COINIT, f: impl FnOnce() -> T) -> T {
+    let com = unsafe { CoInitializeEx(None, apartment | COINIT_DISABLE_OLE1DDE) };
+    let result = f();
+    if com.is_ok() {
+        unsafe { CoUninitialize() };
+    }
+    result
+}
+
 /// Open a file or folder with its default handler, as a double-click would.
 ///
 /// Blocks until the handler has been started, which can be a while (a UAC prompt, a cold
@@ -503,9 +516,8 @@ pub fn drag_files_out(hwnd: HWND, paths: &[PathBuf]) -> windows::core::Result<Dr
 /// GPUI from inside one of its event handlers aborts the process.
 pub fn open_path(path: &Path) -> bool {
     let wide = wide(path);
-    // ShellExecute wants COM on the calling thread, and a fresh thread has none.
-    let com = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE) };
-    let result = unsafe {
+    // ShellExecute wants COM on the calling thread.
+    let result = with_com(COINIT_APARTMENTTHREADED, || unsafe {
         ShellExecuteW(
             None,
             w!("open"),
@@ -514,10 +526,7 @@ pub fn open_path(path: &Path) -> bool {
             PCWSTR::null(),
             SW_SHOWNORMAL,
         )
-    };
-    if com.is_ok() {
-        unsafe { CoUninitialize() };
-    }
+    });
     // ShellExecute reports success as a value above 32.
     result.0 as usize > 32
 }
