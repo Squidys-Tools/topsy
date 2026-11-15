@@ -16,9 +16,10 @@ pub struct Persistence {
     pub writer: Option<Writer>,
 }
 
-/// Resolve the state file, read the shelf back from it, and start its writer.
-pub fn start() -> Persistence {
-    let path = path();
+/// Resolve the state file, read the shelf back from it, and start its writer. `topsy_state`
+/// is the `TOPSY_STATE` switch: a path, or empty to turn saving off.
+pub fn start(topsy_state: Option<&OsStr>) -> Persistence {
+    let path = resolve(topsy_state, std::env::var_os("LOCALAPPDATA").as_deref());
     Persistence {
         shelf: path.as_deref().map(load).unwrap_or_default(),
         writer: path.map(Writer::spawn),
@@ -27,13 +28,6 @@ pub fn start() -> Persistence {
 
 /// Where the shelf lives between runs: `TOPSY_STATE` when set (an empty value turns
 /// saving off, for scripted runs), else `%LOCALAPPDATA%\topsy\shelf.txt`.
-pub fn path() -> Option<PathBuf> {
-    resolve(
-        std::env::var_os("TOPSY_STATE").as_deref(),
-        std::env::var_os("LOCALAPPDATA").as_deref(),
-    )
-}
-
 fn resolve(topsy_state: Option<&OsStr>, local_app_data: Option<&OsStr>) -> Option<PathBuf> {
     if let Some(path) = topsy_state {
         return (!path.is_empty()).then_some(PathBuf::from(path));
