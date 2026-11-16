@@ -80,6 +80,8 @@ You need:
   linker at the system gcc instead does not work: scoop's gcc has no `libgcc_eh.a`. The same MinGW's `windres`
   turns the icon `build.rs` draws (`src/model/pill.rs`, written as a binary `.res`) into an object linked into the
   exe, so no `.rc` script and no preprocessor are involved. GPUI's windows and the tray icon load it as resource 1.
+- rustup's `cargo` first on `PATH`. A standalone Rust install (such as an MSVC one) ignores `rust-toolchain.toml`,
+  so `build.rs` stops an MSVC build rather than let it through without the icon.
 - The Windows SDK, for `fxc.exe` (GPUI compiles its HLSL shaders with it; set `GPUI_FXC_PATH` if it isn't found).
 
 Use a release build to judge anything about focus or footprint. A debug build is a console app, and the

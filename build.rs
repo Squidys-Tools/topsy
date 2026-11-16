@@ -25,9 +25,14 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=src/model/pill.rs");
 
-    let target_is_gnu_windows = std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows")
-        && std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("gnu");
-    if !target_is_gnu_windows {
+    let windows = std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows");
+    let env = std::env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
+    if windows && env == "msvc" {
+        // A cargo outside rustup (a standalone MSVC install first on PATH) ignores
+        // rust-toolchain.toml; it would build without the icon instead of failing.
+        panic!("topsy builds with the GNU toolchain only: put rustup's cargo first on PATH");
+    }
+    if !windows || env != "gnu" {
         return;
     }
 
