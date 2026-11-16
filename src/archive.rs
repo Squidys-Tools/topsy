@@ -6,6 +6,7 @@ use std::fs::{self, File, Metadata, OpenOptions};
 use std::io::{self, BufWriter, Write};
 use std::os::windows::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use windows::Win32::Foundation::{FILETIME, SYSTEMTIME};
 use windows::Win32::System::Time::{FileTimeToSystemTime, SystemTimeToTzSpecificLocalTime};
@@ -29,6 +30,54 @@ pub fn compress(source: &Path) -> io::Result<PathBuf> {
         let _ = fs::remove_file(&path);
     }
     written.map(|()| path)
+}
+
+/// Zip several files or folders into `out` (already created), each under its own name at the
+/// top of the zip. Two sources with the same name keep both: the later is numbered, `a (2).jpg`.
+pub fn compress_files(sources: &[PathBuf], out: &Path, cancel: &AtomicBool) -> io::Result<()> {
+    let file = OpenOptions::new().write(true).truncate(true).open(out)?;
+    let mut zip = ZipWriter::new(BufWriter::new(file));
+    let mut taken: Vec<String> = Vec::new();
+    for source in sources {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(io::Error::new(io::ErrorKind::Interrupted, "Cancelled"));
+        }
+        let base = source
+            .parent()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "no folder"))?;
+        let own = name(base, source)?;
+        let renamed = unique_name(&own, &taken);
+        taken.push(renamed.clone());
+        if fs::metadata(source)?.is_dir() {
+            if renamed != own {
+                return Err(io::Error::other(format!("Two folders are called {own}")));
+            }
+            add_dir(&mut zip, base, source)?;
+        } else {
+            let mut reader = File::open(source)?;
+            let meta = reader.metadata()?;
+            let options = options(&meta).large_file(meta.len() >= u64::from(u32::MAX));
+            zip.start_file(renamed, options)?;
+            io::copy(&mut reader, &mut zip)?;
+        }
+    }
+    zip.finish()?.flush()
+}
+
+/// `name`, or the first of `name (2)`, `name (3)` .. not in `taken`, keeping the extension.
+fn unique_name(name: &str, taken: &[String]) -> String {
+    let free = |n: &String| !taken.iter().any(|t| t.eq_ignore_ascii_case(n));
+    if free(&name.to_owned()) {
+        return name.to_owned();
+    }
+    let (stem, ext) = match name.rfind('.') {
+        Some(dot) if dot > 0 => (&name[..dot], &name[dot..]),
+        _ => (name, ""),
+    };
+    (2..)
+        .map(|n| format!("{stem} ({n}){ext}"))
+        .find(free)
+        .unwrap_or_else(|| name.to_owned())
 }
 
 /// Create the first free name. `create_new` claims it atomically, so a file that appears there
@@ -192,6 +241,29 @@ mod tests {
                 ("photos/2024/".into(), Vec::new()),
                 ("photos/2024/b.jpg".into(), b"b".to_vec()),
                 ("photos/a.jpg".into(), b"a".to_vec()),
+            ]
+        );
+    }
+
+    #[test]
+    fn files_with_the_same_name_are_zipped_side_by_side() {
+        let scratch = Scratch::new("many");
+        for dir in ["x", "y"] {
+            fs::create_dir_all(scratch.0.join(dir)).unwrap();
+            fs::write(scratch.0.join(dir).join("a.jpg"), dir).unwrap();
+        }
+        let out = scratch.0.join("Archive.zip");
+        File::create(&out).unwrap();
+        let sources = [
+            scratch.0.join("x").join("a.jpg"),
+            scratch.0.join("y").join("a.jpg"),
+        ];
+        compress_files(&sources, &out, &AtomicBool::new(false)).unwrap();
+        assert_eq!(
+            entries(&out),
+            [
+                ("a (2).jpg".into(), b"y".to_vec()),
+                ("a.jpg".into(), b"x".to_vec())
             ]
         );
     }

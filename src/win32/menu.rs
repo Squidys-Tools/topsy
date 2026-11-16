@@ -4,9 +4,9 @@ use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow,
-    GetCursorPos, GetForegroundWindow, MF_SEPARATOR, MF_STRING, PostMessageW, RegisterClassW,
-    SetForegroundWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu, WM_NULL, WNDCLASSW,
-    WS_EX_TOOLWINDOW, WS_POPUP,
+    GetCursorPos, GetForegroundWindow, MF_CHECKED, MF_GRAYED, MF_SEPARATOR, MF_STRING,
+    PostMessageW, RegisterClassW, SetForegroundWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON,
+    TrackPopupMenu, WM_NULL, WNDCLASSW, WS_EX_TOOLWINDOW, WS_POPUP,
 };
 use windows::core::{PCWSTR, w};
 
@@ -15,6 +15,13 @@ use super::{restore_foreground, wide};
 pub enum Entry {
     /// A command and its label (`&` marks the access key). Ids start at 1.
     Item(usize, &'static str),
+    /// One of a set of choices: checked when it is the current one, greyed when unavailable.
+    Choice {
+        id: usize,
+        label: &'static str,
+        checked: bool,
+        enabled: bool,
+    },
     Separator,
 }
 
@@ -55,7 +62,7 @@ pub fn popup(entries: &[Entry]) -> Option<usize> {
                 let labels: Vec<Vec<u16>> = entries
                     .iter()
                     .map(|e| match e {
-                        Entry::Item(_, label) => wide(label),
+                        Entry::Item(_, label) | Entry::Choice { label, .. } => wide(label),
                         Entry::Separator => Vec::new(),
                     })
                     .collect();
@@ -63,6 +70,21 @@ pub fn popup(entries: &[Entry]) -> Option<usize> {
                     let _ = match entry {
                         Entry::Item(id, _) => {
                             AppendMenuW(menu, MF_STRING, *id, PCWSTR(label.as_ptr()))
+                        }
+                        Entry::Choice {
+                            id,
+                            checked,
+                            enabled,
+                            ..
+                        } => {
+                            let mut flags = MF_STRING;
+                            if *checked {
+                                flags |= MF_CHECKED;
+                            }
+                            if !*enabled {
+                                flags |= MF_GRAYED;
+                            }
+                            AppendMenuW(menu, flags, *id, PCWSTR(label.as_ptr()))
                         }
                         Entry::Separator => AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null()),
                     };

@@ -20,4 +20,5 @@ pub mod notch;
 pub mod pill;
 pub mod shelf;
 pub mod spring;
+pub mod transform;
 pub mod tray_cause;

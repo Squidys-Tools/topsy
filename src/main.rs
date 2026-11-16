@@ -19,6 +19,7 @@ mod now_playing;
 mod settings;
 mod settings_window;
 mod state;
+mod transform;
 mod tray;
 mod tray_view;
 mod win32;
@@ -164,9 +165,8 @@ impl Island {
 
     fn shelf_changed(&mut self, cx: &mut Context<Self>) {
         log(&format!("shelf now {}", self.shelf.len()));
-        let shelf = &self.shelf;
         let gone: Vec<PathBuf> = (self.icons.keys())
-            .filter(|path| !shelf.items().iter().any(|item| &item.path == *path))
+            .filter(|path| !self.shelf.items().iter().any(|item| &item.path == *path))
             .cloned()
             .collect();
         let icons = gone

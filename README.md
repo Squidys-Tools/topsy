@@ -39,6 +39,7 @@ it (see [Notch](#notch)), the tray holds a **shelf** of files you can drag back 
 | `src/model/favicon.rs` | Which sites a link card may ask for an icon, where a redirect or a page's icon link may lead, and which icon a page names |
 | `src/model/hud.rs` | The HUDs: how much of the bar a level lights, and which battery changes are worth showing |
 | `src/model/dib.rs` | Reading a copied bitmap (`CF_DIB`/`CF_DIBV5`) to RGBA, and writing one back to paste |
+| `src/model/transform.rs` | Transform: which actions suit which files, the panel's summary line, and naming results and renames |
 | `src/model/tray_cause.rs` | Why the tray is open, and which events fold it early |
 | `src/config.rs` | Every `TOPSY_*` switch, read once at startup |
 | `src/backdrop.rs` | The glass: the compositor's blurred backdrop behind GPUI's content, clipped to the notch's shape |
@@ -74,7 +75,8 @@ and no menu, so right-clicking the notch quits; start-with-Windows is left alone
 the system's media session; no Now Playing), `TOPSY_NO_KEYS=1` (leave the volume keys to Windows, whatever the
 *Volume HUD* setting says), `TOPSY_IDLE=peek|tray` (what the
 notch rests as, instead of hidden; the live checks use it),
-`TOPSY_SEED=<path;path>` (start with these files on the shelf), `TOPSY_STATE=<path>` (the shelf's save file,
+`TOPSY_SEED=<path;path>` (start with these files on the shelf), `TOPSY_TRANSFORM=<path;path>` (open the
+Transform panel on these files at launch), `TOPSY_STATE=<path>` (the shelf's save file,
 `%LOCALAPPDATA%\topsy\shelf.txt` by default; set empty to not save), `TOPSY_CLIPBOARD=<dir>` (where clipboard
 history is kept, `%LOCALAPPDATA%\topsy\clipboard` by default; set empty for none. A run with `TOPSY_STATE` set keeps
 none unless this says where, so a live check never touches the real history), `TOPSY_GLASS=acrylic|tint|solid|clear` (forces

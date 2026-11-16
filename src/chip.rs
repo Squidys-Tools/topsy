@@ -24,16 +24,19 @@ enum Action {
     CopyPath,
     Compress,
     Remove,
+    Transform,
 }
 
-const ACTIONS: [Action; 4] = [
+const ACTIONS: [Action; 5] = [
     Action::ShowInFolder,
     Action::CopyPath,
     Action::Compress,
     Action::Remove,
+    Action::Transform,
 ];
 
-const MENU: [MenuEntry; 5] = [
+const MENU: [MenuEntry; 6] = [
+    MenuEntry::Item(Action::Transform as usize, "&Transform…"),
     MenuEntry::Item(Action::ShowInFolder as usize, "Show in &folder"),
     MenuEntry::Item(Action::CopyPath as usize, "Copy as &path"),
     MenuEntry::Item(Action::Compress as usize, "Compress to &ZIP file"),
@@ -301,6 +304,10 @@ impl Island {
                 cx.write_to_clipboard(ClipboardItem::new_string(quoted));
             }
             Action::Compress => self.compress(item, cx),
+            Action::Transform => {
+                let island = cx.entity();
+                crate::transform::open(cx, &island, vec![item.path]);
+            }
             Action::Remove => {
                 if self.shelf.remove_path(&item.path) {
                     self.shelf_changed(cx);
