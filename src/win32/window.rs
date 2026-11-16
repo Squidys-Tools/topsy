@@ -305,6 +305,13 @@ pub enum Clip {
         height: i32,
         radius: i32,
     },
+    /// Rounded rectangles `height` tall stacked at `tops`: the Transform result cards.
+    Column {
+        width: i32,
+        height: i32,
+        tops: Vec<i32>,
+        radius: i32,
+    },
     /// A notch body with square top, rounded bottom and an ear strip along the top edge.
     Notch {
         width: i32,
@@ -333,6 +340,21 @@ pub fn set_clip(hwnd: HWND, clip: Clip) {
             } => {
                 let d = 2 * (radius - 1).max(0);
                 Some(CreateRoundRectRgn(0, 0, width + 1, height + 1, d, d))
+            }
+            Clip::Column {
+                width,
+                height,
+                tops,
+                radius,
+            } => {
+                let d = 2 * (radius - 1).max(0);
+                let all = CreateRectRgn(0, 0, 0, 0);
+                for top in tops {
+                    let card = CreateRoundRectRgn(0, top, width + 1, top + height + 1, d, d);
+                    CombineRgn(Some(all), Some(all), Some(card), RGN_OR);
+                    let _ = DeleteObject(card.into());
+                }
+                Some(all)
             }
             Clip::Notch {
                 width,
