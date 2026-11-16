@@ -12,9 +12,13 @@ pub mod inbox;
 mod menu;
 pub mod meter;
 pub mod paste;
+#[allow(dead_code)] // Transform, until the panel calls it.
+pub mod pdf_render;
 pub mod sendto;
 mod shell;
 pub mod volume;
+#[allow(dead_code)]
+pub mod wic;
 mod window;
 
 pub use dialog::{bring_to_front, dark_title_bar};
