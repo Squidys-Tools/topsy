@@ -196,8 +196,10 @@ impl Panel {
             let this = this.clone();
             move |v: f32, _: &mut gpui::Window, cx: &mut gpui::App| {
                 this.update(cx, |panel, cx| {
-                    f(panel, v);
-                    cx.notify();
+                    if panel.edit() {
+                        f(panel, v);
+                        cx.notify();
+                    }
                 })
                 .ok();
             }
@@ -207,8 +209,10 @@ impl Panel {
             let this = this.clone();
             move |i: usize, _: &mut gpui::Window, cx: &mut gpui::App| {
                 this.update(cx, |panel, cx| {
-                    f(panel, i);
-                    cx.notify();
+                    if panel.edit() {
+                        f(panel, i);
+                        cx.notify();
+                    }
                 })
                 .ok();
             }
@@ -415,8 +419,10 @@ impl Panel {
             width,
         )
         .on_click(cx.listener(move |panel, _, _, cx| {
-            panel.field = Some(which);
-            cx.notify();
+            if !panel.running() {
+                panel.field = Some(which);
+                cx.notify();
+            }
         }))
     }
 }

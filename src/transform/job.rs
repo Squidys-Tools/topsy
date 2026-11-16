@@ -112,6 +112,7 @@ impl Panel {
         };
         log(&format!("transform {action:?} on {} files", inputs.len()));
         let cancel = Arc::new(AtomicBool::new(false));
+        self.field = None;
         self.state = State::Running {
             label: format!("{}…", engines::verb(action)),
             progress: 0.0,

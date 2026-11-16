@@ -194,6 +194,9 @@ impl Panel {
     /// Add files not already in the panel, then read their sizes and thumbnails off the UI
     /// thread. The chosen action stays if it still suits them all.
     pub fn add(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+        if self.running() {
+            return;
+        }
         let new: Vec<PathBuf> = paths
             .into_iter()
             .filter(|p| p.is_file() && !self.files.iter().any(|f| &f.path == p))
@@ -363,6 +366,16 @@ impl Panel {
         }
         cx.stop_propagation();
         cx.notify();
+    }
+
+    /// Whether an option may change now: not while a run reads them. A change after a run
+    /// brings the button back.
+    pub fn edit(&mut self) -> bool {
+        if self.running() {
+            return false;
+        }
+        self.state = State::Ready;
+        true
     }
 
     pub fn cancel(&mut self) {

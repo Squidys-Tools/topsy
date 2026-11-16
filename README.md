@@ -512,8 +512,8 @@ hook, not the media thread). It is worth a profile, because an always-on app sho
   `vcomp140.dll`), so a PC without it can't run the image actions (FFmpeg and pdfium don't need it). HEIC is read
   but not written (the portable ImageMagick has no HEVC encoder), so it isn't offered as an output. HDR video comes
   out as SDR without tone mapping. A video keeps its main picture and its sound: subtitles, data tracks and cover
-  art are dropped. An animated GIF or WebP comes out as its first frame. ICO and AVIF results are bigger than a tuned encoder would make. The panel was matched to Droppy's
-  site, not side by side with Droppy.
+  art are dropped. An animated GIF or WebP comes out as its first frame. ICO and AVIF results are bigger than a
+  tuned encoder would make. The panel was matched to Droppy's site, not side by side with Droppy.
 - No droplets yet. The settings window is a plain dark fill, not Mica.
 
 ## License

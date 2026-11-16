@@ -263,7 +263,7 @@ impl Island {
         }
         let (tx, rx) = async_channel::bounded(1);
         // Transform, first, takes files only.
-        let from = usize::from(item.kind == Kind::Dir);
+        let from = usize::from(item.kind != Kind::File);
         if !on_thread("topsy-chip-menu", move || {
             let _ = tx.send_blocking(win32::popup_menu(&MENU[from..]));
         }) {
