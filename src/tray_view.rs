@@ -77,6 +77,25 @@ impl Island {
                 .child("Clear")
                 .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| this.clear_shelf(cx)))
         });
+        let files: Vec<_> = (self.shelf.items().iter())
+            .filter(|item| item.kind == crate::model::shelf::Kind::File)
+            .map(|item| item.path.clone())
+            .collect();
+        let transform = (!files.is_empty()).then(|| {
+            div()
+                .id("transform")
+                .px(px(6.0))
+                .rounded(px(4.0))
+                .text_xs()
+                .text_color(rgba(0xffffffb3))
+                .cursor_pointer()
+                .hover(|style| style.bg(rgba(0xffffff1a)).text_color(rgb(0xffffff)))
+                .child("Transform")
+                .on_click(cx.listener(move |_, _: &ClickEvent, _window, cx| {
+                    let island = cx.entity();
+                    crate::transform::open(cx, &island, files.clone());
+                }))
+        });
 
         let body = if self.shelf.is_empty() {
             div()
@@ -124,7 +143,13 @@ impl Island {
                     .items_center()
                     .justify_between()
                     .child(div().text_xs().text_color(rgba(0xffffffb3)).child(title))
-                    .children(clear),
+                    .child(
+                        div()
+                            .flex()
+                            .gap(px(4.0))
+                            .children(transform)
+                            .children(clear),
+                    ),
             )
             .child(body)
     }

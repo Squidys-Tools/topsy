@@ -234,6 +234,9 @@ pub fn run() {
 
         crate::now_playing::start(cx, &island);
         crate::hud::start(cx, &island);
+        if let Some(files) = config.transform.clone() {
+            crate::transform::open(cx, &island, files);
+        }
         if let Some(events) = crate::clipboard::start(config.clipboard.clone()) {
             crate::clipboard::strip::listen(cx, events);
         }

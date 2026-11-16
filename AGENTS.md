@@ -14,7 +14,9 @@ sections that touch your change before you change it.
    is. A change that steals the foreground window, even once at launch, is a bug.
 3. **Native feel.** Real acrylic, spring motion, behaviour that matches Explorer (drag out, open, copy/move as
    the target decides). If it looks or acts like a web page in a window, it is wrong.
-4. **Open.** MIT, permissive dependencies only. Check a new crate's license before adding it.
+4. **Open.** MIT, permissive dependencies only. Check a new crate's license before adding it. The exception is
+   a mature tool topsy downloads on first use (FFmpeg, ImageMagick, pdfium): it may carry another licence, since
+   it is fetched from its own release, never bundled, and nothing of it is compiled into topsy.
 
 ## Taste
 
@@ -36,7 +38,9 @@ front of you, say so plainly and get sign-off before breaking it.
 
 ## Hard constraints
 
-- **Rust only.** No C, C++ or other C-family code, and no C shims to get around a binding.
+- **Rust only.** We write no C, C++ or other C-family code, and no C shims to get around a binding. Running
+  mature C code is fine: a downloaded tool run as a process, or a DLL such as pdfium loaded through a Rust crate.
+  Prefer that to rewriting a codec or format from scratch.
 - **GNU toolchain** (`x86_64-pc-windows-gnu`, pinned in `rust-toolchain.toml`). Never switch to MSVC or add
   MSVC-only steps. `build.rs` exists because of this; read the README before touching it.
 - The developer often tests from a machine without admin rights, using the CI artifact `topsy-windows-gnu`

@@ -23,11 +23,45 @@ use windows::core::HSTRING;
 /// The picture for `path`, about `size` physical pixels square. Call inside
 /// [`crate::win32::with_com`].
 pub fn load(path: &Path, size: i32) -> Option<Arc<RenderImage>> {
+    pixels(path, size).map(render)
+}
+
+/// Like [`load`], cropped to `aspect` (width over height) about its centre, and blurred by
+/// `sigma` pixels if given: drawn large, a small blurred one is a soft wash of the picture's
+/// colours (the waiting Transform cards). Cropped here because GPUI rounds a covering image's
+/// overflowing bounds, not the box it is clipped to.
+pub fn load_cover(
+    path: &Path,
+    size: i32,
+    aspect: f32,
+    sigma: Option<f32>,
+) -> Option<Arc<RenderImage>> {
+    let p = pixels(path, size)?;
+    let (w, h) = (p.width() as f32, p.height() as f32);
+    let (cw, ch) = if w / h > aspect {
+        (h * aspect, h)
+    } else {
+        (w, w / aspect)
+    };
+    let (cw, ch) = ((cw as u32).max(1), (ch as u32).max(1));
+    let x = (p.width() - cw.min(p.width())) / 2;
+    let y = (p.height() - ch.min(p.height())) / 2;
+    let cropped = image::imageops::crop_imm(&p, x, y, cw, ch).to_image();
+    Some(render(match sigma {
+        Some(sigma) => image::imageops::blur(&cropped, sigma),
+        None => cropped,
+    }))
+}
+
+fn pixels(path: &Path, size: i32) -> Option<RgbaImage> {
     let (width, height, mut pixels) = unsafe { shell_bitmap(path, size) }?;
     straighten(&mut pixels);
     // GPUI's images are BGRA with straight alpha, whatever the buffer's type says.
-    let buffer = RgbaImage::from_raw(width, height, pixels)?;
-    Some(Arc::new(RenderImage::new(vec![Frame::new(buffer)])))
+    RgbaImage::from_raw(width, height, pixels)
+}
+
+fn render(pixels: RgbaImage) -> Arc<RenderImage> {
+    Arc::new(RenderImage::new(vec![Frame::new(pixels)]))
 }
 
 /// Free chip pictures' textures in the window's atlas, which otherwise keeps them. Deferred:

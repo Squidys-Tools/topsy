@@ -16,9 +16,10 @@ use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
 use windows::Win32::UI::WindowsAndMessaging::{
     GWL_EXSTYLE, GWL_STYLE, GetClassNameW, GetCursorPos, GetForegroundWindow, GetShellWindow,
-    GetWindowLongPtrW, GetWindowRect, HWND_TOPMOST, IsZoomed, MA_NOACTIVATE, SWP_FRAMECHANGED,
-    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetForegroundWindow, SetWindowLongPtrW,
-    SetWindowPos, WM_MOUSEACTIVATE, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP, WS_VISIBLE,
+    GetWindowLongPtrW, GetWindowRect, HWND_TOPMOST, IsZoomed, MA_NOACTIVATE, SW_HIDE, SW_SHOWNA,
+    SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetForegroundWindow,
+    SetWindowLongPtrW, SetWindowPos, ShowWindow, WM_MOUSEACTIVATE, WS_EX_NOACTIVATE,
+    WS_EX_TOOLWINDOW, WS_POPUP, WS_VISIBLE,
 };
 use windows::core::{s, w};
 
@@ -275,6 +276,23 @@ pub fn move_window(hwnd: HWND, x: i32, y: i32, w: i32, h: i32, raise: bool) {
     }
 }
 
+/// Set a window's outer size in physical pixels, leaving where it is. For a bare popup, whose
+/// outer size is its content's; GPUI's `Window::resize` adds the frame of a titled window.
+/// Like [`move_window`], run it from a foreground task, never inside a GPUI callback.
+pub fn resize_window(hwnd: HWND, w: i32, h: i32) {
+    unsafe {
+        let _ = SetWindowPos(
+            hwnd,
+            None,
+            0,
+            0,
+            w,
+            h,
+            SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOMOVE,
+        );
+    }
+}
+
 /// What of the window may draw and take clicks, in physical pixels of the window.
 pub enum Clip {
     /// Nothing: the notch is hidden.
@@ -285,6 +303,13 @@ pub enum Clip {
     Rounded {
         width: i32,
         height: i32,
+        radius: i32,
+    },
+    /// Rounded rectangles `height` tall stacked at `tops`: the Transform result cards.
+    Column {
+        width: i32,
+        height: i32,
+        tops: Vec<i32>,
         radius: i32,
     },
     /// A notch body with square top, rounded bottom and an ear strip along the top edge.
@@ -315,6 +340,21 @@ pub fn set_clip(hwnd: HWND, clip: Clip) {
             } => {
                 let d = 2 * (radius - 1).max(0);
                 Some(CreateRoundRectRgn(0, 0, width + 1, height + 1, d, d))
+            }
+            Clip::Column {
+                width,
+                height,
+                tops,
+                radius,
+            } => {
+                let d = 2 * (radius - 1).max(0);
+                let all = CreateRectRgn(0, 0, 0, 0);
+                for top in tops {
+                    let card = CreateRoundRectRgn(0, top, width + 1, top + height + 1, d, d);
+                    CombineRgn(Some(all), Some(all), Some(card), RGN_OR);
+                    let _ = DeleteObject(card.into());
+                }
+                Some(all)
             }
             Clip::Notch {
                 width,
@@ -354,6 +394,27 @@ pub fn cursor_over(hwnd: HWND) -> bool {
         GetCursorPos(&mut at).is_ok()
             && GetWindowRect(hwnd, &mut rect).is_ok()
             && PtInRect(&rect, at).as_bool()
+    }
+}
+
+/// The window's outer rectangle, in physical screen pixels.
+pub fn window_rect(hwnd: HWND) -> Option<Rect> {
+    let mut r = RECT::default();
+    unsafe { GetWindowRect(hwnd, &mut r) }.ok()?;
+    Some(Rect {
+        left: r.left,
+        top: r.top,
+        right: r.right,
+        bottom: r.bottom,
+    })
+}
+
+/// Hide a window, or show it again without activating it. Like [`move_window`], run it from a
+/// foreground task: it sends messages to the window synchronously.
+pub fn set_visible(hwnd: HWND, visible: bool) {
+    let how = if visible { SW_SHOWNA } else { SW_HIDE };
+    unsafe {
+        let _ = ShowWindow(hwnd, how);
     }
 }
 

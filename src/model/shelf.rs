@@ -128,6 +128,17 @@ impl Shelf {
         self.items.clear();
     }
 
+    /// A file was renamed on disk: its chip follows, where it was. False if it isn't parked.
+    pub fn rename(&mut self, from: &Path, to: PathBuf) -> bool {
+        match self.items.iter_mut().find(|i| same_path(&i.path, from)) {
+            Some(item) => {
+                item.path = to;
+                true
+            }
+            None => false,
+        }
+    }
+
     /// Drop items whose file has gone (moved or deleted since it was parked).
     pub fn prune(&mut self, exists: impl Fn(&Path) -> bool) -> usize {
         let before = self.items.len();
@@ -348,5 +359,15 @@ mod tests {
             },
         ];
         assert_eq!(serialize(&items), "C:\\ok.txt\n");
+    }
+
+    #[test]
+    fn a_renamed_file_keeps_its_place() {
+        let mut shelf = Shelf::default();
+        shelf.add([PathBuf::from(r"C:\a.jpg"), PathBuf::from(r"C:\b.jpg")]);
+        assert!(shelf.rename(Path::new(r"C:\A.JPG"), PathBuf::from(r"C:\Trip 1.jpg")));
+        assert_eq!(shelf.items()[0].path, PathBuf::from(r"C:\Trip 1.jpg"));
+        assert_eq!(shelf.items()[1].path, PathBuf::from(r"C:\b.jpg"));
+        assert!(!shelf.rename(Path::new(r"C:\gone.jpg"), PathBuf::from(r"C:\x.jpg")));
     }
 }

@@ -29,6 +29,8 @@ pub struct Config {
     pub demo: bool,
     /// `TOPSY_SEED=path;path`: files put on the shelf at startup.
     pub seed: Option<Vec<PathBuf>>,
+    /// `TOPSY_TRANSFORM=path;path`: open the Transform panel with these files at startup.
+    pub transform: Option<Vec<PathBuf>>,
     /// `TOPSY_EXIT_AFTER_MS`: quit after this long.
     pub exit_after: Option<Duration>,
     /// `TOPSY_STATE`: where the shelf is saved; empty turns saving off.
@@ -64,6 +66,7 @@ impl Config {
             no_keys: var("TOPSY_NO_KEYS").is_some(),
             demo: var("TOPSY_DEMO").is_some(),
             seed: var("TOPSY_SEED").map(|s| std::env::split_paths(&s).collect()),
+            transform: var("TOPSY_TRANSFORM").map(|s| std::env::split_paths(&s).collect()),
             exit_after: text("TOPSY_EXIT_AFTER_MS")
                 .and_then(|v| v.parse().ok())
                 .map(Duration::from_millis),
@@ -102,6 +105,7 @@ mod tests {
         assert!(!c.no_hook && !c.no_tray && !c.no_media && !c.no_keys && !c.demo && !c.log);
         assert!(config(&[("TOPSY_NO_MEDIA", "1")]).no_media);
         assert!(c.seed.is_none() && c.exit_after.is_none() && c.state.is_none());
+        assert!(c.transform.is_none());
     }
 
     #[test]

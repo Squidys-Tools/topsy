@@ -6,7 +6,7 @@ use gpui::{
     ObjectFit, div, hsla, img, prelude::*, px, rgba,
 };
 
-use crate::model::shelf::Item;
+use crate::model::shelf::{Item, Kind};
 use crate::win32::{self, DragOutcome, MenuEntry};
 use crate::{COLLAPSE_AFTER_LEAVE, COLLAPSE_AFTER_RELEASE, Island, archive, log};
 
@@ -24,16 +24,19 @@ enum Action {
     CopyPath,
     Compress,
     Remove,
+    Transform,
 }
 
-const ACTIONS: [Action; 4] = [
+const ACTIONS: [Action; 5] = [
     Action::ShowInFolder,
     Action::CopyPath,
     Action::Compress,
     Action::Remove,
+    Action::Transform,
 ];
 
-const MENU: [MenuEntry; 5] = [
+const MENU: [MenuEntry; 6] = [
+    MenuEntry::Item(Action::Transform as usize, "&Transform…"),
     MenuEntry::Item(Action::ShowInFolder as usize, "Show in &folder"),
     MenuEntry::Item(Action::CopyPath as usize, "Copy as &path"),
     MenuEntry::Item(Action::Compress as usize, "Compress to &ZIP file"),
@@ -259,8 +262,10 @@ impl Island {
             return;
         }
         let (tx, rx) = async_channel::bounded(1);
+        // Transform, first, takes files only.
+        let from = usize::from(item.kind != Kind::File);
         if !on_thread("topsy-chip-menu", move || {
-            let _ = tx.send_blocking(win32::popup_menu(&MENU));
+            let _ = tx.send_blocking(win32::popup_menu(&MENU[from..]));
         }) {
             return;
         }
@@ -301,6 +306,10 @@ impl Island {
                 cx.write_to_clipboard(ClipboardItem::new_string(quoted));
             }
             Action::Compress => self.compress(item, cx),
+            Action::Transform => {
+                let island = cx.entity();
+                crate::transform::open(cx, &island, vec![item.path]);
+            }
             Action::Remove => {
                 if self.shelf.remove_path(&item.path) {
                     self.shelf_changed(cx);
