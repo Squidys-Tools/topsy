@@ -1,6 +1,6 @@
 # End-to-end check of the real input chain on a live desktop:
-#   real OLE file drag -> synthetic jiggle -> global mouse hook -> tray expands
-#   -> drag onto the pill -> GPUI drop target receives the file path.
+#   real OLE file drag -> synthetic jiggle -> global mouse hook -> the floating tray opens
+#   under the pointer -> release on it -> GPUI drop target receives the file path.
 # Moves the real cursor for ~3s. All input stays inside the fixture window and the island.
 # usage: e2e-drag.ps1 [-Exe target\debug\topsy.exe]
 param([string]$Exe = "$PSScriptRoot\..\target\debug\topsy.exe")
@@ -76,24 +76,25 @@ try {
         for ($i = 0; $i -lt 6; $i++) { $x += $dir * 14; Move-Cursor $x $py; Start-Sleep -Milliseconds 8 }
     }
     if (-not (Wait-Log $appLog 'hook Jiggle' 1500)) { throw 'jiggle was not detected by the hook' }
+    if (-not (Wait-Log $appLog 'floating tray at' 1000)) { throw 'the jiggle did not open the floating tray' }
     Start-Sleep -Milliseconds 450   # let the spring settle
     & "$PSScriptRoot\shot.ps1" -Out (Join-Path $shots 'e2e-1-expanded.png')
     $fgPid = 0; [void][Native]::GetWindowThreadProcessId([Native]::GetForegroundWindow(), [ref]$fgPid)
     if ($fgPid -eq $app.Id) { throw 'expanding the tray stole foreground focus' }
 
-    # Carry the drag up to the pill in steps so DragOver fires along the way.
-    $tx = $screen.X + $screen.Width / 2
-    $ty = $screen.Y + 59 * $scale
+    # The floating tray opens centred on the pointer: drop a little off-centre, on the tray.
+    $tx = $x + 20 * $scale
+    $ty = $py + 10 * $scale
 
-    # Safety: never carry a drag to the top of the screen unless the island is really
-    # there, or the drop lands on whatever app is underneath. The island's window is the
-    # pill, so the window under the drop point must be ours.
+    # Safety: never release the drag unless the island is really under the pointer, or the
+    # drop lands on whatever app is underneath. The island's window is the tray, so the window
+    # under the drop point must be ours.
     $pt = New-Object Native+POINT; $pt.X = [int]$tx; $pt.Y = [int]$ty
     $ownerPid = 0; [void][Native]::GetWindowThreadProcessId([Native]::WindowFromPoint($pt), [ref]$ownerPid)
     if ($ownerPid -ne $app.Id) { throw "the island is not under the drop point (that window belongs to pid $ownerPid); aborting drag" }
     $fx = $x; $fy = $py
-    for ($i = 1; $i -le 20; $i++) {
-        Move-Cursor ($fx + ($tx - $fx) * $i / 20) ($fy + ($ty - $fy) * $i / 20)
+    for ($i = 1; $i -le 5; $i++) {
+        Move-Cursor ($fx + ($tx - $fx) * $i / 5) ($fy + ($ty - $fy) * $i / 5)
         Start-Sleep -Milliseconds 15
     }
     Start-Sleep -Milliseconds 300

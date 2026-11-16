@@ -29,8 +29,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows::core::{PCWSTR, w};
 
-use crate::autostart;
-use crate::look;
+use crate::settings::Setting;
 use crate::win32::wide;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -40,8 +39,12 @@ pub enum TrayEvent {
     /// "Show shelf" in the menu.
     Show,
     ClearShelf,
-    /// "Black notch" was switched; it is saved already.
-    Black(bool),
+    /// A setting was switched to this value; it is saved already.
+    Setting(Setting, bool),
+    /// "Settings…": open the settings window, or bring it to the front. Carries the window that
+    /// was foreground before the menu (as an address: `HWND` can't cross threads), to hand
+    /// foreground back to when the settings window closes.
+    OpenSettings(usize),
     Quit,
 }
 
@@ -54,9 +57,10 @@ const ICON_ID: u32 = 1;
 
 const ID_SHOW: usize = 1;
 const ID_CLEAR: usize = 2;
-const ID_AUTOSTART: usize = 3;
-const ID_QUIT: usize = 4;
-const ID_BLACK: usize = 5;
+const ID_QUIT: usize = 3;
+const ID_SETTINGS: usize = 4;
+/// `Setting::ALL[i]` is item `ID_SETTING + i`.
+const ID_SETTING: usize = 100;
 
 /// The hidden window on the tray thread; 0 until it exists.
 static WINDOW: AtomicIsize = AtomicIsize::new(0);
@@ -250,31 +254,26 @@ unsafe fn open_menu(hwnd: HWND, at: POINT) {
         } else {
             MF_STRING | MF_GRAYED
         };
-        let autostart_flags = if autostart::is_enabled() {
-            MF_STRING | MF_CHECKED
-        } else {
-            MF_STRING
-        };
         let _ = AppendMenuW(menu, MF_STRING, ID_SHOW, w!("&Show shelf"));
         let _ = AppendMenuW(menu, clear_flags, ID_CLEAR, PCWSTR(clear.as_ptr()));
-        let black_flags = if look::is_black() {
-            MF_STRING | MF_CHECKED
-        } else {
-            MF_STRING
-        };
         let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
-        let _ = AppendMenuW(menu, black_flags, ID_BLACK, w!("&Black notch"));
-        let _ = AppendMenuW(
-            menu,
-            autostart_flags,
-            ID_AUTOSTART,
-            w!("Start with &Windows"),
-        );
+        for (i, setting) in Setting::ALL.into_iter().enumerate() {
+            let flags = if setting.is_on() {
+                MF_STRING | MF_CHECKED
+            } else {
+                MF_STRING
+            };
+            let label = wide(setting.menu_label());
+            let _ = AppendMenuW(menu, flags, ID_SETTING + i, PCWSTR(label.as_ptr()));
+        }
+        let _ = AppendMenuW(menu, MF_STRING, ID_SETTINGS, w!("Se&ttings…"));
         let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
         let _ = AppendMenuW(menu, MF_STRING, ID_QUIT, w!("&Quit topsy"));
 
         // The owner has to be foreground or the menu won't close when you click elsewhere.
-        // This is the hidden window, so it takes focus from nothing visible.
+        // This is the hidden window, so it takes focus from nothing visible; it is handed back
+        // afterwards, or keys would go nowhere until the next click.
+        let previous = crate::win32::foreground_window();
         let _ = SetForegroundWindow(hwnd);
         let choice = TrackPopupMenu(
             menu,
@@ -288,36 +287,24 @@ unsafe fn open_menu(hwnd: HWND, at: POINT) {
         // Documented companion to the above: lets the menu dismiss properly next time.
         let _ = PostMessageW(Some(hwnd), WM_NULL, WPARAM(0), LPARAM(0));
         let _ = DestroyMenu(menu);
+        // The settings window takes foreground itself, which needs the app to still hold it.
+        if choice.0 as usize != ID_SETTINGS {
+            crate::win32::restore_foreground(previous);
+        }
 
         match choice.0 as usize {
             ID_SHOW => send(TrayEvent::Show),
             ID_CLEAR => send(TrayEvent::ClearShelf),
             ID_QUIT => send(TrayEvent::Quit),
-            ID_AUTOSTART => toggle_autostart(),
-            ID_BLACK => toggle_black(),
-            _ => {}
+            ID_SETTINGS => send(TrayEvent::OpenSettings(previous.0 as usize)),
+            id => {
+                if let Some(&setting) = id.checked_sub(ID_SETTING).and_then(|i| Setting::ALL.get(i))
+                    && let Some(on) = setting.toggle()
+                {
+                    send(TrayEvent::Setting(setting, on));
+                }
+            }
         }
-    }
-}
-
-fn toggle_autostart() {
-    let result = if autostart::is_enabled() {
-        autostart::disable()
-    } else {
-        std::env::current_exe()
-            .map_err(windows::core::Error::from)
-            .and_then(|exe| autostart::enable(&exe))
-    };
-    if let Err(err) = result {
-        eprintln!("topsy: could not change start-with-Windows: {err}");
-    }
-}
-
-fn toggle_black() {
-    let black = !look::is_black();
-    match look::set_black(black) {
-        Ok(()) => send(TrayEvent::Black(black)),
-        Err(err) => eprintln!("topsy: could not save the notch's look: {err}"),
     }
 }
 

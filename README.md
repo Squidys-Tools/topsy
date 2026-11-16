@@ -12,7 +12,8 @@ It started as a **feasibility spike** for the riskiest parts of the design, and 
 On top of that it is now a usable v1: the island is a **notch** that stays out of sight until you reach for
 it (see [Notch](#notch)), the tray holds a **shelf** of files you can drag back out, there is a
 **tray icon** with a menu, **start with Windows**, and a **Quit** item. See
-[Shelf, tray icon and startup](#shelf-tray-icon-and-startup).
+[Shelf, tray icon and startup](#shelf-tray-icon-and-startup). It also shows what is playing, with its controls
+(see [Now Playing](#now-playing)).
 
 ## What's here
 
@@ -24,17 +25,29 @@ it (see [Notch](#notch)), the tray holds a **shelf** of files you can drag back 
 | `src/model/spring.rs` | Damped spring (Framer-Motion-style `stiffness/damping/mass`), fixed sub-step, retargetable mid-flight |
 | `src/model/jiggle.rs` | Jiggle detector: direction reversals of a held-button drag inside a time window |
 | `src/model/notch.rs` | The notch's outline: body, ears and corner radius for a given size |
+| `src/model/float.rs` | Where the floating tray opens: centred under the pointer, kept whole on its monitor's work area |
 | `src/model/edge.rs` | Reaching for the hidden notch: the cursor arriving on the top row above it; what counts as fullscreen |
 | `src/model/shelf.rs` | The shelf: files parked on the island, and its save format |
+| `src/model/archive.rs` | Naming a chip's zip (`report.zip`, `report (2).zip`) and the entries inside it |
+| `src/model/media.rs` | Now Playing: the media session's events reduced to what the tray and the peek show |
 | `src/model/tray_cause.rs` | Why the tray is open, and which events fold it early |
 | `src/config.rs` | Every `TOPSY_*` switch, read once at startup |
 | `src/backdrop.rs` | The glass: the compositor's blurred backdrop behind GPUI's content, clipped to the notch's shape |
-| `src/win32/` | Win32 glue GPUI doesn't expose: `window` (overlay styles, acrylic fallback, geometry, fullscreen), `dragdrop` (the drop-target wrapper that reports refused drags, dragging files out), `hook` (`WH_MOUSE_LL` thread), `shell` (opening files) |
+| `src/win32/` | Win32 glue GPUI doesn't expose: `window` (overlay styles, acrylic fallback, geometry, fullscreen), `dialog` (the settings window's dark caption and raising it), `dragdrop` (the drop-target wrapper that reports refused drags, dragging files out), `hook` (`WH_MOUSE_LL` thread), `shell` (opening files, showing them in Explorer), `menu` (a popup menu on a thread of its own) |
+| `src/chip.rs` | A chip: how it is drawn, opening it, dragging it out, and its right-click actions |
+| `src/archive.rs` | *Compress to ZIP file*: a chip's file or folder zipped beside it ([`zip`](https://crates.io/crates/zip), MIT) |
 | `src/icon.rs` | A chip's picture: the shell's thumbnail or icon for a file, as Explorer shows it |
 | `src/state.rs` | The shelf's save file and the thread that writes it |
 | `src/tray.rs` | The notification-area icon and its menu, on their own thread |
+| `src/settings.rs` | The on/off settings, one list shared by the menu and the settings window |
+| `src/settings_window.rs` | The settings window: a switch per setting, the version, Quit |
+| `src/app.rs` | The app's wiring: opens the island and connects the threads, tray icon and settings window to it |
 | `src/autostart.rs` | Start with Windows: one `HKCU\...\Run` value |
+| `src/media.rs` | The system's media session (WinRT `GlobalSystemMediaTransportControlsSessionManager`) on its own thread |
+| `src/now_playing.rs` | Now Playing's tray row, its buttons and the peek's hint |
+| `src/tray_view.rs` | The tray's layout: Now Playing above the shelf's header and chips |
 | `src/look.rs` | The *Black notch* setting: one `HKCU\Software\topsy` value |
+| `src/frame.rs` | The island's window and shape: where it sits (the notch, or the floating tray), its size, fill, ears and rim, kept in step with the spring |
 | `src/main.rs` | The island view: hidden, peeking or open as the tray with the shelf; file-drop target |
 | `build.rs` | Copies one import library the GNU toolchain's bundled MinGW lacks (see below) |
 | `rust-toolchain.toml` | Pins the GNU toolchain, `stable-x86_64-pc-windows-gnu` |
@@ -42,7 +55,8 @@ it (see [Notch](#notch)), the tray holds a **shelf** of files you can drag back 
 Right-click the notch or the tray icon for the menu (Quit is in it). Env vars for testing: `TOPSY_DEMO=1`
 (auto expand/collapse), `TOPSY_LOG=1` (event trace on stderr), `TOPSY_EXIT_AFTER_MS=<n>`, `TOPSY_NO_HOOK=1` (don't
 install the mouse hook; the notch then rests peeking, as nothing could reveal it), `TOPSY_NO_TRAY=1` (no tray icon
-and no menu, so right-clicking the notch quits; start-with-Windows is left alone), `TOPSY_IDLE=peek|tray` (what the
+and no menu, so right-clicking the notch quits; start-with-Windows is left alone), `TOPSY_NO_MEDIA=1` (don't watch
+the system's media session; no Now Playing), `TOPSY_IDLE=peek|tray` (what the
 notch rests as, instead of hidden; the live checks use it),
 `TOPSY_SEED=<path;path>` (start with these files on the shelf), `TOPSY_STATE=<path>` (the shelf's save file,
 `%LOCALAPPDATA%\topsy\shelf.txt` by default; set empty to not save), `TOPSY_GLASS=acrylic|tint|solid|clear` (forces
@@ -85,15 +99,27 @@ To build locally without installing the SDK, GPUI only needs one file from it: c
 - **Shelf.** Drop files on the notch and they are parked in the tray as chips (the file's thumbnail or icon as
   Explorer shows it, the name, and a cross to remove it from the shelf; the file itself is never touched). The chips are references, not copies.
   Drag a chip out and drop it on any window, as you would from Explorer; click a chip to open it; **Clear**
-  empties the shelf. A chip leaves the shelf once a drop is accepted. Files that were moved or deleted since they
+  empties the shelf. Right-click a chip for *Show in folder* (Explorer opens with it selected), *Copy as path*
+  (quoted, as Explorer copies it), *Compress to ZIP file* and *Remove from shelf*. The zip is written beside the
+  original, named as Explorer would (`report.zip` for `report.pdf`, a folder keeps its name and is zipped whole,
+  `report (2).zip` if the name is taken, never overwriting), on a worker thread, and is parked on the shelf when
+  it is done; if it fails (a locked file, no room), the half-written zip is deleted and no chip appears. Links and
+  junctions inside a folder are left out of its zip. There is no rename: the island never takes focus, so it can't
+  hold a text field. A chip leaves the shelf once a drop is accepted. Files that were moved or deleted since they
   were parked are dropped from the shelf when the tray opens (checked off the UI thread). The shelf is saved to
   `%LOCALAPPDATA%\topsy\shelf.txt` on every change and comes back on the next start. Startup never looks at the saved files (a dead share would
   stall launch): chips return as `…` and are settled off the UI thread, which drops entries whose files are gone.
 - **Tray icon.** A small glass-blue pill in the notification area (drawn in code, no asset). Left click opens
   or closes the shelf. Right click, or right-click the notch itself, opens the menu: *Show shelf*, *Clear shelf (N)*,
-  *Black notch* and *Start with Windows* (each checked when on), and *Quit topsy*. The icon lives on its own thread with a hidden window,
+  *Black notch* and *Start with Windows* (each checked when on), *Settings…* and *Quit topsy*. The icon lives on its own thread with a hidden window,
   re-adds itself when Explorer restarts, and is removed on Quit. On Windows 11 a new icon starts in the overflow
   flyout; drag it out to keep it visible.
+- **Settings window.** *Settings…* opens a small dark window, *topsy settings*, with a switch for each setting,
+  the version and *Quit topsy*. There is one at a time: asking again brings it to the front. It is an ordinary
+  window and takes focus when it opens, which the island never does; closing it leaves the app running. The
+  menu and the window are both built from the list in `src/settings.rs` and read each value from where it is
+  saved, so a switch in one shows in the other; a new toggle is a variant there and an arm in each of its
+  matches, plus what the island does about it (`Island::on_setting`).
 - **Black notch** draws the notch plain black instead of glass, at once, and is kept in
   `HKCU\Software\topsy\Look` (`black`; absent means glass).
 - **Start with Windows** writes `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\topsy` (the quoted path of
@@ -113,7 +139,25 @@ Two things about dragging out of a window that is itself a drop target, both fou
   `ShellExecute` (opening a chip): a message for the window reaching GPUI while it is inside a click handler finds
   the app already borrowed and aborts the process. That crashed the app about one run in five in the e2e. The
   drag loop runs from a `cx.spawn` task; opening a chip runs on a thread of its own, which also keeps a slow
-  handler (a UAC prompt, a cold network path) from freezing the island.
+  handler (a UAC prompt, a cold network path) from freezing the island. A chip's menu (`TrackPopupMenu`) and
+  *Show in folder* do the same: the menu is owned by a hidden window on its own thread, which is made
+  foreground so the menu closes on a click elsewhere, and hands foreground back to the window that had it.
+
+## Now Playing
+
+The tray shows what the system's current media session is playing (the one the volume flyout shows: Spotify, a
+browser tab, the Media Player): the art, title and artist, and previous, play/pause and next buttons, greyed
+where the app doesn't take them. It sits above the shelf, and the tray grows by its row only while there is one.
+While something is playing (not paused) the peek shows its art and title instead of the shelf count, with the
+count beside it. Stopped or no session shows nothing, as before.
+
+- **Event-driven only.** `src/media.rs` subscribes to `CurrentSessionChanged`, `MediaPropertiesChanged` and
+  `PlaybackInfoChanged`. WinRT raises them on thread-pool threads, whose handlers only wake one `topsy-media`
+  thread; it reads the session (and decodes the art, scaled down by WIC) and sends the result to the UI thread
+  over a channel. Between events nothing runs, and a change while the notch is hidden doesn't render.
+- **No progress bar.** Timeline events are not subscribed: a moving position would repaint continuously.
+- **Buttons** go to the same thread, which calls the session's `Try*Async` without waiting; the glyph changes
+  when the app reports its new state.
 
 ## Notch
 
@@ -124,11 +168,20 @@ nothing on screen, nothing to click.
 - **Reaching for it.** Resting the cursor on the screen's top row, above where the notch lives, for 150 ms brings
   it down as a 200x32 peek showing what is on the shelf; the delay keeps a sweep across the top from flashing it.
   The mouse hook watches for this (`src/model/edge.rs`), since nothing on screen could: it reports only arriving and
-  leaving, so there is still no polling. Dragging something up to that edge opens the tray straight away, as a
-  jiggle does. Click the peek to open the tray. It folds back 400 ms after the cursor leaves; the timer asks the
+  leaving, so there is still no polling. Dragging something up to that edge opens the tray straight away (and
+  brings a floating tray up to the notch). Click the peek to open the tray. It folds back 400 ms after the cursor leaves; the timer asks the
   OS where the cursor is rather than waiting for a hover "leave", which a cursor flicked off the edge doesn't
   always deliver.
-- **Not over fullscreen apps.** While the foreground window fills the notch's monitor (a video, a game, a
+- **The floating tray.** Jiggling a drag anywhere opens the tray as a floating panel centred under the pointer, as
+  Droppy's *Floating File Tray* does, so letting go there parks the files. It is the same window, moved: rounded
+  all round, no ears, with the notch's dynamic glass (black at the top fading to glass) and its rim.
+  It opens on the monitor under the pointer, at that monitor's scale, moved only as far as it takes to stay whole
+  inside the work area (`src/model/float.rs`). It folds by the jiggle tray's rules (a release without a drop, a
+  refused payload such as text, the timer after a drop), shrinking where it is, and the window then goes back to
+  the notch. One window rather than two: a second would need its own glass, drop-target wrapper and
+  non-activating setup, and could still be on screen with the notch. The top edge and the tray icon open the
+  notch tray as before. A jiggle while the tray is already open leaves it where it is.
+- **Not over fullscreen apps.** While the foreground window fills the monitor under the cursor (a video, a game, a
   slideshow), the top edge, a drag to it and the jiggle all do nothing, since games drag the mouse about freely.
   It is checked when one of them happens rather than tracked, so it costs nothing in between. A maximized window
   doesn't count (with an auto-hidden taskbar it overhangs the monitor too), nor does the desktop. The tray icon
@@ -199,9 +252,9 @@ through it. It was dropped.
 These drive the real desktop, so they move your cursor and/or show a window for a few seconds.
 
 - `e2e-drag.ps1` — starts a genuine OLE file drag from a fixture window, jiggles it with injected input,
-  verifies the hidden notch opens as the tray, carries the drag onto it, and checks the drop arrives with the right file name.
-  It checks that the window under the drop point is the island's first and aborts otherwise, so a drag is never
-  carried to the top of the screen unless the tray is there to catch it.
+  verifies the floating tray opens under the pointer, releases the drag on it, and checks the drop arrives with the
+  right file name. It checks that the window under the drop point is the island's first and aborts otherwise, so a
+  drag is never released unless the tray is there to catch it.
 - `e2e-shelf.ps1` — seeds a shelf, clicks the peeking notch open, drags a chip onto a separate app (a fixture window,
   `drop-target.ps1`) and checks it received the file and the chip left, cancels a drag with Escape (the chip stays),
   removes a chip with its cross without opening it, opens a folder chip in Explorer, clears the shelf, and finally
@@ -238,35 +291,44 @@ These drive the real desktop, so they move your cursor and/or show a window for 
   never painted. What works: create visible, apply `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW` + topmost right away,
   and `SetForegroundWindow` back to whatever had focus. After that nothing activates the island, including
   expanding the tray mid-drag (checked in the e2e).
+- **`WS_EX_NOACTIVATE` only keeps a click from taking the foreground from another app.** While topsy holds the
+  foreground itself (its settings window is in front), a click on the island still made it the active window,
+  as GPUI leaves `WM_MOUSEACTIVATE` to `DefWindowProc`. The island's window is subclassed to answer
+  `MA_NOACTIVATE`. Likewise the tray icon's menu makes its hidden owner foreground (or the menu won't close) and
+  must hand foreground back after, or keys go nowhere until the next click.
 - **`SetCursorPos` does not reliably reach `WH_MOUSE_LL`**; test input must be `mouse_event`/`SendInput`.
 - Low-level hooks do see button-up and moves during an OLE drag loop.
 - **A drag out with Escape needs the key held a moment.** The system's drag loop polls the key state rather than
   being sent the keystroke, because the island never takes focus. A tap shorter than a frame can be missed;
   releasing the button over something that refuses files cancels too.
-- The GNU build links and runs (47/47 unit tests, all live checks pass); the binary imports `msvcrt.dll`, no
+- The GNU build links and runs (77/77 unit tests, all live checks pass); the binary imports `msvcrt.dll`, no
   VCRUNTIME/MSVCP.
 
 ## Measured (release build, GNU toolchain, Windows 11, one 3440x1440 display, idle)
 
 | | |
 |---|---|
-| Working set | ~59 MB (private ~55 MB) |
-| Threads | 13 (12 without the mouse hook) |
-| Binary | 32.4 MB (unstripped; the earlier MSVC build was 10.6 MB) |
-| Idle CPU | ~0.5–0.7% of one core, with or without the hook |
+| Working set | ~70 MB (private ~56 MB) |
+| Threads | 16 (15 without the mouse hook), Now Playing's and WinRT's included |
+| Binary | 37.1 MB (unstripped; the earlier MSVC build was 10.6 MB) |
+| Idle CPU | ~1–2% of one core, with or without the hook or Now Playing (a busy machine; see below) |
 | Island re-renders at idle | 0 over 10 s |
 
-An earlier MSVC build measured ~1.5–2% idle CPU. The cause was never found (not our render loop, not the hook),
-and the toolchain, the window design and machine load all differ now, so don't read 0.5–0.7% as a fix. It is
-worth a profile before building on it, because an always-on app should be closer to 0%.
+Idle CPU swings with machine load: the GNU build once measured ~0.5–0.7%, an earlier MSVC build ~1.5–2%, and
+the build before Now Playing, the floating tray, chip actions and the settings window measured the same 0.7–2%
+as the build after, back to back on a busy machine. The cause was never found (not our render loop, not the
+hook, not the media thread). It is worth a profile, because an always-on app should be closer to 0%.
 
 ## Not done / known gaps
 
-- Real jiggle thresholds are untuned (tested only with synthetic input). A text-selection drag also
-  triggers the tray (the hook can't tell what is being dragged); the drop target refuses the payload
-  and the tray folds itself away.
-- Multi-monitor and non-100% DPI are handled in code (scale factor, the notch anchors to the monitor it opens on)
-  but only tested on one 100% display. The notch and its edge zone are placed at launch and don't follow a
+- Real jiggle thresholds are untuned (tested only with synthetic input). The shelf takes files only, by choice:
+  a jiggled text or link drag still opens the floating tray (the hook can't tell what is being dragged), the drop
+  target refuses the payload at once, the tray folds itself away, and further jiggles of that drag are ignored
+  until the button is released.
+- Multi-monitor and non-100% DPI are handled in code (scale factor, the notch anchors to the monitor it opens on,
+  the floating tray opens on the pointer's monitor at its scale) but only tested on one 100% display. A floating
+  tray on a monitor of another DPI relies on GPUI's DPI-change handling, then is put back to its own size and
+  place; that hand-off is untested. The notch and its edge zone are placed at launch and don't follow a
   display or DPI change until restart.
 - Reaching the top edge above the notch reveals it over a maximized app's own controls at the top (tabs, a
   title bar). Fullscreen is only detected as a window covering the monitor, so exclusive-mode games are untested.
@@ -282,9 +344,14 @@ worth a profile before building on it, because an always-on app should be closer
   Until the picture arrives, or if the shell has none, the chip shows an extension badge.
 - The target decides copy, move or link (the default shell drop source offers all three), so a drag to a folder on
   the same drive moves the file, as in Explorer; the chip then leaves the shelf.
-- No settings window or droplets yet. The tray icon is drawn in code and the exe itself has no icon resource.
+- *Compress to ZIP file* shows no progress, and a big folder can take a while before its chip appears. Errors only
+  go to stderr. Quitting mid-zip leaves the partial zip behind.
+- Now Playing follows only the system's *current* session (the one Windows picks), with no way to switch between
+  several. Its art is fetched on every properties change, not cached by track. Not checked on the desktop yet:
+  apps that report art late or not at all, and an app that never answers a button.
+- No droplets yet. The settings window is a plain dark fill, not Mica. The tray icon is drawn in code and the exe itself has no icon resource.
 
 ## License
 
-[MIT](LICENSE). The crates this builds on (GPUI and its dependency tree, 482 packages on Windows) are all
+[MIT](LICENSE). The crates this builds on (GPUI and its dependency tree, 485 packages on Windows) are all
 permissively licensed (MIT, Apache-2.0, BSD, Zlib, ISC and similar); a distributed binary should ship their notices.

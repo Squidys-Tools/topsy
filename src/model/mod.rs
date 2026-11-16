@@ -2,8 +2,11 @@
 //! time and input as arguments, so its tests drive them directly. `scripts/check-structure.ps1`
 //! holds this folder to that.
 
+pub mod archive;
 pub mod edge;
+pub mod float;
 pub mod jiggle;
+pub mod media;
 pub mod notch;
 pub mod shelf;
 pub mod spring;

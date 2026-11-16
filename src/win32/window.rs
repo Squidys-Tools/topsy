@@ -2,28 +2,66 @@
 
 use std::ffi::c_void;
 
-use windows::Win32::Foundation::{HWND, POINT, RECT};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{
     DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND, DwmSetWindowAttribute,
 };
 use windows::Win32::Graphics::Gdi::{
-    CombineRgn, CreateRectRgn, CreateRoundRectRgn, DeleteObject, GetMonitorInfoW,
-    MONITOR_DEFAULTTONULL, MONITOR_DEFAULTTOPRIMARY, MONITORINFO, MonitorFromWindow, PtInRect,
-    RGN_OR, SetWindowRgn,
+    CombineRgn, CreateRectRgn, CreateRoundRectRgn, DeleteObject, GetMonitorInfoW, HMONITOR,
+    MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTONULL, MONITOR_DEFAULTTOPRIMARY, MONITORINFO,
+    MonitorFromPoint, MonitorFromWindow, PtInRect, RGN_OR, SetWindowRgn,
 };
 use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
+use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
+use windows::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
 use windows::Win32::UI::WindowsAndMessaging::{
     GWL_EXSTYLE, GWL_STYLE, GetClassNameW, GetCursorPos, GetForegroundWindow, GetShellWindow,
-    GetWindowLongPtrW, GetWindowRect, HWND_TOPMOST, IsZoomed, SWP_FRAMECHANGED, SWP_NOACTIVATE,
-    SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos,
-    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP, WS_VISIBLE,
+    GetWindowLongPtrW, GetWindowRect, HWND_TOPMOST, IsZoomed, MA_NOACTIVATE, SWP_FRAMECHANGED,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetForegroundWindow, SetWindowLongPtrW,
+    SetWindowPos, WM_MOUSEACTIVATE, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP, WS_VISIBLE,
 };
 use windows::core::{s, w};
 
 use crate::model::edge::fills_monitor;
+use crate::model::float::Rect;
 
-/// Whether the foreground window is a fullscreen app on `island`'s monitor. The desktop
-/// counts as neither: it fills the monitor too, but its windows are `Progman` and `WorkerW`.
+/// The monitor under the cursor, and where the cursor is on it.
+fn cursor_at() -> Option<(POINT, HMONITOR)> {
+    let mut at = POINT::default();
+    unsafe { GetCursorPos(&mut at) }.ok()?;
+    Some((at, unsafe {
+        MonitorFromPoint(at, MONITOR_DEFAULTTONEAREST)
+    }))
+}
+
+/// Where the cursor is, the work area of its monitor (less the taskbar) and that monitor's
+/// scale factor, all in physical screen pixels.
+pub fn cursor_monitor() -> Option<((i32, i32), Rect, f32)> {
+    let (at, monitor) = cursor_at()?;
+    let mut info = MONITORINFO {
+        cbSize: size_of::<MONITORINFO>() as u32,
+        ..Default::default()
+    };
+    let (mut dpi, mut _dpi_y) = (96u32, 96u32);
+    unsafe {
+        if !GetMonitorInfoW(monitor, &mut info).as_bool() {
+            return None;
+        }
+        let _ = GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi, &mut _dpi_y);
+    }
+    let w = info.rcWork;
+    let work = Rect {
+        left: w.left,
+        top: w.top,
+        right: w.right,
+        bottom: w.bottom,
+    };
+    Some(((at.x, at.y), work, dpi as f32 / 96.0))
+}
+
+/// Whether the foreground window is a fullscreen app on the monitor under the cursor, where
+/// every gesture that summons the island happens. The desktop counts as neither: it fills the
+/// monitor too, but its windows are `Progman` and `WorkerW`.
 pub fn fullscreen_over(island: HWND) -> bool {
     unsafe {
         let fg = GetForegroundWindow();
@@ -38,7 +76,9 @@ pub fn fullscreen_over(island: HWND) -> bool {
         ) {
             return false;
         }
-        let monitor = MonitorFromWindow(island, MONITOR_DEFAULTTOPRIMARY);
+        let Some((_, monitor)) = cursor_at() else {
+            return false;
+        };
         if MonitorFromWindow(fg, MONITOR_DEFAULTTONULL) != monitor {
             return false;
         }
@@ -86,7 +126,25 @@ pub fn apply_overlay_styles(hwnd: HWND) {
             0,
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED,
         );
+        let _ = SetWindowSubclass(hwnd, Some(no_mouse_activate), 1, 0);
     }
+}
+
+/// `WS_EX_NOACTIVATE` keeps a click from making the island the foreground window, but while
+/// topsy already holds the foreground (its settings window is in front) the default answer to
+/// `WM_MOUSEACTIVATE`, which GPUI leaves to `DefWindowProc`, still makes it the active window.
+unsafe extern "system" fn no_mouse_activate(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+    _id: usize,
+    _data: usize,
+) -> LRESULT {
+    if msg == WM_MOUSEACTIVATE {
+        return LRESULT(MA_NOACTIVATE as isize);
+    }
+    unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) }
 }
 
 #[repr(C)]
@@ -206,6 +264,12 @@ pub enum Clip {
     Nothing,
     /// The whole window (the acrylic fallback, which DWM rounds itself).
     Everything,
+    /// A rounded rectangle filling the window: the floating tray.
+    Rounded {
+        width: i32,
+        height: i32,
+        radius: i32,
+    },
     /// A notch body with square top, rounded bottom and an ear strip along the top edge.
     Notch {
         width: i32,
@@ -227,6 +291,14 @@ pub fn set_clip(hwnd: HWND, clip: Clip) {
         let region = match clip {
             Clip::Everything => None,
             Clip::Nothing => Some(CreateRectRgn(0, 0, 0, 0)),
+            Clip::Rounded {
+                width,
+                height,
+                radius,
+            } => {
+                let d = 2 * (radius - 1).max(0);
+                Some(CreateRoundRectRgn(0, 0, width + 1, height + 1, d, d))
+            }
             Clip::Notch {
                 width,
                 height,
