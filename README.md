@@ -113,8 +113,9 @@ you start by hand: `gh workflow run build.yml --ref <branch>`, or **Run workflow
 tab. Download the `topsy-windows-gnu` artifact from that run: no Rust, MinGW or SDK needed to run it. A cold build
 takes about 20 minutes.
 
-To build locally without installing the SDK, GPUI only needs one file from it: copy `fxc.exe` (from
-`Windows Kits\10\bin\<version>\x64`) anywhere and set `GPUI_FXC_PATH` to it.
+To build locally without installing the SDK, GPUI only needs one file from it, `fxc.exe`.
+`scripts/get-fxc.ps1` takes it from Microsoft's SDK package on NuGet (no admin), checks its signature, and sets
+`GPUI_FXC_PATH` for your user; open a new terminal afterwards.
 
 ## Shelf, tray icon and startup
 
