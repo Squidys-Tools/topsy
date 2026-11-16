@@ -5,7 +5,7 @@
 
 use std::cell::Cell;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use gpui::{
     App, Bounds, ClickEvent, Context, Entity, FontWeight, MouseButton, MouseDownEvent, ObjectFit,
@@ -14,7 +14,9 @@ use gpui::{
 };
 
 use crate::media::{self, Button};
+use crate::model::levels::{self, BARS, Levels};
 use crate::model::media::{Card, Event, NowPlaying, Progress, clock};
+use crate::win32::meter::Meter;
 use crate::{Island, Mode, icon, log};
 
 /// The art's side in the player; the peek shows it smaller.
@@ -35,8 +37,15 @@ const GLYPH: u32 = 0xebebeb;
 pub struct Media {
     pub now: NowPlaying,
     art: Option<Arc<RenderImage>>,
+    /// The bars' colour, from the art.
+    accent: Option<[u8; 3]>,
     /// A redraw is booked for the progress bar's next second.
     ticking: Cell<bool>,
+    levels: Levels,
+    /// Open only while the bars move, with when it was opened.
+    meter: Option<(Meter, Instant)>,
+    /// The bars' next frame is booked.
+    metering: Cell<bool>,
 }
 
 /// Start watching the system's media session, unless `TOPSY_NO_MEDIA` is set.
@@ -60,7 +69,9 @@ impl Island {
         let mut changed = self.media.now.apply(update.event);
         if track {
             changed |= self.media.art.is_some() || update.art.is_some();
-            if let Some(old) = std::mem::replace(&mut self.media.art, update.art) {
+            self.media.accent = update.art.as_ref().and_then(|a| a.accent);
+            let art = update.art.map(|a| a.image);
+            if let Some(old) = std::mem::replace(&mut self.media.art, art) {
                 icon::forget(vec![old], cx);
             }
         }
@@ -121,7 +132,8 @@ impl Island {
                             .truncate()
                             .child(a.to_owned())
                     })),
-            );
+            )
+            .child(self.bars(22.0, 4.0, cx));
         Some(
             div()
                 .w_full()
@@ -166,7 +178,7 @@ impl Island {
     }
 
     /// What the peek says: the playing title with its art, or what is on the shelf.
-    pub(crate) fn peek_content(&self) -> impl IntoElement + use<> {
+    pub(crate) fn peek_content(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let count = self.shelf.len();
         let Some(title) = self.media.now.hint() else {
             let label = match count {
@@ -193,6 +205,82 @@ impl Island {
                     .child(title.to_owned()),
             )
             .children((count > 0).then(|| div().text_color(rgba(DIM)).child(count.to_string())))
+            .child(self.bars(14.0, 3.0, cx))
+    }
+
+    /// Whether the level bars are on screen and moving: something plays and the peek or the
+    /// player shows it.
+    fn bars_live(&self) -> bool {
+        self.media.now.hint().is_some()
+            && match self.mode {
+                Mode::Hidden => false,
+                Mode::Peek => true,
+                Mode::Tray => self.sections().media,
+            }
+    }
+
+    /// The level bars, `height` tall, each `width` wide. While they are live each frame books
+    /// the next; once they aren't, the meter is let go and nothing more is booked.
+    fn bars(&self, height: f32, width: f32, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        if self.bars_live() && !self.media.metering.replace(true) {
+            cx.spawn(async move |this, cx| {
+                let frame = Duration::from_millis(levels::FRAME_MS);
+                cx.background_executor().timer(frame).await;
+                this.update(cx, |this, cx| this.meter_frame(cx)).ok();
+            })
+            .detach();
+        }
+        let heights = self.media.levels.bars();
+        let color = match self.media.accent {
+            Some([r, g, b]) => rgb(u32::from_be_bytes([0, r, g, b])),
+            None => rgb(GLYPH),
+        };
+        let gap = width * 0.75;
+        canvas(
+            |_, _, _| {},
+            move |bounds, (), window, _| {
+                let o = bounds.origin;
+                for (i, h) in heights.iter().enumerate() {
+                    let h = (height * h).max(width);
+                    let x = i as f32 * (width + gap);
+                    let bar = Bounds::new(
+                        point(o.x + px(x), o.y + px((height - h) / 2.0)),
+                        gpui::size(px(width), px(h)),
+                    );
+                    window.paint_quad(fill(bar, color).corner_radii(px(width / 2.0)));
+                }
+            },
+        )
+        .w(px(BARS as f32 * (width + gap) - gap))
+        .h(px(height))
+        .flex_shrink_0()
+    }
+
+    fn meter_frame(&mut self, cx: &mut Context<Self>) {
+        self.media.metering.set(false);
+        if !self.bars_live() {
+            self.media.meter = None;
+            let moving = self.media.levels.bars() != [levels::REST; BARS];
+            self.media.levels.rest();
+            // A pause leaves the player on screen: settle its bars to dots.
+            if moving && self.mode != Mode::Hidden {
+                cx.notify();
+            }
+            return;
+        }
+        // Reopened every second, so a change of output device (headphones in) is followed.
+        let now = Instant::now();
+        let stale = self
+            .media
+            .meter
+            .as_ref()
+            .is_none_or(|(_, opened)| now - *opened >= Duration::from_secs(1));
+        if stale {
+            self.media.meter = Some((Meter::open(), now));
+        }
+        let peak = self.media.meter.as_ref().map_or(0.0, |(m, _)| m.peak());
+        self.media.levels.push(peak);
+        cx.notify();
     }
 }
 

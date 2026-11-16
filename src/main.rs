@@ -411,7 +411,7 @@ impl Render for Island {
         let content = if show_tray {
             self.tray_content(cx).into_any_element()
         } else if notch.height >= 20.0 {
-            self.peek_content().into_any_element()
+            self.peek_content(cx).into_any_element()
         } else {
             div().into_any_element()
         };

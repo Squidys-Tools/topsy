@@ -6,6 +6,7 @@ mod dragdrop;
 mod hook;
 pub mod inbox;
 mod menu;
+pub mod meter;
 pub mod sendto;
 mod shell;
 mod window;
