@@ -180,6 +180,22 @@ impl History {
     }
 }
 
+/// The files in a history folder that a crash left behind: a temp file not yet renamed, and an
+/// image's `<id>.png` whose `<id>.json` was never written or is already gone.
+pub fn leftovers(names: &[String]) -> Vec<&str> {
+    names
+        .iter()
+        .map(String::as_str)
+        .filter(|name| match name.split_once('.') {
+            _ if name.ends_with(".tmp") => true,
+            Some((id, "png")) => {
+                id.bytes().all(|b| b.is_ascii_digit()) && !names.contains(&format!("{id}.json"))
+            }
+            _ => false,
+        })
+        .collect()
+}
+
 /// A cheap fingerprint of an image's pixels (FNV-1a), to spot the same image copied again.
 pub fn fingerprint(bytes: &[u8]) -> u64 {
     bytes.iter().fold(0xcbf2_9ce4_8422_2325, |h, &b| {
@@ -301,6 +317,16 @@ mod tests {
         let json = serde_json::to_string(&files).unwrap();
         assert!(!json.contains("pinned") && !json.contains("app"));
         assert_eq!(serde_json::from_str::<Entry>(&json).unwrap(), files);
+    }
+
+    #[test]
+    fn crash_leftovers_are_found_and_nothing_else() {
+        let names: Vec<String> = [
+            "1.json", "1.png", "2.png", "3.tmp", "4.json", "icons", "x.png",
+        ]
+        .map(String::from)
+        .into();
+        assert_eq!(leftovers(&names), ["2.png", "3.tmp"]);
     }
 
     #[test]

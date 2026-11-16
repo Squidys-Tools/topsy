@@ -183,7 +183,7 @@ impl Render for SettingsWindow {
             }
             cx.notify();
         }));
-        let clear = button("clear", "Clear".into())
+        let clear = button("clear", "Clear unpinned".into())
             .on_click(|_, _, _| clipboard::send(clipboard::Command::Clear));
         let retention = div()
             .flex()

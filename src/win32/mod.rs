@@ -5,6 +5,7 @@ pub mod clipboard;
 mod dialog;
 mod dragdrop;
 mod hook;
+pub mod http;
 pub mod inbox;
 mod menu;
 pub mod meter;

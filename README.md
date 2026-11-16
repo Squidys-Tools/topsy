@@ -34,19 +34,23 @@ it (see [Notch](#notch)), the tray holds a **shelf** of files you can drag back 
 | `src/model/levels.rs` | Now Playing's level bars: peak readings to bar heights, and the colour they take from the art |
 | `src/model/clipboard.rs` | Clipboard history: adding a copy (a repeat moves up), pins, expiry, the cap, and its save format |
 | `src/model/clip_kind.rs` | What a copy is (text, link, colour, code, image, files) and how its card describes it; search |
+| `src/model/highlight.rs` | A code card's colours: keywords, strings, comments and numbers, in one pass that knows no language |
+| `src/model/favicon.rs` | Which sites a link card may ask for an icon, where a redirect or a page's icon link may lead, and which icon a page names |
 | `src/model/dib.rs` | Reading a copied bitmap (`CF_DIB`/`CF_DIBV5`) to RGBA, and writing one back to paste |
 | `src/model/tray_cause.rs` | Why the tray is open, and which events fold it early |
 | `src/config.rs` | Every `TOPSY_*` switch, read once at startup |
 | `src/backdrop.rs` | The glass: the compositor's blurred backdrop behind GPUI's content, clipped to the notch's shape |
-| `src/win32/` | Win32 glue GPUI doesn't expose: `window` (overlay styles, acrylic fallback, geometry, fullscreen), `dialog` (the settings window's dark caption and raising it), `dragdrop` (the drop-target wrapper that reports refused drags, dragging files out), `hook` (`WH_MOUSE_LL` thread), `shell` (opening files, showing them in Explorer), `menu` (a popup menu on a thread of its own), `meter` (the output device's peak meter), `sendto` (the Send to shortcut), `inbox` (paths handed over by a second topsy), `clipboard` (the clipboard listener and the Ctrl+Alt+V hotkey), `paste` (putting an entry back on the clipboard and pasting it) |
+| `src/win32/` | Win32 glue GPUI doesn't expose: `window` (overlay styles, acrylic fallback, geometry, fullscreen), `dialog` (the settings window's dark caption and raising it), `dragdrop` (the drop-target wrapper that reports refused drags, dragging files out), `hook` (`WH_MOUSE_LL` thread), `shell` (opening files, showing them in Explorer), `menu` (a popup menu on a thread of its own), `meter` (the output device's peak meter), `sendto` (the Send to shortcut), `inbox` (paths handed over by a second topsy), `clipboard` (the clipboard listener and the Ctrl+Alt+V hotkey), `paste` (putting an entry back on the clipboard and pasting it), `http` (one https GET through WinHTTP) |
 | `src/chip.rs` | A chip: how it is drawn, opening it, dragging it out, and its right-click actions |
 | `src/archive.rs` | *Compress to ZIP file*: a chip's file or folder zipped beside it ([`zip`](https://crates.io/crates/zip), MIT) |
 | `src/icon.rs` | A chip's picture: the shell's thumbnail or icon for a file, as Explorer shows it |
 | `src/state.rs` | The shelf's save file and the thread that writes it |
 | `src/tray.rs` | The notification-area icon and its menu, on their own thread |
 | `src/clipboard.rs` | Clipboard history on disk, owned by one thread; the history setting and how long it is kept |
-| `src/clipboard/strip.rs` | The clipboard strip: the window Ctrl+Alt+V opens, its search, tabs, keys and right-click menu |
+| `src/clipboard/strip.rs` | The clipboard strip: the window Ctrl+Alt+V opens, its search, tabs, keys and card menu |
 | `src/clipboard/card.rs` | One card in the strip, drawn after Droppy's |
+| `src/clipboard/pictures.rs` | The pictures the cards show (app icons, images, file thumbnails, site icons), loaded off the UI thread |
+| `src/clipboard/favicon.rs` | A link card's site icon: fetched once per host and kept beside the history |
 | `src/settings.rs` | The on/off settings, one list shared by the menu and the settings window |
 | `src/settings_window.rs` | The settings window: a switch per setting, how long clipboard history is kept, the version, Quit |
 | `src/app.rs` | The app's wiring: opens the island and connects the threads, tray icon and settings window to it |
@@ -197,20 +201,32 @@ Copies are kept: text, links, colours, code, images and files, each with the app
 copies, text over 1 MB, or ones marked private). Ctrl+Alt+V opens the **strip**, a black band along the bottom
 of the monitor under the cursor, laid out after Droppy's: a card per copy, newest first, with a pill naming the app, the kind and how long ago, and a line of detail at its
 foot. Type to search; Left/Right to pick; Enter pastes into the window that was in front; Ctrl+C only copies;
-Ctrl+P pins; Delete removes; Tab shows the pinned ones; Esc clears the search, then closes. Right-click a card
-for the same actions. History is kept 7 days by default (1, 7, 30 days or forever in the settings window, which
-also clears it); pinned entries never expire. It can be switched off from the menu or the settings window.
+Ctrl+P pins; Delete removes; Tab shows the pinned ones; Esc clears the search, then closes. Right-click a card,
+or its ⋯ button, for the same actions. Code cards are coloured (keywords, strings, comments, numbers); link cards
+show the site's icon. History is kept 7 days by default (1, 7, 30 days or forever in the settings window, whose
+*Clear unpinned* empties it but for the pins); pinned entries never expire. It can be switched off from the menu
+or the settings window.
 
 - **The strip takes focus**, unlike the island: it is typed into. It remembers the window that was in front when
   the hotkey fired, hands focus back to it on Esc and after a paste, and closes on a click elsewhere. Paste puts
-  the entry on the clipboard and sends Ctrl+V; being a copy, it moves the entry to the front.
+  the entry on the clipboard, waits up to 500 ms for that window to be in front again, and only then sends
+  Ctrl+V: keys sent sooner land wherever the focus is. If it never comes back no keys are sent, and the entry
+  stays on the clipboard. Being a copy, a paste moves the entry to the front.
+- **A card's menu opens on the button's release.** Opened on the press, the release still goes to the strip and
+  the menu never gets the keyboard: Esc and its access keys do nothing.
 - **Nothing polls.** The listener (`AddClipboardFormatListener`) wakes on each copy; the store thread wakes on a
   command or when the oldest entry is due to expire. Copies marked private
   (`ExcludeClipboardContentFromMonitorProcessing`, `CanIncludeInClipboardHistory` = 0, as password managers set
   them) are never read. Many apps announce one copy twice, so the same thing copied again within 2 s is one copy.
 - **On disk** each entry is `<id>.json` in the history folder, an image's pixels `<id>.png` beside it, each
-  written through a temp file. At most 2000 unpinned entries are kept, and text over 1 MB is not. One topsy
-  keeps a folder; a second one started on it keeps no history, since both would number and expire the same files.
+  written through a temp file. A kill between the two can leave a `.tmp` or an image with no entry; the store
+  removes those (and a half-written site icon) when it starts. At most 2000 unpinned entries are kept, and text over 1 MB is not. One topsy keeps
+  a folder; a second one started on it keeps no history, since both would number and expire the same files.
+- **Site icons are the only network traffic.** A link card that is shown asks its site for `/favicon.ico`, else
+  the icon its home page names, once per host, through WinHTTP (the system's TLS, no crate of our own). Only
+  https and public names: never a bare name, an address, a local-network suffix, or a name that resolves to a
+  private address, and a redirect or icon link is vetted the same way. The icon is kept as a small PNG in
+  `icons\<host>.png` beside the history; an empty file there means the site has none, so it isn't asked again.
 
 ## Notch
 
@@ -413,6 +429,9 @@ hook, not the media thread). It is worth a profile, because an always-on app sho
   changed. Paste sends Ctrl+V, which a terminal that pastes on Ctrl+Shift+V ignores (the entry is still on the
   clipboard). Rich text and HTML are kept as plain text. The cap counts entries, not bytes, so a long history of
   big images kept forever can grow large. The strip shows the newest 100 matches. Tested on one 100% display only.
+  Site icons: an SVG-only icon isn't drawn; a site unreachable or busy when first shown is asked again next run, not
+  sooner; a name can still re-resolve to a private address between the check and WinHTTP's own lookup; and
+  *Clear unpinned* leaves the kept icons, which name the sites copied.
 - No droplets yet. The settings window is a plain dark fill, not Mica.
 
 ## License
