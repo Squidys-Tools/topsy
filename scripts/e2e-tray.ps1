@@ -190,6 +190,8 @@ $env:TOPSY_LOG = '1'
 $env:TOPSY_IDLE = 'peek'
 $env:TOPSY_SEED = $files -join ';'
 $env:TOPSY_STATE = Join-Path $work 'shelf.state'
+# A playing song adds a row to the tray and moves what this clicks.
+$env:TOPSY_NO_MEDIA = '1'
 $app = Start-Process $Exe -PassThru -RedirectStandardError $appLog
 [void]$app.Handle   # cache the handle, or ExitCode reads as empty once the process is gone
 $failed = $null
