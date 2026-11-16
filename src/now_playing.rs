@@ -337,7 +337,7 @@ fn art(art: Option<&Arc<RenderImage>>, side: f32, radius: f32) -> Option<impl In
             .size(px(side))
             .flex_shrink_0()
             .rounded(px(radius))
-            .object_fit(ObjectFit::Cover)
+            .object_fit(ObjectFit::Fill)
     })
 }
 

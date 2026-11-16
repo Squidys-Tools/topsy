@@ -14,8 +14,8 @@ use gpui::RenderImage;
 use image::{Frame, RgbaImage};
 use windows::Foundation::TypedEventHandler;
 use windows::Graphics::Imaging::{
-    BitmapAlphaMode, BitmapDecoder, BitmapInterpolationMode, BitmapPixelFormat, BitmapTransform,
-    ColorManagementMode, ExifOrientationMode,
+    BitmapAlphaMode, BitmapBounds, BitmapDecoder, BitmapInterpolationMode, BitmapPixelFormat,
+    BitmapTransform, ColorManagementMode, ExifOrientationMode,
 };
 use windows::Media::Control::{
     GlobalSystemMediaTransportControlsSession as Session,
@@ -255,7 +255,9 @@ fn timeline(session: &Session) -> Option<Event> {
     })))
 }
 
-/// The track's art, decoded and scaled down (never up) so its shorter side is `size`.
+/// The track's art, decoded and scaled down (never up) so its shorter side is `size`, and
+/// cropped to a centred square: GPUI draws a covering image past its box (a video's 16:9
+/// thumbnail spilled out of the notch).
 fn art(props: &Properties, size: u32) -> windows::core::Result<Art> {
     let stream = props.Thumbnail()?.OpenReadAsync()?.join()?;
     let decoder = BitmapDecoder::CreateAsync(&stream)?.join()?;
@@ -269,6 +271,14 @@ fn art(props: &Properties, size: u32) -> windows::core::Result<Art> {
     transform.SetScaledWidth(w)?;
     transform.SetScaledHeight(h)?;
     transform.SetInterpolationMode(BitmapInterpolationMode::Fant)?;
+    let side = w.min(h);
+    transform.SetBounds(BitmapBounds {
+        X: (w - side) / 2,
+        Y: (h - side) / 2,
+        Width: side,
+        Height: side,
+    })?;
+    let (w, h) = (side, side);
     let pixels = decoder
         .GetPixelDataTransformedAsync(
             BitmapPixelFormat::Bgra8,
