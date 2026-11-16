@@ -8,14 +8,14 @@ $dest = Join-Path $env:LOCALAPPDATA 'topsy-build\fxc'
 $fxc = Join-Path $dest 'fxc.exe'
 
 if (-not $Force) {
-    $found = @($env:GPUI_FXC_PATH, (Get-Command fxc.exe -ErrorAction SilentlyContinue).Source,
+    $found = @($env:GPUI_FXC_PATH, $fxc, (Get-Command fxc.exe -ErrorAction SilentlyContinue).Source,
         "${env:ProgramFiles(x86)}\Windows Kits\10\bin\10.0.26100.0\x64\fxc.exe") |
-        Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+        Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
     if ($found) { "fxc.exe is already there: $found"; return }
 }
 
 $work = Join-Path $env:TEMP "topsy-fxc-$PID"
-New-Item -ItemType Directory -Force $work, $dest | Out-Null
+New-Item -ItemType Directory -Force $work | Out-Null
 try {
     $package = Join-Path $work 'sdk.zip'
     "Downloading the Windows SDK package $version from NuGet (about 160 MB)..."
@@ -24,21 +24,22 @@ try {
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $zip = [IO.Compression.ZipFile]::OpenRead($package)
     try {
-        # fxc.exe loads the d3dcompiler_47.dll beside it before the system's.
+        # fxc.exe loads the d3dcompiler_47.dll beside it before the system's, so both are checked.
         foreach ($name in 'fxc.exe', 'd3dcompiler_47.dll') {
             $entry = $zip.Entries | Where-Object { $_.FullName -match "^c/bin/[^/]+/x64/$([regex]::Escape($name))$" } | Select-Object -First 1
             if (-not $entry) { throw "$name is not in the package" }
-            [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, (Join-Path $dest $name), $true)
+            $file = Join-Path $work $name
+            [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $file, $true)
+            $signature = Get-AuthenticodeSignature -LiteralPath $file
+            if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch '(^|, )O=Microsoft Corporation(,|$)') {
+                throw "$name is not signed by Microsoft ($($signature.Status))"
+            }
         }
     } finally { $zip.Dispose() }
+    New-Item -ItemType Directory -Force $dest | Out-Null
+    Copy-Item -LiteralPath (Join-Path $work 'fxc.exe'), (Join-Path $work 'd3dcompiler_47.dll') -Destination $dest -Force
 } finally {
-    Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
-}
-
-$signature = Get-AuthenticodeSignature $fxc
-if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') {
-    Remove-Item -Recurse -Force $dest
-    throw "fxc.exe is not signed by Microsoft ($($signature.Status)); removed it"
+    Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 [Environment]::SetEnvironmentVariable('GPUI_FXC_PATH', $fxc, 'User')
