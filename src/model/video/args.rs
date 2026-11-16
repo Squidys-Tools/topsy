@@ -11,7 +11,7 @@ use super::options::{
     AudioFormat, CompressBy, CompressVideo, ConvertTarget, GifOptions, Rotate, TrimMode,
     VideoFormat, extension,
 };
-use super::probe::Probe;
+use super::probe::{Hdr, Probe};
 use super::trim::{TrimRange, seconds};
 
 /// An FFmpeg command line under construction.
@@ -46,6 +46,24 @@ impl Args {
         self.push(&["-map", "0:V:0", "-map", "0:a?"]);
     }
 
+    /// The video filters `filter`, after `TO_SDR` when an HDR picture goes to an encoder that
+    /// writes SDR, then the encoder.
+    fn encode(&mut self, encoder: Encoder, filter: Option<&str>, probe: &Probe) {
+        self.filters(probe.hdr().is_some() && !encoder.keeps_hdr(), filter);
+        encoder.keep(self, probe.hdr());
+    }
+
+    fn filters(&mut self, to_sdr: bool, filter: Option<&str>) {
+        let chain: Vec<&str> = to_sdr
+            .then_some(codecs::TO_SDR)
+            .into_iter()
+            .chain(filter)
+            .collect();
+        if !chain.is_empty() {
+            self.push(&["-vf", &chain.join(",")]);
+        }
+    }
+
     /// Finish with `out`, in `muxer` (or the one its extension names).
     fn output(mut self, out: &Path, muxer: Option<&str>) -> Vec<OsString> {
         if matches!(muxer, Some("mp4" | "mov" | "ipod"))
@@ -78,6 +96,8 @@ pub struct CompressPlan {
     pub audio_kbps: u32,
     /// The picture size, when it changes.
     pub scale: Option<Resolution>,
+    /// The source's HDR curve, mapped to SDR since Compress writes H.264.
+    pub hdr: Option<Hdr>,
 }
 
 /// Plan "Compress video" for the clip `probe` describes.
@@ -105,6 +125,7 @@ pub fn compress_plan(opts: CompressVideo, probe: &Probe) -> Result<CompressPlan,
                 },
                 audio_kbps: audio.map_or(128, |b| (b / 1000).clamp(64, 128)),
                 scale: changed(out),
+                hdr: probe.hdr(),
             })
         }
         CompressBy::FileSize(target) => {
@@ -119,6 +140,7 @@ pub fn compress_plan(opts: CompressVideo, probe: &Probe) -> Result<CompressPlan,
                 rate: Rate::Bitrate(b.video_bps),
                 audio_kbps: (b.audio_bps / 1000).max(64),
                 scale: changed(b.resolution),
+                hdr: probe.hdr(),
             })
         }
     }
@@ -128,12 +150,13 @@ pub fn compress_video(src: &Path, out: &Path, plan: &CompressPlan) -> Vec<OsStri
     let mut a = Args::new();
     a.input(src, None);
     a.push(&["-map", "0:V:0", "-map", "0:a:0?"]);
-    if let Some(r) = plan.scale {
-        a.push(&["-vf", &format!("scale={}:{}", r.width, r.height)]);
-    }
+    let scale = plan
+        .scale
+        .map(|r| format!("scale={}:{}", r.width, r.height));
+    a.filters(plan.hdr.is_some(), scale.as_deref());
     match plan.rate {
         Rate::Crf { crf, ceiling } => {
-            Encoder::X264.crf(&mut a, crf);
+            Encoder::X264.crf(&mut a, crf, None);
             if let Some(max) = ceiling {
                 a.push(&[
                     "-maxrate",
@@ -195,7 +218,7 @@ pub fn convert(src: &Path, out: &Path, target: ConvertTarget, probe: &Probe) -> 
                     a.push(&["-tag:v", "hvc1"]);
                 }
             } else {
-                Encoder::for_format(format, false).keep(&mut a);
+                a.encode(Encoder::for_format(format, false), None, probe);
             }
             codecs::audio_into(&mut a, format, probe.audio_codec());
             a.output(out, Some(format.muxer()))
@@ -259,7 +282,8 @@ pub fn trim(
         (TrimMode::Exact, true) => {
             let format = VideoFormat::for_edit(src, probe.video_codec());
             a.video_and_sound();
-            Encoder::for_format(format, probe.video_codec() == "hevc").keep(&mut a);
+            let encoder = Encoder::for_format(format, probe.video_codec() == "hevc");
+            a.encode(encoder, None, probe);
             codecs::audio_into(&mut a, format, probe.audio_codec());
             a.output(out, Some(format.muxer()))
         }
@@ -291,8 +315,12 @@ pub fn gif(src: &Path, out: &Path, opts: &GifOptions, probe: &Probe) -> Vec<OsSt
         height: 270,
     });
     let (w, h) = gif_size(source.width, source.height, opts);
+    let sdr = match probe.hdr() {
+        Some(_) => format!("{},", codecs::TO_SDR),
+        None => String::new(),
+    };
     let graph = format!(
-        "[0:V:0]fps={},scale={w}:{h}:flags=lanczos,split[a][b];\
+        "[0:V:0]{sdr}fps={},scale={w}:{h}:flags=lanczos,split[a][b];\
          [a]palettegen=stats_mode=diff[p];\
          [b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle",
         opts.fps.fps()
@@ -311,8 +339,8 @@ pub fn rotate(src: &Path, out: &Path, turn: Rotate, probe: &Probe) -> Vec<OsStri
     let mut a = Args::new();
     a.input(src, None);
     a.video_and_sound();
-    a.push(&["-vf", turn.filter()]);
-    Encoder::for_format(format, probe.video_codec() == "hevc").keep(&mut a);
+    let encoder = Encoder::for_format(format, probe.video_codec() == "hevc");
+    a.encode(encoder, Some(turn.filter()), probe);
     codecs::audio_into(&mut a, format, probe.audio_codec());
     a.output(out, Some(format.muxer()))
 }
@@ -350,16 +378,15 @@ pub fn frame_size(width: u32, height: u32, max_side: u32) -> (u32, u32) {
     )
 }
 
-/// One frame at `at`, `size` big, as raw RGBA on stdout.
-pub fn frame(src: &Path, at: Duration, size: (u32, u32)) -> Vec<OsString> {
+/// One frame at `at`, `size` big, as raw RGBA on stdout, an HDR one mapped to SDR to look
+/// right on screen.
+pub fn frame(src: &Path, at: Duration, size: (u32, u32), hdr: Option<Hdr>) -> Vec<OsString> {
     let mut a = Args(Vec::new());
     a.push(&["-hide_banner", "-nostdin", "-loglevel", "error"]);
     a.input(src, Some(at));
     a.push(&["-map", "0:V:0", "-frames:v", "1", "-an"]);
-    a.push(&[
-        "-vf",
-        &format!("scale={}:{}:flags=bilinear", size.0, size.1),
-    ]);
+    let scale = format!("scale={}:{}:flags=bilinear", size.0, size.1);
+    a.filters(hdr.is_some(), Some(&scale));
     a.push(&["-f", "rawvideo", "-pix_fmt", "rgba", "pipe:1"]);
     a.0
 }

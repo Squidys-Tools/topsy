@@ -103,6 +103,11 @@ pub fn args(job: &Job, src: &str, out: &str) -> Vec<String> {
     if job.format.is_lossy()
         && let Some(q) = quality
     {
+        // libheif's AVIF scale runs high: its 80 looks like its 90 at two-thirds the size.
+        let q = match job.format {
+            Format::Avif => (u16::from(q) * 8 / 9).max(1) as u8,
+            _ => q,
+        };
         push(&["-quality", &q.to_string()]);
     }
     a.push(format!("{}:{out}", magick_format(job.format)));
@@ -121,6 +126,8 @@ fn magick_format(f: Format) -> &'static str {
         // Its ICO writer stores every size as an uncompressed bitmap, so ImageMagick only draws
         // the square and topsy packs the sizes as PNGs.
         Format::Ico => "PNG32",
+        // HEVC is encoded by FFmpeg from this, and packed by `model::heif`.
+        Format::Heic => "PNG32",
         Format::Pdf => "PDF",
     }
 }
@@ -293,6 +300,11 @@ mod tests {
         };
         let a = line(&args(&png, "a", "b"));
         assert!(a.contains("-colors 64") && !a.contains("-quality"), "{a}");
+        let avif = Job {
+            quality: Some(90),
+            ..Job::new(Format::Avif)
+        };
+        assert!(line(&args(&avif, "a", "b")).contains("-quality 80 AVIF:b"));
         let lossless = Job {
             quality: Some(100),
             ..Job::new(Format::Png)

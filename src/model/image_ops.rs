@@ -73,11 +73,12 @@ impl Kind {
     }
 }
 
-/// What Convert writes. Not HEIC: ImageMagick's Windows build reads it but has no HEVC encoder.
+/// What Convert writes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Format {
     Jpeg,
     Png,
+    Heic,
     Webp,
     Avif,
     Tiff,
@@ -88,9 +89,10 @@ pub enum Format {
 }
 
 impl Format {
-    pub const ALL: [Format; 9] = [
+    pub const ALL: [Format; 10] = [
         Format::Jpeg,
         Format::Png,
+        Format::Heic,
         Format::Webp,
         Format::Avif,
         Format::Tiff,
@@ -104,6 +106,7 @@ impl Format {
         match self {
             Format::Jpeg => "JPEG",
             Format::Png => "PNG",
+            Format::Heic => "HEIC",
             Format::Webp => "WebP",
             Format::Avif => "AVIF",
             Format::Tiff => "TIFF",
@@ -118,6 +121,7 @@ impl Format {
         match self {
             Format::Jpeg => "jpg",
             Format::Png => "png",
+            Format::Heic => "heic",
             Format::Webp => "webp",
             Format::Avif => "avif",
             Format::Tiff => "tiff",
@@ -134,19 +138,14 @@ impl Format {
 
     /// Whether a quality setting changes the output.
     pub fn is_lossy(self) -> bool {
-        matches!(self, Format::Jpeg | Format::Webp | Format::Avif)
+        matches!(
+            self,
+            Format::Jpeg | Format::Heic | Format::Webp | Format::Avif
+        )
     }
 
-    /// The format a file of `kind` is rewritten in when an operation keeps its format: its own,
-    /// or JPEG for HEIC, which can't be written.
-    pub fn kept(kind: Kind) -> Option<Format> {
-        match kind {
-            Kind::Heic => Some(Format::Jpeg),
-            other => Format::matching(other),
-        }
-    }
-
-    /// The format of a `kind` file, when it can be written.
+    /// The format a file of `kind` is rewritten in when an operation keeps its format, when it
+    /// can be written.
     pub fn matching(kind: Kind) -> Option<Format> {
         Some(match kind {
             Kind::Gif => Format::Gif,
@@ -162,6 +161,7 @@ impl Format {
         Some(match kind {
             Kind::Jpeg => Format::Jpeg,
             Kind::Png => Format::Png,
+            Kind::Heic => Format::Heic,
             Kind::Webp => Format::Webp,
             Kind::Avif => Format::Avif,
             _ => return None,
@@ -192,16 +192,18 @@ pub enum CompressFormat {
     SameAsOriginal,
     Jpeg,
     Png,
+    Heic,
     Webp,
     Avif,
 }
 
 impl CompressFormat {
-    pub const ALL: [CompressFormat; 6] = [
+    pub const ALL: [CompressFormat; 7] = [
         CompressFormat::MostCompatible,
         CompressFormat::SameAsOriginal,
         CompressFormat::Jpeg,
         CompressFormat::Png,
+        CompressFormat::Heic,
         CompressFormat::Webp,
         CompressFormat::Avif,
     ];
@@ -212,6 +214,7 @@ impl CompressFormat {
             CompressFormat::SameAsOriginal => "Same as original",
             CompressFormat::Jpeg => "JPEG",
             CompressFormat::Png => "PNG",
+            CompressFormat::Heic => "HEIC",
             CompressFormat::Webp => "WebP",
             CompressFormat::Avif => "AVIF",
         }
@@ -225,6 +228,7 @@ impl CompressFormat {
             CompressFormat::SameAsOriginal => Format::of(kind).unwrap_or(compatible),
             CompressFormat::Jpeg => Format::Jpeg,
             CompressFormat::Png => Format::Png,
+            CompressFormat::Heic => Format::Heic,
             CompressFormat::Webp => Format::Webp,
             CompressFormat::Avif => Format::Avif,
         }
@@ -327,11 +331,14 @@ mod tests {
     }
 
     #[test]
-    fn heic_is_rewritten_as_jpeg() {
-        assert_eq!(Format::matching(Kind::Heic), None);
-        assert_eq!(Format::kept(Kind::Heic), Some(Format::Jpeg));
-        assert_eq!(Format::kept(Kind::Gif), Some(Format::Gif));
-        assert_eq!(Format::kept(Kind::Pdf), None);
+    fn heic_stays_heic() {
+        assert_eq!(Format::matching(Kind::Heic), Some(Format::Heic));
+        assert_eq!(
+            CompressFormat::SameAsOriginal.resolve(Kind::Heic, false),
+            Format::Heic
+        );
+        assert_eq!(Format::matching(Kind::Gif), Some(Format::Gif));
+        assert_eq!(Format::matching(Kind::Pdf), None);
     }
 
     #[test]

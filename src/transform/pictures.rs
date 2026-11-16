@@ -184,7 +184,9 @@ pub fn image_one(
     cancel: &AtomicBool,
 ) -> io::Result<Vec<PathBuf>> {
     let info = image::probe(src)?;
-    let kept = Format::kept(info.kind).unwrap_or(Format::Png).extension();
+    let kept = Format::matching(info.kind)
+        .unwrap_or(Format::Png)
+        .extension();
     match action {
         Action::Compress => {
             let guess = p.compress.format.resolve(info.kind, info.has_alpha);

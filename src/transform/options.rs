@@ -8,17 +8,18 @@ use super::{Field, File, Panel};
 use crate::model::transform::{Action, Kind, rename_targets};
 
 /// In `CompressFormat::ALL` order.
-pub const IMAGE_FORMATS: [&str; 6] = [
+pub const IMAGE_FORMATS: [&str; 7] = [
     "Most compatible",
     "Same as original",
     "JPEG",
     "PNG",
+    "HEIC",
     "WebP",
     "AVIF",
 ];
 /// In `Format::ALL` order.
-pub const CONVERT_IMAGE: [&str; 9] = [
-    "JPEG", "PNG", "WebP", "AVIF", "TIFF", "GIF", "BMP", "ICO", "PDF",
+pub const CONVERT_IMAGE: [&str; 10] = [
+    "JPEG", "PNG", "HEIC", "WebP", "AVIF", "TIFF", "GIF", "BMP", "ICO", "PDF",
 ];
 /// The video formats in `VideoFormat::ALL` order, then the sound alone in `AudioFormat::FROM_VIDEO`'s.
 pub const CONVERT_VIDEO: [&str; 9] = [

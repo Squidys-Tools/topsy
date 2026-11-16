@@ -311,7 +311,7 @@ pub fn frame_at(path: &Path, at: Duration, max_side: u32) -> io::Result<RgbaImag
     let (w, h) = rules::frame_size(shown.width, shown.height, max_side);
     // A seek to the very end finds no frame to show.
     let last = probe.duration.saturating_sub(Duration::from_millis(100));
-    let args = rules::frame(path, at.min(last), (w, h));
+    let args = rules::frame(path, at.min(last), (w, h), probe.hdr());
     let args: Vec<&OsStr> = args.iter().map(OsString::as_os_str).collect();
     let pixels = tools::read(&program, &args, &cancel)?;
     RgbaImage::from_raw(w, h, pixels)

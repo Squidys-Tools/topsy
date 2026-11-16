@@ -2,6 +2,7 @@
 //! the pixels and oxipng squeezes the PNGs; both are fetched during the first operation that
 //! needs them. A JPEG is turned or stripped without re-encoding where its edges allow it.
 
+mod heic;
 #[cfg(test)]
 pub(crate) mod tests;
 mod tools;
@@ -336,10 +337,14 @@ fn same_format_job(src: &Path, kind: Kind, format: Format) -> io::Result<Job> {
 }
 
 fn run(kit: &Kit, steps: &Steps, src: &Path, job: &Job, out: &Path) -> io::Result<()> {
-    if job.format != Format::Ico {
-        return kit
-            .magick(&magick::args(job, &path(src), &path(out)), steps)
-            .map(drop);
+    match job.format {
+        Format::Heic => return heic::write(kit, steps, src, job, out),
+        Format::Ico => {}
+        _ => {
+            return kit
+                .magick(&magick::args(job, &path(src), &path(out)), steps)
+                .map(drop);
+        }
     }
     let square = Scratch::new("png");
     kit.magick(&magick::args(job, &path(src), &path(&square.0)), steps)?;
@@ -374,7 +379,7 @@ fn picture_kind(src: &Path) -> io::Result<Kind> {
 /// The picture's kind and the format an operation that keeps it writes.
 fn kept(src: &Path) -> io::Result<(Kind, Format)> {
     let kind = picture_kind(src)?;
-    Ok((kind, Format::kept(kind).ok_or_else(unsupported)?))
+    Ok((kind, Format::matching(kind).ok_or_else(unsupported)?))
 }
 
 fn decoder_format(kind: Kind) -> Option<ImageFormat> {

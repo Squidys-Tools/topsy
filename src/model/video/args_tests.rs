@@ -24,6 +24,7 @@ fn phone(codec: &str, audio: &str) -> Probe {
             fps: 30.0,
             rotation: 90,
             bit_rate: Some(10_000_000),
+            hdr: None,
         }),
         audio: Some(AudioStream {
             codec: audio.into(),
@@ -295,6 +296,45 @@ fn rotate_filters_and_keeps_the_codec() {
 }
 
 #[test]
+fn hdr_stays_hdr_in_hevc_and_is_mapped_to_sdr_elsewhere() {
+    let mut hlg = phone("hevc", "aac");
+    hlg.video.as_mut().unwrap().hdr = Some(Hdr::Hlg);
+    let kept = line(rotate(p("a.MOV"), p("o.mov"), Rotate::Left, &hlg));
+    assert!(
+        kept.contains("-vf transpose=cclock -c:v libx265")
+            && kept.contains(
+                "-pix_fmt yuv420p10le -color_primaries bt2020 -color_trc arib-std-b67 \
+                 -colorspace bt2020nc"
+            ),
+        "{kept}"
+    );
+    let sdr = format!("-vf {}", codecs::TO_SDR);
+    let h264 = line(convert(
+        p("a.MOV"),
+        p("o"),
+        ConvertTarget::Video(VideoFormat::Mp4H264),
+        &hlg,
+    ));
+    assert!(h264.contains(&format!("{sdr} -c:v libx264")), "{h264}");
+    assert!(h264.contains("-pix_fmt yuv420p "), "{h264}");
+    let plan = compress_plan(CompressVideo::default(), &hlg).unwrap();
+    let small = line(compress_video(p("a.MOV"), p("o.mp4"), &plan));
+    assert!(small.contains(&format!("{sdr} -c:v libx264")), "{small}");
+    let opts = GifOptions {
+        range: secs(0, 1),
+        fps: GifFps::Fifteen,
+        width: GifWidth::W480,
+    };
+    let gif = line(gif(p("a.MOV"), p("o.gif"), &opts, &hlg));
+    assert!(
+        gif.contains(&format!("[0:V:0]{},fps=15", codecs::TO_SDR)),
+        "{gif}"
+    );
+    let still = line(frame(p("a.MOV"), Duration::ZERO, (90, 160), Some(Hdr::Pq)));
+    assert!(still.contains(&format!("{sdr},scale=90:160")), "{still}");
+}
+
+#[test]
 fn remove_metadata_copies_and_strips() {
     assert_eq!(
         line(remove_metadata(
@@ -317,7 +357,12 @@ fn a_frame_is_raw_rgba_fitted_in_the_box() {
     assert_eq!(frame_size(1080, 1920, 320), (180, 320));
     assert_eq!(frame_size(1920, 1080, 4000), (1920, 1080));
     assert_eq!(
-        line(frame(p("a.mp4"), Duration::from_millis(1500), (180, 320))),
+        line(frame(
+            p("a.mp4"),
+            Duration::from_millis(1500),
+            (180, 320),
+            None
+        )),
         "-hide_banner -nostdin -loglevel error -ss 1.500 -i a.mp4 -map 0:V:0 -frames:v 1 -an \
          -vf scale=180:320:flags=bilinear -f rawvideo -pix_fmt rgba pipe:1"
     );

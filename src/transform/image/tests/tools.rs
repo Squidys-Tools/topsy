@@ -161,6 +161,40 @@ fn every_format_converts_and_reads_back() {
 
 #[test]
 #[ignore]
+fn heic_keeps_odd_sizes_transparency_and_exif() {
+    let dir = Scratch::new("t-heic");
+    let clear = photo(121, 81, true);
+    let src = dir.file("p.png", &png_of(&clear));
+    let heic = dir.path("p.heic");
+    let to = |format| ConvertOptions {
+        format,
+        quality: 90,
+    };
+    let w = convert(&src, &to(Format::Heic), &heic, &quiet, &never()).unwrap();
+    assert_eq!((w.width, w.height), (121, 81));
+    let back = dir.path("back.png");
+    convert(&heic, &to(Format::Png), &back, &quiet, &never()).unwrap();
+    let back = decoded(&back);
+    assert!(
+        mean_error(&back, &clear) < 8.0,
+        "{}",
+        mean_error(&back, &clear)
+    );
+    let see_through = |i: &image::RgbaImage| i.pixels().filter(|p| p[3] < 128).count();
+    assert!(see_through(&back).abs_diff(see_through(&clear)) < 200);
+
+    let exif = dir.file(
+        "e.jpg",
+        &jpeg_of(&photo(64, 48, false), Some(&sample::exif(1)), None),
+    );
+    let (heic, jpg) = (dir.path("e.heic"), dir.path("e2.jpg"));
+    convert(&exif, &to(Format::Heic), &heic, &quiet, &never()).unwrap();
+    convert(&heic, &to(Format::Jpeg), &jpg, &quiet, &never()).unwrap();
+    assert!(jpeg_exif(&jpg).is_some_and(|e| has_gps(&e)));
+}
+
+#[test]
+#[ignore]
 fn turns_sizes_and_strips() {
     let dir = Scratch::new("t-edit");
     let gps = dir.file(

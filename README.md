@@ -43,6 +43,7 @@ trimmed, turned into a GIF or a PDF, stripped of metadata or cut out of their ba
 | `src/model/dib.rs` | Reading a copied bitmap (`CF_DIB`/`CF_DIBV5`) to RGBA, and writing one back to paste |
 | `src/model/transform.rs` | Transform: which actions suit which files, the panel's summary line, and naming results and renames |
 | `src/model/image_ops.rs`, `image_geometry.rs`, `magick.rs`, `size_search.rs` | Image Transforms: formats and picking one, sizes, crops and turns, ImageMagick's and oxipng's command lines, landing under a size |
+| `src/model/heif.rs` | Writing HEIC: x265's command line, lifting the coded frame out of FFmpeg's MP4, and the HEIF boxes around it |
 | `src/model/orientation.rs`, `exif.rs`, `jpeg/` | Turning a photo once (its EXIF orientation and the user's turn composed), and JPEGs turned and stripped losslessly without a decode |
 | `src/model/pdf.rs` | PDF Transforms: Combine's page sizes, Compress's presets, how far a picture inside may shrink |
 | `src/model/video/` | Video and audio Transforms: options, size budgets, trim ranges, FFmpeg's command lines, reading ffprobe and progress |
@@ -268,9 +269,9 @@ beside the originals (`photo (compressed).jpg`, `report (page 2).png`, `Combined
 overwriting, and parked on the shelf. Only Rename touches the originals; Cancel, or a file that fails, stops the
 work and deletes what it had made.
 
-- **Images:** Compress (by quality or to a size, as JPEG, PNG, WebP or AVIF, or *Most compatible*: JPEG, or PNG
-  when there is transparency; a largest side), Convert (JPEG, PNG, WebP, AVIF, TIFF, GIF, BMP, ICO, PDF; HEIC is
-  read), Resize (largest side, percent, or an exact size fitted or cropped to fill), Remove background, Rotate
+- **Images:** Compress (by quality or to a size, as JPEG, PNG, HEIC, WebP or AVIF, or *Most compatible*: JPEG, or
+  PNG when there is transparency; a largest side), Convert (JPEG, PNG, HEIC, WebP, AVIF, TIFF, GIF, BMP, ICO,
+  PDF), Resize (largest side, percent, or an exact size fitted or cropped to fill), Remove background, Rotate
   and flip, Remove metadata, Combine into PDF.
 - **Video and audio:** Compress (by quality or to a size; a resolution cap; a bitrate for audio), Convert (MP4
   H.264 or HEVC, MOV, WebM, MKV or the sound alone; M4A, MP3, WAV, FLAC, OGG Opus, AIFF), Trim and Make GIF on a
@@ -287,6 +288,14 @@ How it is built:
   progress line says *Getting FFmpeg…*), resumed if cut off, and checked before it is unpacked. Bump a version by
   changing the pin, size and hash together. They run as processes with no window, below normal priority
   (`tools::run`); a cancel kills the process. Nothing of them is bundled or compiled in.
+- **HEIC is packed in Rust** (`model/heif`). The portable ImageMagick reads HEIC but has no HEVC encoder, so
+  ImageMagick draws a PNG, FFmpeg's x265 encodes it as a one-frame MP4 (the alpha as a second, grey one), and
+  topsy moves the coded frames into a HEIF with the colour profile and EXIF. x265 wants even sides in 4:2:0, so
+  an odd picture is padded and cropped back with `clap`. FFmpeg's default scaler halves the quality before x265
+  starts; the colour conversion asks for accurate rounding and Lanczos chroma.
+- **HDR video stays HDR in HEVC,** written 10-bit with its BT.2020 tags. H.264, VP9, GIFs and the filmstrip are
+  8-bit SDR, so an HDR source (PQ or HLG, from ffprobe's `color_transfer`) is tone-mapped first: zscale to
+  linear light, then the Mobius curve, which keeps the tones SDR can show and rolls off only the highlights.
 - **JPEGs turn and strip losslessly, in Rust** (`model/jpeg`), since jpegtran ships for Windows only inside
   installers. A turn that would split an 8x8 block at an edge goes to ImageMagick instead.
 - **A photo is turned once.** Its EXIF orientation and the chosen turn compose into one (`model/orientation`)
@@ -509,11 +518,9 @@ hook, not the media thread). It is worth a profile, because an always-on app sho
   The HUD shows over a fullscreen video or game, since the key was taken from Windows. No Caps Lock, keyboard
   backlight or device HUDs yet.
 - Transform: ImageMagick's and oxipng's builds link the Visual C++ runtime (`vcruntime140.dll`,
-  `vcomp140.dll`), so a PC without it can't run the image actions (FFmpeg and pdfium don't need it). HEIC is read
-  but not written (the portable ImageMagick has no HEVC encoder), so it isn't offered as an output. HDR video comes
-  out as SDR without tone mapping. A video keeps its main picture and its sound: subtitles, data tracks and cover
-  art are dropped. An animated GIF or WebP comes out as its first frame. ICO and AVIF results are bigger than a
-  tuned encoder would make. The panel was matched to Droppy's site, not side by side with Droppy.
+  `vcomp140.dll`), so a PC without it can't run the image actions (FFmpeg and pdfium don't need it). Writing HEIC
+  needs FFmpeg too. A video keeps its main picture and its sound: subtitles, data tracks and cover art are
+  dropped. An animated GIF or WebP comes out as its first frame.
 - No droplets yet. The settings window is a plain dark fill, not Mica.
 
 ## License

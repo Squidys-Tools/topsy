@@ -2,6 +2,12 @@
 
 use super::args::Args;
 use super::options::{AudioFormat, VideoFormat};
+use super::probe::Hdr;
+
+/// HDR brought down to SDR (BT.709) with the Mobius curve: tones SDR can show stay as they are
+/// and only the highlights roll off. zscale needs linear float light to map in.
+pub const TO_SDR: &str = "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,\
+                          tonemap=tonemap=mobius:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p";
 
 /// A video encoder and the settings it gets.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -36,11 +42,18 @@ impl Encoder {
     }
 
     /// Push the encoder at its keeping quality.
-    pub(super) fn keep(self, a: &mut Args) {
-        self.crf(a, self.keep_crf());
+    pub(super) fn keep(self, a: &mut Args, hdr: Option<Hdr>) {
+        self.crf(a, self.keep_crf(), hdr);
     }
 
-    pub(super) fn crf(self, a: &mut Args, crf: u8) {
+    /// Whether this encoder writes HDR as HDR. Only HEVC does: H.264 and VP9 are written 8-bit
+    /// for every player, so an HDR source is tone-mapped first (`TO_SDR`).
+    pub fn keeps_hdr(self) -> bool {
+        self == Encoder::X265
+    }
+
+    /// `hdr` is the source's curve, kept when `keeps_hdr`, else already mapped away.
+    pub(super) fn crf(self, a: &mut Args, crf: u8, hdr: Option<Hdr>) {
         let crf = crf.to_string();
         match self {
             Encoder::X264 => a.push(&["-c:v", "libx264", "-preset", "medium", "-crf", &crf]),
@@ -71,8 +84,20 @@ impl Encoder {
                 "4",
             ]),
         }
-        // 8-bit 4:2:0 plays everywhere; a 10-bit or 4:2:2 source would otherwise stay that way.
-        a.push(&["-pix_fmt", "yuv420p"]);
+        match hdr.filter(|_| self.keeps_hdr()) {
+            Some(hdr) => a.push(&[
+                "-pix_fmt",
+                "yuv420p10le",
+                "-color_primaries",
+                "bt2020",
+                "-color_trc",
+                hdr.transfer(),
+                "-colorspace",
+                "bt2020nc",
+            ]),
+            // 8-bit 4:2:0 plays everywhere; a 10-bit or 4:2:2 source would otherwise stay so.
+            None => a.push(&["-pix_fmt", "yuv420p"]),
+        }
     }
 }
 

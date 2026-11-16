@@ -24,6 +24,26 @@ pub struct VideoStream {
     /// Clockwise degrees the picture is turned on playback: 0, 90, 180 or 270.
     pub rotation: u32,
     pub bit_rate: Option<u32>,
+    pub hdr: Option<Hdr>,
+}
+
+/// The two HDR transfer curves phones and cameras record with.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Hdr {
+    /// Perceptual quantizer (SMPTE ST 2084): HDR10, Dolby Vision's base layer.
+    Pq,
+    /// Hybrid log-gamma (ARIB STD-B67): iPhone and broadcast HDR.
+    Hlg,
+}
+
+impl Hdr {
+    /// FFmpeg's name for the curve, as ffprobe reports it and `-color_trc` takes it.
+    pub fn transfer(self) -> &'static str {
+        match self {
+            Hdr::Pq => "smpte2084",
+            Hdr::Hlg => "arib-std-b67",
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -60,6 +80,10 @@ impl Probe {
                 .map(|b| b.saturating_sub(audio))
                 .filter(|&b| b > 0)
         })
+    }
+
+    pub fn hdr(&self) -> Option<Hdr> {
+        self.video.as_ref()?.hdr
     }
 
     pub fn video_codec(&self) -> &str {
@@ -144,6 +168,9 @@ fn video_stream(s: &Value) -> Option<VideoStream> {
         fps,
         rotation,
         bit_rate: number(s.get("bit_rate")),
+        hdr: [Hdr::Pq, Hdr::Hlg]
+            .into_iter()
+            .find(|h| s.get("color_transfer").and_then(Value::as_str) == Some(h.transfer())),
     })
 }
 
@@ -204,6 +231,7 @@ mod tests {
       "streams": [
         {"index": 0, "codec_name": "hevc", "codec_type": "video", "width": 1920, "height": 1080,
          "r_frame_rate": "30/1", "avg_frame_rate": "30000/1001", "bit_rate": "15000000",
+         "color_transfer": "arib-std-b67",
          "side_data_list": [{"side_data_type": "Display Matrix", "rotation": -90}]},
         {"index": 1, "codec_name": "aac", "codec_type": "audio", "sample_fmt": "fltp",
          "bit_rate": "192000"},
@@ -219,6 +247,7 @@ mod tests {
         assert_eq!((v.width, v.height, v.rotation), (1080, 1920, 90));
         assert!((v.fps - 29.97).abs() < 0.01);
         assert_eq!(p.video_codec(), "hevc");
+        assert_eq!(p.hdr(), Some(Hdr::Hlg));
         assert_eq!(p.video_bit_rate(), Some(15_000_000));
         assert_eq!(p.audio.as_ref().unwrap().bit_rate, Some(192_000));
         assert_eq!(p.duration, Duration::from_secs_f64(12.345));
@@ -252,6 +281,7 @@ mod tests {
             (640, 360, 180, 25.0)
         );
         assert_eq!(p.video_bit_rate(), Some(1_000_000));
+        assert_eq!(p.hdr(), None);
         assert_eq!(p.duration, Duration::ZERO);
     }
 

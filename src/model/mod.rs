@@ -12,6 +12,7 @@ pub mod edge;
 pub mod exif;
 pub mod favicon;
 pub mod float;
+pub mod heif;
 pub mod highlight;
 pub mod hud;
 #[allow(dead_code)]
