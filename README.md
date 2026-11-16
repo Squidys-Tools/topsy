@@ -270,7 +270,8 @@ beside the originals (`photo (compressed).jpg`, `report (page 2).png`, `Combined
 overwriting, and parked on the shelf. While it works, the panel steps aside for a column of result cards where
 it stood, as Droppy's does: one per file (one for a zip, a PDF or a rename), blurred with a progress bar while
 waiting or working, then sharp with the size before and after and the picture's sides. A card opens its result;
-the cards go by themselves six seconds after the last is done, unless the cursor is on them. Only Rename touches
+the panel closes once the run is done, and the cards go by themselves six seconds later, unless the cursor is
+on them. Only Rename touches
 the originals; a card's stop button, or a file that fails, stops the work, deletes what it had made and brings
 the panel back.
 

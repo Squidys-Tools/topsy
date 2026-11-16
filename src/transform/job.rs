@@ -154,12 +154,14 @@ impl Panel {
         cx.spawn(async move |this, cx: &mut AsyncApp| {
             // The panel steps aside for the cards, where it stood.
             let anchor = win32::window_rect(HWND(hwnd as *mut _));
-            win32::set_visible(HWND(hwnd as *mut _), false);
             let opened = anchor.and_then(|anchor| {
                 cx.update(|cx| cards::open(cx, anchor, action, sources, cancel))
                     .ok()
                     .flatten()
             });
+            if opened.is_some() {
+                win32::set_visible(HWND(hwnd as *mut _), false);
+            }
             if this.update(cx, |panel, _| panel.cards = opened).is_err() {
                 return;
             }
@@ -185,12 +187,12 @@ impl Panel {
                 index,
                 label,
                 progress,
-            } => with_cards(cx, &|c, cx| c.step(index, label.clone(), progress, cx)),
+            } => return with_cards(cx, &|c, cx| c.step(index, label.clone(), progress, cx)),
             Report::Made {
                 index,
                 made,
                 output,
-            } => with_cards(cx, &|c, cx| c.made(index, made.clone(), output.clone(), cx)),
+            } => return with_cards(cx, &|c, cx| c.made(index, made.clone(), output.clone(), cx)),
             Report::Done(Ok(outcome)) => {
                 log(&format!(
                     "transform done: {} made, {} renamed",
@@ -217,7 +219,10 @@ impl Panel {
                 log(&format!("transform failed: {err}"));
                 with_cards(cx, &|c, cx| c.close(cx));
                 self.cards = None;
-                self.state = if err.kind() == io::ErrorKind::Interrupted {
+                // A stop was just clicked, so the panel may take the focus back; a failure
+                // can land while the user is elsewhere, so it only shows.
+                let stopped = err.kind() == io::ErrorKind::Interrupted;
+                self.state = if stopped {
                     State::Ready
                 } else {
                     State::Failed(err.to_string())
@@ -225,7 +230,9 @@ impl Panel {
                 let hwnd = self.hwnd;
                 cx.spawn(async move |_, _: &mut AsyncApp| {
                     win32::set_visible(HWND(hwnd as *mut _), true);
-                    win32::bring_to_front(HWND(hwnd as *mut _));
+                    if stopped {
+                        win32::bring_to_front(HWND(hwnd as *mut _));
+                    }
                 })
                 .detach();
             }

@@ -232,7 +232,13 @@ impl Cards {
         cx.spawn(async move |this, cx: &mut AsyncApp| {
             cx.background_executor().timer(LINGER).await;
             this.update(cx, |this, cx| {
-                if this.wait == wait && !this.hovered {
+                if this.wait != wait || this.hovered {
+                    return;
+                }
+                // Cards that opened under a still cursor hear no hover until it moves.
+                if win32::cursor_over(HWND(this.hwnd as *mut _)) {
+                    this.wait_to_leave(cx);
+                } else {
                     this.leave(cx);
                 }
             })
