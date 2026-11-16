@@ -30,13 +30,13 @@ use ops::{Map, check};
 static NET: Mutex<Option<BiRefNet>> = Mutex::new(None);
 
 pub fn model_status() -> ModelStatus {
-    store::status()
+    store::MODEL.status()
 }
 
 /// Fetches the model once over https (resuming a broken download), checks its SHA-256 and puts
 /// it under `%LOCALAPPDATA%\topsy\models`. Nothing else here touches the network.
 pub fn download(progress: &dyn Fn(f32), cancel: &AtomicBool) -> io::Result<()> {
-    store::download(progress, cancel)
+    store::MODEL.download(progress, cancel).map(drop)
 }
 
 /// Cuts the subject of `src` out onto transparency, at its full size, into the PNG `out`.
@@ -106,8 +106,8 @@ fn decode(src: &Path) -> io::Result<DynamicImage> {
 }
 
 fn load() -> io::Result<BiRefNet> {
-    let path = store::path()?;
-    if store::status() != ModelStatus::Ready {
+    let path = store::MODEL.path()?;
+    if store::MODEL.status() != ModelStatus::Ready {
         return Err(io::Error::new(
             io::ErrorKind::NotFound,
             "Get the background model first",

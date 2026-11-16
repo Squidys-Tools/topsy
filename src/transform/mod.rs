@@ -6,8 +6,10 @@
 
 pub mod background;
 mod engines;
+pub mod fetch;
 mod job;
 mod options;
+pub mod tools;
 mod view;
 mod widgets;
 
