@@ -220,7 +220,7 @@ or the settings window.
   them) are never read. Many apps announce one copy twice, so the same thing copied again within 2 s is one copy.
 - **On disk** each entry is `<id>.json` in the history folder, an image's pixels `<id>.png` beside it, each
   written through a temp file. A kill between the two can leave a `.tmp` or an image with no entry; the store
-  removes those when it starts. At most 2000 unpinned entries are kept, and text over 1 MB is not. One topsy keeps
+  removes those (and a half-written site icon) when it starts. At most 2000 unpinned entries are kept, and text over 1 MB is not. One topsy keeps
   a folder; a second one started on it keeps no history, since both would number and expire the same files.
 - **Site icons are the only network traffic.** A link card that is shown asks its site for `/favicon.ico`, else
   the icon its home page names, once per host, through WinHTTP (the system's TLS, no crate of our own). Only
@@ -429,7 +429,7 @@ hook, not the media thread). It is worth a profile, because an always-on app sho
   changed. Paste sends Ctrl+V, which a terminal that pastes on Ctrl+Shift+V ignores (the entry is still on the
   clipboard). Rich text and HTML are kept as plain text. The cap counts entries, not bytes, so a long history of
   big images kept forever can grow large. The strip shows the newest 100 matches. Tested on one 100% display only.
-  Site icons: an SVG-only icon isn't drawn; a site unreachable when first shown is asked again next run, not
+  Site icons: an SVG-only icon isn't drawn; a site unreachable or busy when first shown is asked again next run, not
   sooner; a name can still re-resolve to a private address between the check and WinHTTP's own lookup; and
   *Clear unpinned* leaves the kept icons, which name the sites copied.
 - No droplets yet. The settings window is a plain dark fill, not Mica.

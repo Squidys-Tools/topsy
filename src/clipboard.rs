@@ -267,6 +267,12 @@ fn sweep(dir: &Path) {
         log(&format!("clipboard leftover {name}"));
         let _ = std::fs::remove_file(dir.join(name));
     }
+    let icons = std::fs::read_dir(dir.join("icons")).into_iter().flatten();
+    for icon in icons.filter_map(Result::ok) {
+        if icon.path().extension().is_some_and(|e| e == "tmp") {
+            let _ = std::fs::remove_file(icon.path());
+        }
+    }
 }
 
 fn save(dir: &Path, entry: Option<&Entry>) {
