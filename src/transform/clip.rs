@@ -211,8 +211,10 @@ impl Panel {
             let this = this.clone();
             move |i: usize, _: &mut gpui::Window, cx: &mut gpui::App| {
                 this.update(cx, |panel, cx| {
-                    f(panel, i);
-                    cx.notify();
+                    if panel.edit() {
+                        f(panel, i);
+                        cx.notify();
+                    }
                 })
                 .ok();
             }
@@ -260,8 +262,10 @@ impl Panel {
         let drag = move |x: Pixels, cx: &mut gpui::App| {
             if let Some(f) = at(x) {
                 this.update(cx, |panel, cx| {
-                    panel.drag_range(f);
-                    cx.notify();
+                    if panel.edit() {
+                        panel.drag_range(f);
+                        cx.notify();
+                    }
                 })
                 .ok();
             }
