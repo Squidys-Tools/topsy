@@ -1,11 +1,12 @@
 # End-to-end check of the tray icon, its menu and start-with-Windows on a live desktop:
 #   the icon is registered in the notification area -> left click toggles the shelf -> right click
 #   opens the menu -> "Start with Windows" writes and then removes the real HKCU Run value ->
-#   "Black notch" saves the look and turns it back -> Show shelf / Clear shelf -> right-clicking the
-#   notch opens the same menu -> Quit exits the app and takes the icon out of the notification area
-#   -> without a tray (TOPSY_NO_TRAY) right-clicking the notch quits instead, as there is no other way out.
+#   "Black notch" saves the look and turns it back -> "Show in Send to" writes and removes the
+#   SendTo shortcut -> Show shelf / Clear shelf -> right-clicking the notch opens the same menu ->
+#   Quit exits the app and takes the icon out of the notification area -> without a tray
+#   (TOPSY_NO_TRAY) right-clicking the notch quits instead, as there is no other way out.
 # Moves the real cursor for ~40s. Briefly edits HKCU\...\Run\topsy (start with Windows),
-# HKCU\Software\topsy\Look (the black notch) and the shell's own "show this icon" flag for topsy under
+# HKCU\Software\topsy\Look (the black notch), the SendTo folder's topsy.lnk and the shell's own "show this icon" flag for topsy under
 # HKCU\Control Panel\NotifyIconSettings; all are restored.
 # Works with an auto-hidden taskbar: the cursor is parked on the screen edge to bring it up.
 # usage: e2e-tray.ps1 [-Exe target\release\topsy.exe]
@@ -184,6 +185,9 @@ $LookKey = 'HKCU:\Software\topsy'
 function Look-Value { (Get-ItemProperty -Path $LookKey -Name Look -ErrorAction SilentlyContinue).Look }
 $savedLook = Look-Value
 Remove-ItemProperty -Path $LookKey -Name Look -ErrorAction SilentlyContinue
+$SendToLink = Join-Path ([Environment]::GetFolderPath('SendTo')) 'topsy.lnk'
+$savedLink = if (Test-Path $SendToLink) { [IO.File]::ReadAllBytes($SendToLink) }
+Remove-Item $SendToLink -ErrorAction SilentlyContinue
 
 $env:TOPSY_LOG = '1'
 # Keep the notch down at rest, so there is something to right-click.
@@ -248,6 +252,15 @@ try {
     if (-not (Wait-Until { $null -eq (Look-Value) } 3000)) { throw 'Black notch did not turn back to glass' }
     if (-not (Wait-Log 'tray Setting\(Black, false\)' 3000)) { throw 'turning Black notch off did not reach the island' }
 
+    # 3c. Show in Send to: the menu item writes the SendTo shortcut to this exe, checked, and removes it.
+    Use-Menu $IconMenu 0x44 'sendto-on'             # D
+    if (-not (Wait-Until { Test-Path $SendToLink } 3000)) { throw 'Show in Send to did not write the shortcut' }
+    $target = (New-Object -ComObject WScript.Shell).CreateShortcut($SendToLink).TargetPath
+    if ($target -ne $Exe) { throw "the Send to shortcut points at $target" }
+    Use-Menu $IconMenu 0 'sendto-checked'           # look at it (checked), then Escape
+    Use-Menu $IconMenu 0x44 'sendto-off'            # D again
+    if (-not (Wait-Until { -not (Test-Path $SendToLink) } 3000)) { throw 'Show in Send to did not remove the shortcut' }
+
     # 4. Show shelf opens it (a closed island), Clear shelf empties it.
     Use-Menu $IconMenu 0x53 'show'                  # S
     if (-not (Wait-Log 'tray Show' 3000)) { throw 'Show shelf did nothing' }
@@ -298,9 +311,11 @@ try {
     Move-Cursor ($screen.Width / 2) ($screen.Height / 2)
     if ($hadRun) { Set-ItemProperty -Path $RunKey -Name topsy -Value $savedRun } else { Remove-ItemProperty -Path $RunKey -Name topsy -ErrorAction SilentlyContinue }
     if ($null -ne $savedLook) { Set-ItemProperty -Path $LookKey -Name Look -Value $savedLook } else { Remove-ItemProperty -Path $LookKey -Name Look -ErrorAction SilentlyContinue }
+    if ($null -ne $savedLink) { [IO.File]::WriteAllBytes($SendToLink, $savedLink) } else { Remove-Item $SendToLink -ErrorAction SilentlyContinue }
 }
 "--- app log (render lines omitted)"; if (Test-Path $appLog) { Get-Content $appLog | Where-Object { $_ -notmatch 'topsy: render$' } }
 "--- Run value now: " + $(if ($null -eq (Run-Value)) { '(absent)' } else { Run-Value })
 "--- Look value now: " + $(if ($null -eq (Look-Value)) { '(absent)' } else { Look-Value })
+"--- Send to shortcut now: " + $(if (Test-Path $SendToLink) { 'present' } else { '(absent)' })
 if ($failed) { "FAIL: $($failed.Exception.Message)"; exit 1 }
 "PASS"

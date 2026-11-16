@@ -11,7 +11,7 @@ It started as a **feasibility spike** for the riskiest parts of the design, and 
 
 On top of that it is now a usable v1: the island is a **notch** that stays out of sight until you reach for
 it (see [Notch](#notch)), the tray holds a **shelf** of files you can drag back out, there is a
-**tray icon** with a menu, **start with Windows**, and a **Quit** item. See
+**tray icon** with a menu, **start with Windows**, a **Send to** entry in Explorer, and a **Quit** item. See
 [Shelf, tray icon and startup](#shelf-tray-icon-and-startup). It also shows what is playing, with its controls
 (see [Now Playing](#now-playing)).
 
@@ -33,7 +33,7 @@ it (see [Notch](#notch)), the tray holds a **shelf** of files you can drag back 
 | `src/model/tray_cause.rs` | Why the tray is open, and which events fold it early |
 | `src/config.rs` | Every `TOPSY_*` switch, read once at startup |
 | `src/backdrop.rs` | The glass: the compositor's blurred backdrop behind GPUI's content, clipped to the notch's shape |
-| `src/win32/` | Win32 glue GPUI doesn't expose: `window` (overlay styles, acrylic fallback, geometry, fullscreen), `dialog` (the settings window's dark caption and raising it), `dragdrop` (the drop-target wrapper that reports refused drags, dragging files out), `hook` (`WH_MOUSE_LL` thread), `shell` (opening files, showing them in Explorer), `menu` (a popup menu on a thread of its own) |
+| `src/win32/` | Win32 glue GPUI doesn't expose: `window` (overlay styles, acrylic fallback, geometry, fullscreen), `dialog` (the settings window's dark caption and raising it), `dragdrop` (the drop-target wrapper that reports refused drags, dragging files out), `hook` (`WH_MOUSE_LL` thread), `shell` (opening files, showing them in Explorer), `menu` (a popup menu on a thread of its own), `sendto` (the Send to shortcut), `inbox` (paths handed over by a second topsy) |
 | `src/chip.rs` | A chip: how it is drawn, opening it, dragging it out, and its right-click actions |
 | `src/archive.rs` | *Compress to ZIP file*: a chip's file or folder zipped beside it ([`zip`](https://crates.io/crates/zip), MIT) |
 | `src/icon.rs` | A chip's picture: the shell's thumbnail or icon for a file, as Explorer shows it |
@@ -115,7 +115,7 @@ To build locally without installing the SDK, GPUI only needs one file from it: c
   stall launch): chips return as `…` and are settled off the UI thread, which drops entries whose files are gone.
 - **Tray icon.** A small glass-blue pill in the notification area, the exe's own icon (drawn in code, no asset). Left click opens
   or closes the shelf. Right click, or right-click the notch itself, opens the menu: *Show shelf*, *Clear shelf (N)*,
-  *Black notch* and *Start with Windows* (each checked when on), *Settings…* and *Quit topsy*. The icon lives on its own thread with a hidden window,
+  *Black notch*, *Start with Windows* and *Show in Send to* (each checked when on), *Settings…* and *Quit topsy*. The icon lives on its own thread with a hidden window,
   re-adds itself when Explorer restarts, and is removed on Quit. On Windows 11 a new icon starts in the overflow
   flyout; drag it out to keep it visible.
 - **Settings window.** *Settings…* opens a small dark window, *topsy settings*, with a switch for each setting,
@@ -129,6 +129,11 @@ To build locally without installing the SDK, GPUI only needs one file from it: c
 - **Start with Windows** writes `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\topsy` (the quoted path of
   the running exe): per-user, no admin, nothing to uninstall. It is off until you turn it on from the menu. If
   the exe has moved since, the stored path is repaired at launch; an entry is never created by itself.
+- **Show in Send to** puts `topsy.lnk` in the user's SendTo folder (`%APPDATA%\Microsoft\Windows\SendTo`), so
+  Explorer's *Send to* menu lists topsy. Off until you turn it on; like startup, the shortcut is repaired at launch
+  only if the exe it points at is gone. Explorer starts `topsy.exe` with the chosen paths. If topsy is already
+  running, the new process hands them over (`WM_COPYDATA` to a message-only window, `topsy.inbox`) and exits, and
+  the running one parks them and opens the tray; otherwise the new process starts with them on its shelf.
 
 Two things about dragging out of a window that is itself a drop target, both found the hard way:
 
@@ -275,10 +280,10 @@ playing adds a row there.
   Escape is held for 250 ms, as the drag loop polls the key.
 - `e2e-tray.ps1` — checks the real notification area: the icon is registered with the shell and drawn there, left
   click toggles the shelf, the menu's items work (real keystrokes), *Start with Windows* writes and then clears the
-  real Run value, *Black notch* saves the look and turns it back, right-clicking the notch opens the menu, and
+  real Run value, *Show in Send to* creates the shortcut (pointing at the exe) and removes it, *Black notch* saves the look and turns it back, right-clicking the notch opens the menu, and
   Quit exits cleanly and removes the icon. It handles an auto-hidden taskbar, and briefly sets the shell's "show
   this icon" flag for topsy under `HKCU\Control Panel\NotifyIconSettings`; that flag, the Run value and the
-  `Look` value are restored when it finishes.
+  `Look` value are restored when it finishes, and so is any Send to shortcut it found.
 - `check-overlay.ps1` — the notch starts hidden (nothing hit-testable), comes down when the cursor rests on the
   top edge, then only the notch is hit-testable, and it folds once the cursor leaves; neither launching nor the
   reveal changes the foreground window. Last, it puts a borderless fullscreen window in front (`fullscreen.ps1`)

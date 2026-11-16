@@ -1,6 +1,7 @@
 //! The app's wiring: opening the island, and connecting the threads, the tray icon and the
 //! settings window to it.
 
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -17,6 +18,7 @@ use crate::model::tray_cause::TrayCause;
 use crate::settings::Setting;
 use crate::settings_window::{self, OnChange};
 use crate::tray::{self, TrayEvent};
+use crate::win32::sendto;
 use crate::{Island, Mode, autostart, backdrop, config, log, look, state, win32};
 
 impl Island {
@@ -50,8 +52,16 @@ impl Island {
                 self.frame.set_black(on, cx);
                 cx.notify();
             }
-            Setting::Autostart => {}
+            Setting::Autostart | Setting::SendTo => {}
         }
+    }
+
+    /// Paths sent from Explorer's Send to (or given on the command line): park them and open
+    /// the tray so they are seen to land.
+    fn on_sent(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+        let added = self.add_paths(paths, cx);
+        log(&format!("sent {added}"));
+        self.open_notch_tray(TrayCause::Dropped, cx);
     }
 }
 
@@ -78,6 +88,17 @@ pub(crate) fn forward<E: 'static>(
 }
 
 pub fn run() {
+    // Explorer's Send to starts topsy with the selected paths: a topsy already running takes
+    // them, and this one is done.
+    let sent: Vec<PathBuf> = std::env::args_os()
+        .skip(1)
+        .filter_map(|arg| std::path::absolute(arg).ok())
+        .collect();
+    if !sent.is_empty() && win32::inbox::hand_off(&sent) {
+        return;
+    }
+    // Up before GPUI, so a second Send to during startup is buffered rather than missed.
+    let inbox = win32::inbox::spawn();
     // The shelf comes back before the window opens, without touching the disk for its files
     // (a dead share would stall launch); `settle_restored` checks them in the background.
     let config = config::get();
@@ -192,9 +213,15 @@ pub fn run() {
             });
         }
 
+        forward(cx, &island, inbox, Island::on_sent);
+        if !sent.is_empty() {
+            island.update(cx, |island, cx| island.on_sent(sent, cx));
+        }
+
         if !config.no_tray {
             if let Ok(exe) = std::env::current_exe() {
                 autostart::refresh(&exe);
+                sendto::refresh(&exe);
             }
             forward(cx, &island, tray::spawn(), Island::on_tray);
             // However the app ends, don't leave a dead icon in the notification area.
