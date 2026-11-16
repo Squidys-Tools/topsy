@@ -153,14 +153,17 @@ impl Panel {
         let hwnd = self.hwnd;
         cx.spawn(async move |this, cx: &mut AsyncApp| {
             // The panel steps aside for the cards, where it stood.
+            // Hidden first, so the focus goes back to what was under it before the cards
+            // note who has it; shown again if they can't open.
             let anchor = win32::window_rect(HWND(hwnd as *mut _));
+            win32::set_visible(HWND(hwnd as *mut _), false);
             let opened = anchor.and_then(|anchor| {
                 cx.update(|cx| cards::open(cx, anchor, action, sources, cancel))
                     .ok()
                     .flatten()
             });
-            if opened.is_some() {
-                win32::set_visible(HWND(hwnd as *mut _), false);
+            if opened.is_none() {
+                win32::set_visible(HWND(hwnd as *mut _), true);
             }
             if this.update(cx, |panel, _| panel.cards = opened).is_err() {
                 return;
