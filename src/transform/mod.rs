@@ -8,8 +8,13 @@ pub mod background;
 mod clip;
 mod engines;
 pub mod fetch;
+#[allow(dead_code, unused_imports)] // Until the panel calls it.
+pub mod image;
 mod job;
 mod options;
+#[allow(dead_code, unused_imports)]
+pub mod pdf;
+mod steps;
 pub mod tools;
 pub mod video;
 mod view;
@@ -33,6 +38,7 @@ use crate::win32::{self, MenuEntry};
 use crate::{Island, icon, log};
 
 pub use options::Options;
+pub use steps::Steps;
 
 /// The panel's width; its height follows what it shows.
 const WIDTH: f32 = 384.0;

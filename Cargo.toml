@@ -18,6 +18,13 @@ gpui = "0.2.2"
 # Background removal runs BiRefNet on the CPU: matrix products through gemm (pure Rust SIMD), spread with rayon.
 gemm = { version = "0.19", default-features = false, features = ["std", "rayon"] }
 image = { version = "0.25", default-features = false, features = ["ico", "png", "jpeg", "webp", "bmp", "tiff", "gif"] }
+# Transform: PDFs are rewritten with lopdf and drawn by pdfium, loaded from a downloaded pdfium.dll.
+lopdf = { version = "0.47", default-features = false }
+pdfium-render = { version = "0.9.5", default-features = false, features = ["pdfium_8125", "image_025", "thread_safe"] }
+# Unpacking downloaded tools: .tar.gz (pdfium) and .7z (ImageMagick; LZMA2 with BCJ2).
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
+sevenz-rust2 = { version = "0.25", default-features = false }
+tar = { version = "0.4", default-features = false }
 raw-window-handle = "0.6"
 rayon = "1"
 serde = { version = "1", features = ["derive"] }
@@ -28,3 +35,4 @@ windows-core = "0.62"
 windows-numerics = "0.3"
 # Compress to .zip: deflate only, through flate2 and zlib-rs (pure Rust).
 zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+
