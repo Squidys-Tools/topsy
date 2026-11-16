@@ -4,7 +4,9 @@
 mod dialog;
 mod dragdrop;
 mod hook;
+pub mod inbox;
 mod menu;
+pub mod sendto;
 mod shell;
 mod window;
 
