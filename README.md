@@ -15,7 +15,9 @@ it (see [Notch](#notch)), the tray holds a **shelf** of files you can drag back 
 [Shelf, tray icon and startup](#shelf-tray-icon-and-startup). It also shows what is playing, with its controls
 (see [Now Playing](#now-playing)), and keeps a **clipboard history** you open with Ctrl+Alt+V (see
 [Clipboard history](#clipboard-history)). Volume, brightness and battery changes drop the notch down as a
-**HUD** (see [HUDs](#huds)).
+**HUD** (see [HUDs](#huds)). Files on the shelf can be **transformed**: compressed, converted, resized,
+trimmed, turned into a GIF or a PDF, stripped of metadata or cut out of their background (see
+[Transform](#transform)).
 
 ## What's here
 
@@ -40,6 +42,11 @@ it (see [Notch](#notch)), the tray holds a **shelf** of files you can drag back 
 | `src/model/hud.rs` | The HUDs: how much of the bar a level lights, and which battery changes are worth showing |
 | `src/model/dib.rs` | Reading a copied bitmap (`CF_DIB`/`CF_DIBV5`) to RGBA, and writing one back to paste |
 | `src/model/transform.rs` | Transform: which actions suit which files, the panel's summary line, and naming results and renames |
+| `src/model/image_ops.rs`, `image_geometry.rs`, `magick.rs`, `size_search.rs` | Image Transforms: formats and picking one, sizes, crops and turns, ImageMagick's and oxipng's command lines, landing under a size |
+| `src/model/orientation.rs`, `exif.rs`, `jpeg/` | Turning a photo once (its EXIF orientation and the user's turn composed), and JPEGs turned and stripped losslessly without a decode |
+| `src/model/pdf.rs` | PDF Transforms: Combine's page sizes, Compress's presets, how far a picture inside may shrink |
+| `src/model/video/` | Video and audio Transforms: options, size budgets, trim ranges, FFmpeg's command lines, reading ffprobe and progress |
+| `src/model/matte.rs`, `download.rs` | Remove background's arithmetic (the model's input, its mask to a clean matte), and fetching a big file once, resumably |
 | `src/model/tray_cause.rs` | Why the tray is open, and which events fold it early |
 | `src/config.rs` | Every `TOPSY_*` switch, read once at startup |
 | `src/backdrop.rs` | The glass: the compositor's blurred backdrop behind GPUI's content, clipped to the notch's shape |
@@ -57,6 +64,7 @@ it (see [Notch](#notch)), the tray holds a **shelf** of files you can drag back 
 | `src/hud.rs` | The HUDs: the notch dropping down to show a new volume, brightness or battery state; the *Volume HUD* setting |
 | `src/settings.rs` | The on/off settings, one list shared by the menu and the settings window |
 | `src/settings_window.rs` | The settings window: a switch per setting, how long clipboard history is kept, the version, Quit |
+| `src/transform/` | The Transform panel (`mod`, `view`, `options`, `widgets`, `clip` for the trim range), its worker (`job`), the bridge to the engines (`engines`, `pictures`), the engines (`image`, `pdf`, `video`, `background`), and the downloaded tools (`fetch`, `tools`) |
 | `src/app.rs` | The app's wiring: opens the island and connects the threads, tray icon and settings window to it |
 | `src/autostart.rs` | Start with Windows: one `HKCU\...\Run` value |
 | `src/media.rs` | The system's media session (WinRT `GlobalSystemMediaTransportControlsSessionManager`) on its own thread |
@@ -251,6 +259,45 @@ it falls below 20% and 10% (or is unplugged below 20%), and when it is full on t
   a thread blocks on it. Windows' own brightness flyout still shows: the keys are the laptop's firmware's.
 - **Battery** changes arrive as power-setting callbacks (`PowerSettingRegisterNotification`). Nothing polls; a
   machine without a battery registers nothing.
+
+## Transform
+
+*Transform* on a chip's menu, or in the shelf's header, opens a panel laid out after Droppy's: the files at the
+top, a tile for each action that suits them, the chosen action's options, and one button. Results are saved
+beside the originals (`photo (compressed).jpg`, `report (page 2).png`, `Combined.pdf`), numbered rather than
+overwriting, and parked on the shelf. The originals are never changed; Cancel stops the work and deletes the
+partial result.
+
+- **Images:** Compress (by quality or to a size, as JPEG, PNG, WebP or AVIF, or *Most compatible*: JPEG, or PNG
+  when there is transparency; a largest side), Convert (JPEG, PNG, WebP, AVIF, TIFF, GIF, BMP, ICO, PDF; HEIC is
+  read), Resize (largest side, percent, or an exact size fitted or cropped to fill), Remove background, Rotate
+  and flip, Remove metadata, Combine into PDF.
+- **Video and audio:** Compress (by quality or to a size; a resolution cap; a bitrate for audio), Convert (MP4
+  H.264 or HEVC, MOV, WebM, MKV or the sound alone; M4A, MP3, WAV, FLAC, OGG Opus, AIFF), Trim and Make GIF on a
+  filmstrip with a range to drag, Rotate, Remove metadata.
+- **PDF:** Compress (three presets or a size), Convert to PNG or JPEG pages at 72, 150 or 300 dpi, Rotate pages,
+  Remove metadata, Combine. **Anything:** Zip, Rename.
+
+How it is built:
+
+- **Mature tools, fetched on first use.** FFmpeg 9.0.2 (Gyan's essentials build, 115 MB) does video and audio;
+  ImageMagick 7.1.2 (portable Q16, 12 MB) and oxipng 10.2 do images; pdfium (bblanchon's Chromium build, 4 MB)
+  draws PDF pages and lopdf rewrites PDFs. Each is pinned to an immutable release URL with its size and SHA-256
+  (`fetch::Pinned`), downloaded under `%LOCALAPPDATA%\topsy\tools` the first time an action needs it (the
+  progress line says *Getting FFmpeg…*), resumed if cut off, and checked before it is unpacked. Bump a version by
+  changing the pin, size and hash together. They run as processes with no window, below normal priority
+  (`tools::run`); a cancel kills the process. Nothing of them is bundled or compiled in.
+- **JPEGs turn and strip losslessly, in Rust** (`model/jpeg`), since jpegtran ships for Windows only inside
+  installers. A turn that would split an 8x8 block at an edge goes to ImageMagick instead.
+- **A photo is turned once.** Its EXIF orientation and the chosen turn compose into one (`model/orientation`)
+  and the tag is reset, so no viewer turns the result again.
+- **The output's name is reserved before the work** (`create_new`), so two runs never write one file. Compress
+  can settle on another format than the name guessed (an opaque PNG becomes a JPEG); the result is renamed to
+  match.
+- **Remove background runs on this PC:** BiRefNet-lite (a 178 MB model from Hugging Face, fetched once) in pure
+  Rust on the CPU, through gemm and rayon.
+- **The panel takes the focus,** like the settings window, since it is typed into; the island still never does.
+  The filmstrip's frames are decoded once, in parallel, when a clip is picked; an idle panel renders nothing.
 
 ## Notch
 
@@ -461,9 +508,16 @@ hook, not the media thread). It is worth a profile, because an always-on app sho
   without sending the standard key codes don't reach topsy, and with no output device a volume key does nothing.
   The HUD shows over a fullscreen video or game, since the key was taken from Windows. No Caps Lock, keyboard
   backlight or device HUDs yet.
+- Transform: ImageMagick's and oxipng's builds link the Visual C++ runtime (`vcruntime140.dll`,
+  `vcomp140.dll`), so a PC without it can't run the image actions (FFmpeg and pdfium don't need it). HEIC is read
+  but not written (the portable ImageMagick has no HEVC encoder), so it isn't offered as an output. HDR video comes
+  out as SDR without tone mapping. A video keeps its main picture and its sound: subtitles, data tracks and cover
+  art are dropped. ICO and AVIF results are bigger than a tuned encoder would make. The panel was matched to Droppy's
+  site, not side by side with Droppy.
 - No droplets yet. The settings window is a plain dark fill, not Mica.
 
 ## License
 
 [MIT](LICENSE). The crates this builds on (GPUI and its dependency tree, 485 packages on Windows) are all
-permissively licensed (MIT, Apache-2.0, BSD, Zlib, ISC and similar); a distributed binary should ship their notices.
+permissively licensed (MIT, Apache-2.0, BSD, Zlib, ISC and similar); a distributed binary should ship their notices. The tools Transform downloads on first use (FFmpeg under the
+GPL, ImageMagick, oxipng, pdfium) are separate programs fetched from their own releases, never shipped with topsy.
