@@ -15,6 +15,9 @@ impl Island {
     /// The notch body's size for `mode`; the tray's height is its sections'.
     pub(crate) fn size_for(&self, mode: Mode) -> (f32, f32) {
         let (w, h) = self.frame.size(mode);
+        if mode == Mode::Peek && self.hud.is_shown() && !self.frame.floating() {
+            return crate::hud::SIZE;
+        }
         if mode != Mode::Tray {
             return (w, h);
         }
@@ -48,8 +51,10 @@ impl Island {
             .flex_shrink_0()
             .flex()
             .flex_col()
+            .relative()
             .children(sections.media.then(|| self.player(cx)).flatten())
             .children(sections.shelf.then(|| self.shelf_section(cx)))
+            .children(self.hud_over_tray())
     }
 
     /// The shelf's header and its chips, or the hint when it is empty.

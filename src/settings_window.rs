@@ -17,7 +17,7 @@ use crate::{clipboard, win32};
 /// Told about every switch the window makes, after it is saved, so the app can apply it.
 pub type OnChange = Rc<dyn Fn(Setting, bool, &mut App)>;
 
-const SIZE: (f32, f32) = (340.0, 264.0);
+const SIZE: (f32, f32) = (340.0, 304.0);
 const BACKGROUND: u32 = 0x202020;
 const ACCENT: u32 = 0x4c8dff;
 

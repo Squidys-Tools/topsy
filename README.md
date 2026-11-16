@@ -14,7 +14,8 @@ it (see [Notch](#notch)), the tray holds a **shelf** of files you can drag back 
 **tray icon** with a menu, **start with Windows**, a **Send to** entry in Explorer, and a **Quit** item. See
 [Shelf, tray icon and startup](#shelf-tray-icon-and-startup). It also shows what is playing, with its controls
 (see [Now Playing](#now-playing)), and keeps a **clipboard history** you open with Ctrl+Alt+V (see
-[Clipboard history](#clipboard-history)).
+[Clipboard history](#clipboard-history)). Volume, brightness and battery changes drop the notch down as a
+**HUD** (see [HUDs](#huds)).
 
 ## What's here
 
@@ -36,11 +37,12 @@ it (see [Notch](#notch)), the tray holds a **shelf** of files you can drag back 
 | `src/model/clip_kind.rs` | What a copy is (text, link, colour, code, image, files) and how its card describes it; search |
 | `src/model/highlight.rs` | A code card's colours: keywords, strings, comments and numbers, in one pass that knows no language |
 | `src/model/favicon.rs` | Which sites a link card may ask for an icon, where a redirect or a page's icon link may lead, and which icon a page names |
+| `src/model/hud.rs` | The HUDs: how much of the bar a level lights, and which battery changes are worth showing |
 | `src/model/dib.rs` | Reading a copied bitmap (`CF_DIB`/`CF_DIBV5`) to RGBA, and writing one back to paste |
 | `src/model/tray_cause.rs` | Why the tray is open, and which events fold it early |
 | `src/config.rs` | Every `TOPSY_*` switch, read once at startup |
 | `src/backdrop.rs` | The glass: the compositor's blurred backdrop behind GPUI's content, clipped to the notch's shape |
-| `src/win32/` | Win32 glue GPUI doesn't expose: `window` (overlay styles, acrylic fallback, geometry, fullscreen), `dialog` (the settings window's dark caption and raising it), `dragdrop` (the drop-target wrapper that reports refused drags, dragging files out), `hook` (`WH_MOUSE_LL` thread), `shell` (opening files, showing them in Explorer), `menu` (a popup menu on a thread of its own), `meter` (the output device's peak meter), `sendto` (the Send to shortcut), `inbox` (paths handed over by a second topsy), `clipboard` (the clipboard listener and the Ctrl+Alt+V hotkey), `paste` (putting an entry back on the clipboard and pasting it), `http` (one https GET through WinHTTP) |
+| `src/win32/` | Win32 glue GPUI doesn't expose: `window` (overlay styles, acrylic fallback, geometry, fullscreen), `dialog` (the settings window's dark caption and raising it), `dragdrop` (the drop-target wrapper that reports refused drags, dragging files out), `hook` (`WH_MOUSE_LL` thread), `shell` (opening files, showing them in Explorer), `menu` (a popup menu on a thread of its own), `meter` (the output device's peak meter), `sendto` (the Send to shortcut), `inbox` (paths handed over by a second topsy), `clipboard` (the clipboard listener and the Ctrl+Alt+V hotkey), `paste` (putting an entry back on the clipboard and pasting it), `http` (one https GET through WinHTTP), `volume` (taking the volume keys and stepping the volume), `brightness` (WMI's brightness events), `battery` (power notifications) |
 | `src/chip.rs` | A chip: how it is drawn, opening it, dragging it out, and its right-click actions |
 | `src/archive.rs` | *Compress to ZIP file*: a chip's file or folder zipped beside it ([`zip`](https://crates.io/crates/zip), MIT) |
 | `src/icon.rs` | A chip's picture: the shell's thumbnail or icon for a file, as Explorer shows it |
@@ -51,6 +53,7 @@ it (see [Notch](#notch)), the tray holds a **shelf** of files you can drag back 
 | `src/clipboard/card.rs` | One card in the strip, drawn after Droppy's |
 | `src/clipboard/pictures.rs` | The pictures the cards show (app icons, images, file thumbnails, site icons), loaded off the UI thread |
 | `src/clipboard/favicon.rs` | A link card's site icon: fetched once per host and kept beside the history |
+| `src/hud.rs` | The HUDs: the notch dropping down to show a new volume, brightness or battery state; the *Volume HUD* setting |
 | `src/settings.rs` | The on/off settings, one list shared by the menu and the settings window |
 | `src/settings_window.rs` | The settings window: a switch per setting, how long clipboard history is kept, the version, Quit |
 | `src/app.rs` | The app's wiring: opens the island and connects the threads, tray icon and settings window to it |
@@ -68,7 +71,8 @@ Right-click the notch or the tray icon for the menu (Quit is in it). Env vars fo
 (auto expand/collapse), `TOPSY_LOG=1` (event trace on stderr), `TOPSY_EXIT_AFTER_MS=<n>`, `TOPSY_NO_HOOK=1` (don't
 install the mouse hook; the notch then rests peeking, as nothing could reveal it), `TOPSY_NO_TRAY=1` (no tray icon
 and no menu, so right-clicking the notch quits; start-with-Windows is left alone), `TOPSY_NO_MEDIA=1` (don't watch
-the system's media session; no Now Playing), `TOPSY_IDLE=peek|tray` (what the
+the system's media session; no Now Playing), `TOPSY_NO_KEYS=1` (leave the volume keys to Windows, whatever the
+*Volume HUD* setting says), `TOPSY_IDLE=peek|tray` (what the
 notch rests as, instead of hidden; the live checks use it),
 `TOPSY_SEED=<path;path>` (start with these files on the shelf), `TOPSY_STATE=<path>` (the shelf's save file,
 `%LOCALAPPDATA%\topsy\shelf.txt` by default; set empty to not save), `TOPSY_CLIPBOARD=<dir>` (where clipboard
@@ -227,6 +231,24 @@ or the settings window.
   https and public names: never a bare name, an address, a local-network suffix, or a name that resolves to a
   private address, and a redirect or icon link is vetted the same way. The icon is kept as a small PNG in
   `icons\<host>.png` beside the history; an empty file there means the site has none, so it isn't asked again.
+
+## HUDs
+
+When the volume, the brightness or the battery changes, the notch drops down a little wider and shows it, laid
+out after Droppy's: an icon on the left and a bar of 16 dashes lit up to the level, or for the battery what
+happened, the charge and a battery cell. It folds away 1.5 s after the last change (later if the cursor is on
+it). Over an open tray it shows as a pill across the top instead. The battery shows when it is plugged in, when
+it falls below 20% and 10% (or is unplugged below 20%), and when it is full on the charger.
+
+- **topsy takes the volume keys** (the *Volume HUD* setting, on by default): a low-level keyboard hook on a
+  thread of its own swallows VolumeUp, VolumeDown and Mute, so Windows never shows its own volume flyout, and
+  hands them to a thread that steps the default output device by its own step (`IAudioEndpointVolume`), as
+  Windows does; up and down unmute. Every other key passes straight through. Switched off, the hook is removed
+  and the keys are Windows' again. Windows' flyout can't be hidden any other way: it is the shell's, not an app's.
+- **Brightness** comes from WMI's `WmiMonitorBrightnessEvent`, which the display driver raises on each change;
+  a thread blocks on it. Windows' own brightness flyout still shows: the keys are the laptop's firmware's.
+- **Battery** changes arrive as power-setting callbacks (`PowerSettingRegisterNotification`). Nothing polls; a
+  machine without a battery registers nothing.
 
 ## Notch
 
@@ -432,6 +454,11 @@ hook, not the media thread). It is worth a profile, because an always-on app sho
   Site icons: an SVG-only icon isn't drawn; a site unreachable or busy when first shown is asked again next run, not
   sooner; a name can still re-resolve to a private address between the check and WinHTTP's own lookup; and
   *Clear unpinned* leaves the kept icons, which name the sites copied.
+- HUDs: brightness shows only for displays whose driver reports to WMI (a laptop's own panel, not an external
+  monitor), and next to Windows' own brightness flyout. Volume keys that a keyboard's own software handles
+  without sending the standard key codes don't reach topsy, and with no output device a volume key does nothing.
+  The HUD shows over a fullscreen video or game, since the key was taken from Windows. No Caps Lock, keyboard
+  backlight or device HUDs yet.
 - No droplets yet. The settings window is a plain dark fill, not Mica.
 
 ## License

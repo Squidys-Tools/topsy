@@ -2,7 +2,7 @@
 //! window are built from. A new toggle is a variant here and an arm in each match below.
 
 use crate::win32::sendto;
-use crate::{autostart, clipboard, look};
+use crate::{autostart, clipboard, hud, look};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Setting {
@@ -12,15 +12,18 @@ pub enum Setting {
     SendTo,
     /// Keep what is copied (`clipboard`).
     Clipboard,
+    /// Take the volume keys and show topsy's HUD for them (`hud`).
+    VolumeHud,
 }
 
 impl Setting {
     /// In the order the menu and the window show them.
-    pub const ALL: [Setting; 4] = [
+    pub const ALL: [Setting; 5] = [
         Setting::Black,
         Setting::Autostart,
         Setting::SendTo,
         Setting::Clipboard,
+        Setting::VolumeHud,
     ];
 
     /// The label, with `&` before the menu's mnemonic.
@@ -30,6 +33,7 @@ impl Setting {
             Setting::Autostart => "Start with &Windows",
             Setting::SendTo => "Show in Sen&d to",
             Setting::Clipboard => "Clipboard &history",
+            Setting::VolumeHud => "&Volume HUD",
         }
     }
 
@@ -44,6 +48,7 @@ impl Setting {
             Setting::Autostart => autostart::is_enabled(),
             Setting::SendTo => sendto::is_enabled(),
             Setting::Clipboard => clipboard::is_enabled(),
+            Setting::VolumeHud => hud::takes_volume_keys(),
         }
     }
 
@@ -59,6 +64,7 @@ impl Setting {
                 .and_then(|exe| sendto::enable(&exe)),
             Setting::SendTo => sendto::disable(),
             Setting::Clipboard => clipboard::set_enabled(on),
+            Setting::VolumeHud => hud::set_volume_keys(on),
         }
     }
 

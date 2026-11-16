@@ -52,7 +52,7 @@ impl Island {
                 self.frame.set_black(on, cx);
                 cx.notify();
             }
-            Setting::Autostart | Setting::SendTo | Setting::Clipboard => {}
+            Setting::Autostart | Setting::SendTo | Setting::Clipboard | Setting::VolumeHud => {}
         }
     }
 
@@ -233,6 +233,7 @@ pub fn run() {
         }
 
         crate::now_playing::start(cx, &island);
+        crate::hud::start(cx, &island);
         if let Some(events) = crate::clipboard::start(config.clipboard.clone()) {
             crate::clipboard::strip::listen(cx, events);
         }
