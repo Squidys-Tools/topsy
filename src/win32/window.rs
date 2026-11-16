@@ -130,6 +130,23 @@ pub fn apply_overlay_styles(hwnd: HWND) {
     }
 }
 
+/// The clipboard strip: a bare, topmost popup like the island (see [`apply_overlay_styles`]),
+/// but one that takes focus, since it is typed into.
+pub fn apply_strip_styles(hwnd: HWND) {
+    unsafe {
+        SetWindowLongPtrW(hwnd, GWL_STYLE, (WS_POPUP.0 | WS_VISIBLE.0) as isize);
+        let _ = SetWindowPos(
+            hwnd,
+            Some(HWND_TOPMOST),
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED,
+        );
+    }
+}
+
 /// `WS_EX_NOACTIVATE` keeps a click from making the island the foreground window, but while
 /// topsy already holds the foreground (its settings window is in front) the default answer to
 /// `WM_MOUSEACTIVATE`, which GPUI leaves to `DefWindowProc`, still makes it the active window.

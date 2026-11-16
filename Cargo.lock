@@ -5610,6 +5610,8 @@ dependencies = [
  "gpui",
  "image",
  "raw-window-handle",
+ "serde",
+ "serde_json",
  "windows 0.62.2",
  "windows-core 0.62.2",
  "windows-numerics 0.3.1",

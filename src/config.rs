@@ -31,6 +31,10 @@ pub struct Config {
     pub exit_after: Option<Duration>,
     /// `TOPSY_STATE`: where the shelf is saved; empty turns saving off.
     pub state: Option<OsString>,
+    /// Where clipboard history is kept: `TOPSY_CLIPBOARD` (empty: nowhere), else
+    /// `%LOCALAPPDATA%\topsy\clipboard`. A run with `TOPSY_STATE` set is scripted and keeps
+    /// none unless `TOPSY_CLIPBOARD` says where, so a live check never writes the real history.
+    pub clipboard: Option<PathBuf>,
 }
 
 impl Config {
@@ -60,6 +64,11 @@ impl Config {
             exit_after: text("TOPSY_EXIT_AFTER_MS")
                 .and_then(|v| v.parse().ok())
                 .map(Duration::from_millis),
+            clipboard: match var("TOPSY_CLIPBOARD") {
+                Some(dir) => (!dir.is_empty()).then(|| dir.into()),
+                None if var("TOPSY_STATE").is_some() => None,
+                None => var("LOCALAPPDATA").map(|d| PathBuf::from(d).join(r"topsy\clipboard")),
+            },
             state: var("TOPSY_STATE"),
         }
     }
@@ -90,6 +99,21 @@ mod tests {
         assert!(!c.no_hook && !c.no_tray && !c.no_media && !c.demo && !c.log);
         assert!(config(&[("TOPSY_NO_MEDIA", "1")]).no_media);
         assert!(c.seed.is_none() && c.exit_after.is_none() && c.state.is_none());
+    }
+
+    #[test]
+    fn scripted_runs_keep_no_clipboard_history_unless_told_where() {
+        let home = ("LOCALAPPDATA", r"C:\Users\me\AppData\Local");
+        assert_eq!(
+            config(&[home]).clipboard,
+            Some(PathBuf::from(r"C:\Users\me\AppData\Local\topsy\clipboard"))
+        );
+        assert_eq!(config(&[home, ("TOPSY_STATE", "")]).clipboard, None);
+        assert_eq!(config(&[home, ("TOPSY_CLIPBOARD", "")]).clipboard, None);
+        assert_eq!(
+            config(&[home, ("TOPSY_STATE", "x"), ("TOPSY_CLIPBOARD", r"C:\t")]).clipboard,
+            Some(PathBuf::from(r"C:\t"))
+        );
     }
 
     #[test]
