@@ -107,6 +107,32 @@ pub fn run(
     cancel: &AtomicBool,
     line: &mut dyn FnMut(&str),
 ) -> io::Result<()> {
+    run_with(program, args, cancel, &mut |stdout| {
+        for text in BufReader::new(stdout).lines() {
+            match text {
+                Ok(text) => line(&text),
+                Err(_) => break,
+            }
+        }
+    })
+}
+
+/// Run `program` as `run` does and return everything it wrote to stdout, for a tool that
+/// answers there (ffprobe's JSON, a decoded frame).
+pub fn read(program: &Path, args: &[&std::ffi::OsStr], cancel: &AtomicBool) -> io::Result<Vec<u8>> {
+    let mut out = Vec::new();
+    run_with(program, args, cancel, &mut |mut stdout| {
+        let _ = stdout.read_to_end(&mut out);
+    })?;
+    Ok(out)
+}
+
+fn run_with(
+    program: &Path,
+    args: &[&std::ffi::OsStr],
+    cancel: &AtomicBool,
+    stdout_to: &mut dyn FnMut(std::process::ChildStdout),
+) -> io::Result<()> {
     let mut child = Command::new(program)
         .args(args)
         .stdin(Stdio::null())
@@ -137,12 +163,7 @@ pub fn run(
                 std::thread::sleep(Duration::from_millis(50));
             }
         });
-        for text in BufReader::new(stdout).lines() {
-            match text {
-                Ok(text) => line(&text),
-                Err(_) => break,
-            }
-        }
+        stdout_to(stdout);
         watcher.join().expect("watcher panicked")
     });
     let errors = errors.join().unwrap_or_default();
@@ -177,6 +198,10 @@ mod tests {
         let args = ["/c", "echo broken 1>&2 && exit 3"].map(std::ffi::OsStr::new);
         let err = run(cmd, &args, &AtomicBool::new(false), &mut |_| {}).unwrap_err();
         assert_eq!(err.to_string(), "cmd: broken");
+
+        let args = ["/c", "echo bytes"].map(std::ffi::OsStr::new);
+        let out = read(cmd, &args, &AtomicBool::new(false)).unwrap();
+        assert_eq!(out.trim_ascii(), b"bytes");
     }
 
     #[test]

@@ -10,6 +10,7 @@ pub mod fetch;
 mod job;
 mod options;
 pub mod tools;
+pub mod video;
 mod view;
 mod widgets;
 
