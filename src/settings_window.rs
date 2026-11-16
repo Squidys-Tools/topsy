@@ -12,12 +12,12 @@ use raw_window_handle::HasWindowHandle;
 use windows::Win32::Foundation::HWND;
 
 use crate::settings::Setting;
-use crate::win32;
+use crate::{clipboard, win32};
 
 /// Told about every switch the window makes, after it is saved, so the app can apply it.
 pub type OnChange = Rc<dyn Fn(Setting, bool, &mut App)>;
 
-const SIZE: (f32, f32) = (340.0, 220.0);
+const SIZE: (f32, f32) = (340.0, 264.0);
 const BACKGROUND: u32 = 0x202020;
 const ACCENT: u32 = 0x4c8dff;
 
@@ -27,12 +27,14 @@ impl Global for Open {}
 
 pub struct SettingsWindow {
     on: [bool; Setting::ALL.len()],
+    keep_days: u32,
     on_change: OnChange,
 }
 
 impl SettingsWindow {
     fn reload(&mut self) {
         self.on = Setting::ALL.map(Setting::is_on);
+        self.keep_days = clipboard::keep_days();
     }
 }
 
@@ -91,6 +93,7 @@ pub fn open(cx: &mut App, on_change: OnChange, previous: usize) {
         cx.new(|_| {
             let mut view = SettingsWindow {
                 on: [false; Setting::ALL.len()],
+                keep_days: 0,
                 on_change,
             };
             view.reload();
@@ -111,6 +114,25 @@ pub fn refresh(cx: &mut App) {
             cx.notify();
         });
     }
+}
+
+fn days(days: u32) -> String {
+    match days {
+        0 => "Forever".into(),
+        1 => "1 day".into(),
+        n => format!("{n} days"),
+    }
+}
+
+fn button(id: &'static str, label: String) -> gpui::Stateful<gpui::Div> {
+    div()
+        .id(id)
+        .px(px(10.0))
+        .py(px(3.0))
+        .rounded(px(6.0))
+        .bg(rgba(0xffffff14))
+        .hover(|button| button.bg(rgba(0xffffff24)))
+        .child(label)
 }
 
 fn switch(on: bool) -> impl IntoElement {
@@ -151,15 +173,27 @@ impl Render for SettingsWindow {
                     }
                 }))
         });
-        let quit = div()
-            .id("quit")
+        let keep = button("keep", days(self.keep_days)).on_click(cx.listener(|view, _, _, cx| {
+            let choices = clipboard::DAY_CHOICES;
+            let at = choices.iter().position(|&d| d == view.keep_days);
+            let next = choices[at.map_or(0, |i| (i + 1) % choices.len())];
+            match clipboard::set_keep_days(next) {
+                Ok(()) => view.keep_days = next,
+                Err(err) => eprintln!("topsy: could not change how long history is kept: {err}"),
+            }
+            cx.notify();
+        }));
+        let clear = button("clear", "Clear".into())
+            .on_click(|_, _, _| clipboard::send(clipboard::Command::Clear));
+        let retention = div()
+            .flex()
+            .items_center()
+            .justify_between()
             .px(px(12.0))
-            .py(px(5.0))
-            .rounded(px(6.0))
-            .bg(rgba(0xffffff14))
-            .hover(|button| button.bg(rgba(0xffffff24)))
-            .child("Quit topsy")
-            .on_click(|_, _, cx| cx.quit());
+            .py(px(8.0))
+            .child("Keep clipboard for")
+            .child(div().flex().gap(px(6.0)).child(keep).child(clear));
+        let quit = button("quit", "Quit topsy".into()).on_click(|_, _, cx| cx.quit());
         div()
             .size_full()
             .flex()
@@ -169,7 +203,7 @@ impl Render for SettingsWindow {
             .bg(rgb(BACKGROUND))
             .text_color(rgb(0xffffff))
             .text_sm()
-            .child(div().flex().flex_col().children(rows))
+            .child(div().flex().flex_col().children(rows).child(retention))
             .child(
                 div()
                     .flex()

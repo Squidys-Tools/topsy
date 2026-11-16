@@ -2,7 +2,7 @@
 //! window are built from. A new toggle is a variant here and an arm in each match below.
 
 use crate::win32::sendto;
-use crate::{autostart, look};
+use crate::{autostart, clipboard, look};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Setting {
@@ -10,11 +10,18 @@ pub enum Setting {
     Autostart,
     /// "Send to > topsy" in Explorer's right-click menu.
     SendTo,
+    /// Keep what is copied (`clipboard`).
+    Clipboard,
 }
 
 impl Setting {
     /// In the order the menu and the window show them.
-    pub const ALL: [Setting; 3] = [Setting::Black, Setting::Autostart, Setting::SendTo];
+    pub const ALL: [Setting; 4] = [
+        Setting::Black,
+        Setting::Autostart,
+        Setting::SendTo,
+        Setting::Clipboard,
+    ];
 
     /// The label, with `&` before the menu's mnemonic.
     pub fn menu_label(self) -> &'static str {
@@ -22,6 +29,7 @@ impl Setting {
             Setting::Black => "&Black notch",
             Setting::Autostart => "Start with &Windows",
             Setting::SendTo => "Show in Sen&d to",
+            Setting::Clipboard => "Clipboard &history",
         }
     }
 
@@ -35,6 +43,7 @@ impl Setting {
             Setting::Black => look::is_black(),
             Setting::Autostart => autostart::is_enabled(),
             Setting::SendTo => sendto::is_enabled(),
+            Setting::Clipboard => clipboard::is_enabled(),
         }
     }
 
@@ -49,6 +58,7 @@ impl Setting {
                 .map_err(windows::core::Error::from)
                 .and_then(|exe| sendto::enable(&exe)),
             Setting::SendTo => sendto::disable(),
+            Setting::Clipboard => clipboard::set_enabled(on),
         }
     }
 

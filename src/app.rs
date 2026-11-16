@@ -52,7 +52,7 @@ impl Island {
                 self.frame.set_black(on, cx);
                 cx.notify();
             }
-            Setting::Autostart | Setting::SendTo => {}
+            Setting::Autostart | Setting::SendTo | Setting::Clipboard => {}
         }
     }
 
@@ -233,6 +233,9 @@ pub fn run() {
         }
 
         crate::now_playing::start(cx, &island);
+        if let Some(events) = crate::clipboard::start(config.clipboard.clone()) {
+            crate::clipboard::strip::listen(cx, events);
+        }
 
         // Real input: the global mouse hook reports jiggles, the top edge and button releases.
         let events = if config.no_hook {

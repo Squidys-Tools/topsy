@@ -1,12 +1,14 @@
 //! The Win32 glue GPUI doesn't expose: the overlay window, the settings window, drag and drop,
 //! the shell, and the global mouse hook, plus the small helpers they share.
 
+pub mod clipboard;
 mod dialog;
 mod dragdrop;
 mod hook;
 pub mod inbox;
 mod menu;
 pub mod meter;
+pub mod paste;
 pub mod sendto;
 mod shell;
 mod window;
@@ -17,8 +19,9 @@ pub use hook::{HookEvent, spawn_mouse_hook};
 pub use menu::{Entry as MenuEntry, popup as popup_menu};
 pub use shell::{open_path, show_in_folder};
 pub use window::{
-    Clip, apply_overlay_styles, cursor_monitor, cursor_over, foreground_window, fullscreen_over,
-    monitor_top_center, move_window, restore_foreground, round_corners, set_acrylic, set_clip,
+    Clip, apply_overlay_styles, apply_strip_styles, cursor_monitor, cursor_over, foreground_window,
+    fullscreen_over, monitor_top_center, move_window, restore_foreground, round_corners,
+    set_acrylic, set_clip,
 };
 
 use std::ffi::c_void;

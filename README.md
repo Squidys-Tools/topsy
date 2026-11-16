@@ -13,7 +13,8 @@ On top of that it is now a usable v1: the island is a **notch** that stays out o
 it (see [Notch](#notch)), the tray holds a **shelf** of files you can drag back out, there is a
 **tray icon** with a menu, **start with Windows**, a **Send to** entry in Explorer, and a **Quit** item. See
 [Shelf, tray icon and startup](#shelf-tray-icon-and-startup). It also shows what is playing, with its controls
-(see [Now Playing](#now-playing)).
+(see [Now Playing](#now-playing)), and keeps a **clipboard history** you open with Ctrl+Alt+V (see
+[Clipboard history](#clipboard-history)).
 
 ## What's here
 
@@ -31,17 +32,23 @@ it (see [Notch](#notch)), the tray holds a **shelf** of files you can drag back 
 | `src/model/archive.rs` | Naming a chip's zip (`report.zip`, `report (2).zip`) and the entries inside it |
 | `src/model/media.rs` | Now Playing: the media session's events reduced to what the tray and the peek show |
 | `src/model/levels.rs` | Now Playing's level bars: peak readings to bar heights, and the colour they take from the art |
+| `src/model/clipboard.rs` | Clipboard history: adding a copy (a repeat moves up), pins, expiry, the cap, and its save format |
+| `src/model/clip_kind.rs` | What a copy is (text, link, colour, code, image, files) and how its card describes it; search |
+| `src/model/dib.rs` | Reading a copied bitmap (`CF_DIB`/`CF_DIBV5`) to RGBA, and writing one back to paste |
 | `src/model/tray_cause.rs` | Why the tray is open, and which events fold it early |
 | `src/config.rs` | Every `TOPSY_*` switch, read once at startup |
 | `src/backdrop.rs` | The glass: the compositor's blurred backdrop behind GPUI's content, clipped to the notch's shape |
-| `src/win32/` | Win32 glue GPUI doesn't expose: `window` (overlay styles, acrylic fallback, geometry, fullscreen), `dialog` (the settings window's dark caption and raising it), `dragdrop` (the drop-target wrapper that reports refused drags, dragging files out), `hook` (`WH_MOUSE_LL` thread), `shell` (opening files, showing them in Explorer), `menu` (a popup menu on a thread of its own), `meter` (the output device's peak meter), `sendto` (the Send to shortcut), `inbox` (paths handed over by a second topsy) |
+| `src/win32/` | Win32 glue GPUI doesn't expose: `window` (overlay styles, acrylic fallback, geometry, fullscreen), `dialog` (the settings window's dark caption and raising it), `dragdrop` (the drop-target wrapper that reports refused drags, dragging files out), `hook` (`WH_MOUSE_LL` thread), `shell` (opening files, showing them in Explorer), `menu` (a popup menu on a thread of its own), `meter` (the output device's peak meter), `sendto` (the Send to shortcut), `inbox` (paths handed over by a second topsy), `clipboard` (the clipboard listener and the Ctrl+Alt+V hotkey), `paste` (putting an entry back on the clipboard and pasting it) |
 | `src/chip.rs` | A chip: how it is drawn, opening it, dragging it out, and its right-click actions |
 | `src/archive.rs` | *Compress to ZIP file*: a chip's file or folder zipped beside it ([`zip`](https://crates.io/crates/zip), MIT) |
 | `src/icon.rs` | A chip's picture: the shell's thumbnail or icon for a file, as Explorer shows it |
 | `src/state.rs` | The shelf's save file and the thread that writes it |
 | `src/tray.rs` | The notification-area icon and its menu, on their own thread |
+| `src/clipboard.rs` | Clipboard history on disk, owned by one thread; the history setting and how long it is kept |
+| `src/clipboard/strip.rs` | The clipboard strip: the window Ctrl+Alt+V opens, its search, tabs, keys and right-click menu |
+| `src/clipboard/card.rs` | One card in the strip, drawn after Droppy's |
 | `src/settings.rs` | The on/off settings, one list shared by the menu and the settings window |
-| `src/settings_window.rs` | The settings window: a switch per setting, the version, Quit |
+| `src/settings_window.rs` | The settings window: a switch per setting, how long clipboard history is kept, the version, Quit |
 | `src/app.rs` | The app's wiring: opens the island and connects the threads, tray icon and settings window to it |
 | `src/autostart.rs` | Start with Windows: one `HKCU\...\Run` value |
 | `src/media.rs` | The system's media session (WinRT `GlobalSystemMediaTransportControlsSessionManager`) on its own thread |
@@ -60,7 +67,9 @@ and no menu, so right-clicking the notch quits; start-with-Windows is left alone
 the system's media session; no Now Playing), `TOPSY_IDLE=peek|tray` (what the
 notch rests as, instead of hidden; the live checks use it),
 `TOPSY_SEED=<path;path>` (start with these files on the shelf), `TOPSY_STATE=<path>` (the shelf's save file,
-`%LOCALAPPDATA%\topsy\shelf.txt` by default; set empty to not save), `TOPSY_GLASS=acrylic|tint|solid|clear` (forces
+`%LOCALAPPDATA%\topsy\shelf.txt` by default; set empty to not save), `TOPSY_CLIPBOARD=<dir>` (where clipboard
+history is kept, `%LOCALAPPDATA%\topsy\clipboard` by default; set empty for none. A run with `TOPSY_STATE` set keeps
+none unless this says where, so a live check never touches the real history), `TOPSY_GLASS=acrylic|tint|solid|clear` (forces
 a fill and ignores the *Black notch* setting; see
 [Glass](#glass); the default is the notch-shaped blur).
 
@@ -181,6 +190,27 @@ with the count beside it. Stopped or no session shows nothing.
   They take a colour averaged from the art's vivid pixels, lifted to read on black, or white when the art has none.
 - **Buttons** go to the same thread, which calls the session's `Try*Async` without waiting; the glyph changes
   when the app reports its new state.
+
+## Clipboard history
+
+Copies are kept: text, links, colours, code, images and files, each with the app it came from (not blank
+copies, text over 1 MB, or ones marked private). Ctrl+Alt+V opens the **strip**, a black band along the bottom
+of the monitor under the cursor, laid out after Droppy's: a card per copy, newest first, with a pill naming the app, the kind and how long ago, and a line of detail at its
+foot. Type to search; Left/Right to pick; Enter pastes into the window that was in front; Ctrl+C only copies;
+Ctrl+P pins; Delete removes; Tab shows the pinned ones; Esc clears the search, then closes. Right-click a card
+for the same actions. History is kept 7 days by default (1, 7, 30 days or forever in the settings window, which
+also clears it); pinned entries never expire. It can be switched off from the menu or the settings window.
+
+- **The strip takes focus**, unlike the island: it is typed into. It remembers the window that was in front when
+  the hotkey fired, hands focus back to it on Esc and after a paste, and closes on a click elsewhere. Paste puts
+  the entry on the clipboard and sends Ctrl+V; being a copy, it moves the entry to the front.
+- **Nothing polls.** The listener (`AddClipboardFormatListener`) wakes on each copy; the store thread wakes on a
+  command or when the oldest entry is due to expire. Copies marked private
+  (`ExcludeClipboardContentFromMonitorProcessing`, `CanIncludeInClipboardHistory` = 0, as password managers set
+  them) are never read. Many apps announce one copy twice, so the same thing copied again within 2 s is one copy.
+- **On disk** each entry is `<id>.json` in the history folder, an image's pixels `<id>.png` beside it, each
+  written through a temp file. At most 2000 unpinned entries are kept, and text over 1 MB is not. One topsy
+  keeps a folder; a second one started on it keeps no history, since both would number and expire the same files.
 
 ## Notch
 
@@ -379,6 +409,10 @@ hook, not the media thread). It is worth a profile, because an always-on app sho
 - Now Playing follows only the system's *current* session (the one Windows picks), with no way to switch between
   several. Its art is fetched on every properties change, not cached by track. Not checked on the desktop yet:
   apps that report art late or not at all, and an app that never answers a button.
+- Clipboard history: if another app holds Ctrl+Alt+V the strip can't open (logged), and the hotkey can't be
+  changed. Paste sends Ctrl+V, which a terminal that pastes on Ctrl+Shift+V ignores (the entry is still on the
+  clipboard). Rich text and HTML are kept as plain text. The cap counts entries, not bytes, so a long history of
+  big images kept forever can grow large. The strip shows the newest 100 matches. Tested on one 100% display only.
 - No droplets yet. The settings window is a plain dark fill, not Mica.
 
 ## License

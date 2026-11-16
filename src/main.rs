@@ -7,6 +7,7 @@ mod archive;
 mod autostart;
 mod backdrop;
 mod chip;
+mod clipboard;
 mod config;
 mod frame;
 mod icon;
@@ -180,11 +181,10 @@ impl Island {
 
     /// Park dropped paths on the shelf; returns how many were new.
     ///
-    /// Chips go up right away: telling a folder from a file asks the disk, and a
-    /// dead network share could stall the UI thread for its timeout, so the stat
-    /// runs in the background (chips show `Kind::Unknown` meanwhile). Answers are
-    /// merged back by path, so a chip removed or cleared before they arrive stays
-    /// gone.
+    /// Chips go up right away: telling a folder from a file asks the disk, and a dead network
+    /// share could stall the UI thread for its timeout, so the stat runs in the background
+    /// (chips show `Kind::Unknown` meanwhile). Answers are merged back by path, so a chip
+    /// removed or cleared before they arrive stays gone.
     fn add_paths(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) -> usize {
         let added = self.shelf.add(paths);
         self.shelf_changed(cx);
