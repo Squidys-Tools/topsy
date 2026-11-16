@@ -19,6 +19,7 @@ mod now_playing;
 mod settings;
 mod settings_window;
 mod state;
+mod transform;
 mod tray;
 mod tray_view;
 mod win32;

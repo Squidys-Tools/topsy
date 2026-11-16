@@ -6,6 +6,7 @@ pub mod archive;
 pub mod clip_kind;
 pub mod clipboard;
 pub mod dib;
+pub mod download;
 pub mod edge;
 pub mod favicon;
 pub mod float;
@@ -13,6 +14,7 @@ pub mod highlight;
 pub mod hud;
 pub mod jiggle;
 pub mod levels;
+pub mod matte;
 pub mod media;
 pub mod notch;
 // Drawn by build.rs into the exe's icon; here only for its tests.
