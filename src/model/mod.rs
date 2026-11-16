@@ -40,5 +40,6 @@ pub mod shelf;
 pub mod size_search;
 pub mod spring;
 pub mod transform;
+pub mod transform_card;
 pub mod tray_cause;
 pub mod video;

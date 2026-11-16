@@ -16,9 +16,10 @@ use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
 use windows::Win32::UI::WindowsAndMessaging::{
     GWL_EXSTYLE, GWL_STYLE, GetClassNameW, GetCursorPos, GetForegroundWindow, GetShellWindow,
-    GetWindowLongPtrW, GetWindowRect, HWND_TOPMOST, IsZoomed, MA_NOACTIVATE, SWP_FRAMECHANGED,
-    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetForegroundWindow, SetWindowLongPtrW,
-    SetWindowPos, WM_MOUSEACTIVATE, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP, WS_VISIBLE,
+    GetWindowLongPtrW, GetWindowRect, HWND_TOPMOST, IsZoomed, MA_NOACTIVATE, SW_HIDE, SW_SHOWNA,
+    SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetForegroundWindow,
+    SetWindowLongPtrW, SetWindowPos, ShowWindow, WM_MOUSEACTIVATE, WS_EX_NOACTIVATE,
+    WS_EX_TOOLWINDOW, WS_POPUP, WS_VISIBLE,
 };
 use windows::core::{s, w};
 
@@ -371,6 +372,27 @@ pub fn cursor_over(hwnd: HWND) -> bool {
         GetCursorPos(&mut at).is_ok()
             && GetWindowRect(hwnd, &mut rect).is_ok()
             && PtInRect(&rect, at).as_bool()
+    }
+}
+
+/// The window's outer rectangle, in physical screen pixels.
+pub fn window_rect(hwnd: HWND) -> Option<Rect> {
+    let mut r = RECT::default();
+    unsafe { GetWindowRect(hwnd, &mut r) }.ok()?;
+    Some(Rect {
+        left: r.left,
+        top: r.top,
+        right: r.right,
+        bottom: r.bottom,
+    })
+}
+
+/// Hide a window, or show it again without activating it. Like [`move_window`], run it from a
+/// foreground task: it sends messages to the window synchronously.
+pub fn set_visible(hwnd: HWND, visible: bool) {
+    let how = if visible { SW_SHOWNA } else { SW_HIDE };
+    unsafe {
+        let _ = ShowWindow(hwnd, how);
     }
 }
 

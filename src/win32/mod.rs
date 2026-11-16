@@ -27,7 +27,7 @@ pub use shell::{open_path, show_in_folder};
 pub use window::{
     Clip, apply_overlay_styles, apply_strip_styles, cursor_monitor, cursor_over, foreground_window,
     fullscreen_over, monitor_top_center, move_window, resize_window, restore_foreground,
-    round_corners, set_acrylic, set_clip,
+    round_corners, set_acrylic, set_clip, set_visible, window_rect,
 };
 
 use std::ffi::c_void;

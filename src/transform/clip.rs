@@ -136,8 +136,7 @@ impl Panel {
             return;
         }
         let cancel = Arc::new(AtomicBool::new(false));
-        self.state = State::Running {
-            label: "Getting FFmpeg…".into(),
+        self.state = State::Fetching {
             progress: 0.0,
             cancel: cancel.clone(),
         };
@@ -153,7 +152,7 @@ impl Panel {
                 let live = this.update(cx, |panel, cx| {
                     match message {
                         Err(p) => {
-                            if let State::Running { progress, .. } = &mut panel.state {
+                            if let State::Fetching { progress, .. } = &mut panel.state {
                                 *progress = p;
                             }
                         }

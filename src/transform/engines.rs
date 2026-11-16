@@ -47,23 +47,6 @@ struct Media {
     rotate: Rotate,
 }
 
-/// The present participle the progress line uses.
-pub fn verb(action: Action) -> &'static str {
-    match action {
-        Action::Compress => "Compressing",
-        Action::Convert => "Converting",
-        Action::Resize => "Resizing",
-        Action::Trim => "Trimming",
-        Action::MakeGif => "Making GIF",
-        Action::RemoveBackground => "Removing background",
-        Action::Rotate => "Rotating",
-        Action::RemoveMetadata => "Removing metadata",
-        Action::CombinePdf => "Combining",
-        Action::Zip => "Zipping",
-        Action::Rename => "Renaming",
-    }
-}
-
 pub fn button_label(panel: &Panel, action: Action) -> (String, bool) {
     let ready = match action {
         Action::Trim => panel.trim_range().is_some(),

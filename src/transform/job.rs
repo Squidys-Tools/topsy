@@ -1,7 +1,8 @@
 //! Running the chosen action: a snapshot of the files and options goes to a worker thread,
-//! which reports progress back to the panel and leaves every result beside its original under
-//! a free name. A failed or cancelled step deletes what it had started, so nothing
-//! half-written is left behind. Results go on the shelf; renamed chips follow their files.
+//! which leaves every result beside its original under a free name. The panel steps aside for
+//! result cards (`cards`) that show each file's progress and what it made. A failed or cancelled
+//! run deletes what it had made, so nothing half-done is left behind, and brings the panel
+//! back. Results go on the shelf; renamed chips follow their files.
 
 use std::fs::{self, OpenOptions};
 use std::io;
@@ -10,12 +11,15 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use gpui::{AsyncApp, Context};
+use windows::Win32::Foundation::HWND;
 use windows::Win32::Storage::FileSystem::{MOVE_FILE_FLAGS, MoveFileExW};
 use windows::Win32::System::Com::COINIT_MULTITHREADED;
 
+use super::cards::{self, Cards};
 use super::engines::{self, Work};
-use super::{Panel, State};
-use crate::model::transform::{Action, Kind, combined_paths, name_problem, rename_targets, size};
+use super::{Open, Panel, State, image, video};
+use crate::model::transform::{Action, Kind, combined_paths, name_problem, rename_targets};
+use crate::model::transform_card::{Made, Sides};
 use crate::{Island, archive, log, win32};
 
 /// One file going in.
@@ -26,7 +30,18 @@ pub struct Input {
 }
 
 enum Report {
-    Step { label: String, progress: f32 },
+    /// Card `index` is working; `label` replaces the action's own word, as while a tool is
+    /// fetched.
+    Step {
+        index: usize,
+        label: Option<String>,
+        progress: f32,
+    },
+    Made {
+        index: usize,
+        made: Made,
+        output: PathBuf,
+    },
     Done(io::Result<Outcome>),
 }
 
@@ -114,20 +129,20 @@ impl Panel {
         let cancel = Arc::new(AtomicBool::new(false));
         self.field = None;
         self.state = State::Running {
-            label: format!("{}…", engines::verb(action)),
-            progress: 0.0,
             cancel: cancel.clone(),
         };
         cx.notify();
         let (tx, rx) = async_channel::unbounded();
+        let sources = self.paths();
+        let worker_cancel = cancel.clone();
         let spawned = std::thread::Builder::new()
             .name("topsy-transform".into())
             .spawn(move || {
-                let report = |label: String, progress: f32| {
-                    let _ = tx.try_send(Report::Step { label, progress });
+                let tell = |report: Report| {
+                    let _ = tx.try_send(report);
                 };
                 let result = win32::with_com(COINIT_MULTITHREADED, || {
-                    run(action, &work, &inputs, &report, &cancel)
+                    run(action, &work, &inputs, &tell, &worker_cancel)
                 });
                 let _ = tx.send_blocking(Report::Done(result));
             });
@@ -135,9 +150,21 @@ impl Panel {
             self.state = State::Failed(format!("Could not start: {err}"));
             return cx.notify();
         }
+        let hwnd = self.hwnd;
         cx.spawn(async move |this, cx: &mut AsyncApp| {
+            // The panel steps aside for the cards, where it stood.
+            let anchor = win32::window_rect(HWND(hwnd as *mut _));
+            win32::set_visible(HWND(hwnd as *mut _), false);
+            let opened = anchor.and_then(|anchor| {
+                cx.update(|cx| cards::open(cx, anchor, action, sources, cancel))
+                    .ok()
+                    .flatten()
+            });
+            if this.update(cx, |panel, _| panel.cards = opened).is_err() {
+                return;
+            }
             while let Ok(report) = rx.recv().await {
-                let live = this.update(cx, |panel, cx| panel.reported(action, report, cx));
+                let live = this.update(cx, |panel, cx| panel.reported(report, cx));
                 if live.is_err() {
                     break;
                 }
@@ -146,47 +173,61 @@ impl Panel {
         .detach();
     }
 
-    fn reported(&mut self, action: Action, report: Report, cx: &mut Context<Self>) {
-        match report {
-            Report::Step { label, progress } => {
-                if let State::Running {
-                    label: shown,
-                    progress: at,
-                    ..
-                } = &mut self.state
-                {
-                    *shown = label;
-                    *at = progress;
-                }
+    fn reported(&mut self, report: Report, cx: &mut Context<Self>) {
+        let cards = self.cards;
+        let with_cards = |cx: &mut Context<Self>, f: &dyn Fn(&mut Cards, &mut Context<Cards>)| {
+            if let Some(cards) = cards {
+                cards.update(cx, |cards, _, cx| f(cards, cx)).ok();
             }
+        };
+        match report {
+            Report::Step {
+                index,
+                label,
+                progress,
+            } => with_cards(cx, &|c, cx| c.step(index, label.clone(), progress, cx)),
+            Report::Made {
+                index,
+                made,
+                output,
+            } => with_cards(cx, &|c, cx| c.made(index, made.clone(), output.clone(), cx)),
             Report::Done(Ok(outcome)) => {
-                let before: u64 = self.files.iter().map(|f| f.bytes).sum();
-                let after: u64 = (outcome.outputs.iter())
-                    .filter_map(|p| fs::metadata(p).ok())
-                    .map(|m| m.len())
-                    .sum();
-                let message = summary(action, &outcome, before, after);
-                log(&format!("transform done: {message}"));
+                log(&format!(
+                    "transform done: {} made, {} renamed",
+                    outcome.outputs.len(),
+                    outcome.renamed.len()
+                ));
                 if !outcome.renamed.is_empty() {
                     self.follow_renames(&outcome.renamed, cx);
                 }
-                self.shelve(outcome.outputs.clone(), cx);
-                self.state = State::Done {
-                    outputs: if outcome.outputs.is_empty() {
-                        (outcome.renamed.iter()).map(|(_, to)| to.clone()).collect()
-                    } else {
-                        outcome.outputs
-                    },
-                    message,
-                };
+                self.shelve(outcome.outputs, cx);
+                with_cards(cx, &|c, cx| c.finish(cx));
+                self.state = State::Ready;
+                // Done: the cards have it from here.
+                if let Some(open) = cx.try_global::<Open>() {
+                    let handle: gpui::AnyWindowHandle = open.0.into();
+                    cx.defer(move |cx| {
+                        handle
+                            .update(cx, |_, window, _| window.remove_window())
+                            .ok();
+                    });
+                }
             }
             Report::Done(Err(err)) => {
                 log(&format!("transform failed: {err}"));
+                with_cards(cx, &|c, cx| c.close(cx));
+                self.cards = None;
                 self.state = if err.kind() == io::ErrorKind::Interrupted {
                     State::Ready
                 } else {
                     State::Failed(err.to_string())
                 };
+                let hwnd = self.hwnd;
+                cx.spawn(async move |_, _: &mut AsyncApp| {
+                    win32::set_visible(HWND(hwnd as *mut _), true);
+                    win32::bring_to_front(HWND(hwnd as *mut _));
+                })
+                .detach();
             }
         }
         cx.notify();
@@ -219,39 +260,24 @@ impl Panel {
     }
 }
 
-/// What the panel says when it is done: `Saved 3.1 MB (52%)`, `3 files renamed`.
-fn summary(action: Action, outcome: &Outcome, before: u64, after: u64) -> String {
-    let n = outcome.outputs.len();
-    match action {
-        Action::Rename => match outcome.renamed.len() {
-            1 => "Renamed".into(),
-            n => format!("{n} files renamed"),
-        },
-        Action::Compress if after < before && before > 0 => {
-            let saved = before - after;
-            format!(
-                "Saved {} ({:.0}%)",
-                size(saved),
-                saved as f64 * 100.0 / before as f64
-            )
-        }
-        Action::Compress => "Already as small as it gets".into(),
-        _ if n == 1 => format!("Done · {}", size(after)),
-        _ => format!("{n} files · {}", size(after)),
-    }
-}
-
 fn run(
     action: Action,
     work: &Work,
     inputs: &[Input],
-    report: &dyn Fn(String, f32),
+    tell: &dyn Fn(Report),
     cancel: &AtomicBool,
 ) -> io::Result<Outcome> {
+    let step = |index: usize, label: Option<String>, progress: f32| {
+        tell(Report::Step {
+            index,
+            label,
+            progress,
+        })
+    };
     let mut outcome = Outcome::default();
     match work {
         Work::Zip(name) => {
-            report("Zipping…".into(), 0.0);
+            step(0, None, 0.0);
             let sources: Vec<PathBuf> = inputs.iter().map(|i| i.path.clone()).collect();
             let candidates = combined_paths(&sources, name, "zip")
                 .ok_or_else(|| io::Error::other("No folder to put the zip in"))?;
@@ -259,31 +285,43 @@ fn run(
             outcome.outputs.push(into(out, |out| {
                 archive::compress_files(&sources, out, cancel)
             })?);
+            tell(card(0, inputs, &outcome.outputs));
         }
         Work::Rename(names) => {
+            step(0, None, 0.0);
             outcome.renamed = rename(inputs, names)?;
+            if let (Some(input), Some(name)) = (inputs.first(), names.first()) {
+                tell(Report::Made {
+                    index: 0,
+                    made: Made {
+                        bytes: None,
+                        sides: (None, None),
+                        name: name.clone(),
+                        renamed: outcome.renamed.len(),
+                    },
+                    output: input.path.with_file_name(name),
+                });
+            }
         }
         _ => {
-            engines::prepare(work, inputs, report, cancel)?;
-            let total = inputs.len() as f32;
-            let verb = engines::verb(action);
+            let note = |label: String, p: f32| step(0, Some(label), p);
+            engines::prepare(work, inputs, &note, cancel)?;
             if action.combines() {
-                outcome.outputs = engines::run_all(work, inputs, report, cancel)?;
+                outcome.outputs = engines::run_all(work, inputs, &note, cancel)?;
+                tell(card(0, inputs, &outcome.outputs));
             } else {
                 for (i, input) in inputs.iter().enumerate() {
-                    let label = if inputs.len() == 1 {
-                        format!("{verb}…")
-                    } else {
-                        format!("{verb} {} of {}…", i + 1, inputs.len())
-                    };
-                    report(label.clone(), i as f32 / total);
-                    let step = |p: f32| report(label.clone(), (i as f32 + p) / total);
+                    step(i, None, 0.0);
+                    let progress = |p: f32| step(i, None, p);
                     let made = match cancel.load(Ordering::Relaxed) {
                         true => Err(cancelled()),
-                        false => engines::run_one(work, input, &step, cancel),
+                        false => engines::run_one(work, input, &progress, cancel),
                     };
                     match made {
-                        Ok(paths) => outcome.outputs.extend(paths),
+                        Ok(paths) => {
+                            tell(card(i, std::slice::from_ref(input), &paths));
+                            outcome.outputs.extend(paths);
+                        }
                         // All or nothing: what the earlier files made goes too.
                         Err(err) => {
                             for path in &outcome.outputs {
@@ -304,6 +342,42 @@ fn run(
         }
     }
     Ok(outcome)
+}
+
+/// What card `index` shows for `outputs` made from `inputs`: sizes, and a picture's sides when
+/// one file became one.
+fn card(index: usize, inputs: &[Input], outputs: &[PathBuf]) -> Report {
+    let bytes = |p: &Path| fs::metadata(p).map_or(0, |m| m.len());
+    let before = inputs.iter().map(|i| bytes(&i.path)).sum();
+    let after = outputs.iter().map(|p| bytes(p)).sum();
+    let output = (outputs.first().cloned())
+        .or_else(|| inputs.first().map(|i| i.path.clone()))
+        .unwrap_or_default();
+    let sides = match (inputs, outputs) {
+        ([input], [out]) => (sides(&input.path, input.kind), sides(out, Kind::of(out))),
+        _ => (None, None),
+    };
+    let name = output.file_name().unwrap_or_default();
+    Report::Made {
+        index,
+        made: Made {
+            bytes: Some((before, after)),
+            sides,
+            name: name.to_string_lossy().into_owned(),
+            renamed: 0,
+        },
+        output,
+    }
+}
+
+fn sides(path: &Path, kind: Kind) -> Option<Sides> {
+    match kind {
+        Kind::Image => (image::probe(path).ok())
+            .filter(|i| i.width > 0)
+            .map(|i| (i.width, i.height)),
+        Kind::Video => (video::probe(path).ok()?.video).map(|v| (v.width, v.height)),
+        _ => None,
+    }
 }
 
 /// Rename each file in place. Every new name is checked first, so a clash stops the whole

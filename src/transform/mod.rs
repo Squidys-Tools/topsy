@@ -1,10 +1,12 @@
 //! Transform, after Droppy's: a panel that turns the files given to it into something else
 //! (compressed, converted, resized, trimmed, a GIF, a PDF, a zip, renamed). It opens from a
 //! chip's menu or the shelf's header, takes the focus like the settings window (the island
-//! never does), and parks what it makes on the shelf. The rules are in `model::transform`;
+//! never does), steps aside for result cards while it works, and parks what it makes on the
+//! shelf. The rules are in `model::transform`;
 //! the work itself is in the engines beside this file, run on a worker thread by `job`.
 
 pub mod background;
+mod cards;
 mod clip;
 mod engines;
 pub mod fetch;
@@ -41,8 +43,12 @@ pub use steps::Steps;
 
 /// The panel's width; its height follows what it shows.
 const WIDTH: f32 = 384.0;
-/// The files' thumbnails, square.
+/// The files' thumbnails' height.
 const THUMB: f32 = 44.0;
+/// The files' tiles' width.
+const TILE: f32 = 80.0;
+/// The panel's corners, which the window's region follows.
+const RADIUS: f32 = 22.0;
 
 struct Open(WindowHandle<Panel>);
 
@@ -66,14 +72,14 @@ pub enum Field {
 
 pub enum State {
     Ready,
+    /// A run, which the result cards show.
     Running {
-        label: String,
-        progress: f32,
         cancel: Arc<AtomicBool>,
     },
-    Done {
-        outputs: Vec<PathBuf>,
-        message: String,
+    /// FFmpeg coming down for the clip card, shown in the panel.
+    Fetching {
+        progress: f32,
+        cancel: Arc<AtomicBool>,
     },
     Failed(String),
 }
@@ -90,6 +96,18 @@ pub struct Panel {
     height: f32,
     /// The clip Trim and Make GIF show, once it is loaded.
     clip: Option<clip::Clip>,
+    /// The result cards of the run in progress.
+    cards: Option<WindowHandle<cards::Cards>>,
+    hwnd: usize,
+}
+
+/// The panel's region: its corners are see-through and click-through.
+fn rounded(width: i32, height: i32, scale: f32) -> win32::Clip {
+    win32::Clip::Rounded {
+        width,
+        height,
+        radius: (RADIUS * scale).round() as i32,
+    }
 }
 
 fn hwnd(window: &Window) -> Option<HWND> {
@@ -138,18 +156,21 @@ pub fn open(cx: &mut App, island: &Entity<Island>, paths: Vec<PathBuf>) {
         kind: WindowKind::PopUp,
         is_resizable: false,
         is_minimizable: false,
-        window_background: WindowBackgroundAppearance::Opaque,
+        window_background: WindowBackgroundAppearance::Transparent,
         window_min_size: Some(size(px(1.0), px(1.0))),
         ..Default::default()
     };
     let island = island.downgrade();
     let opened = cx.open_window(options, |window, cx| {
+        let raw = hwnd(window).map_or(0, |hwnd| hwnd.0 as usize);
         if let Some(hwnd) = hwnd(window) {
             win32::apply_strip_styles(hwnd);
-            win32::round_corners(hwnd);
             win32::bring_to_front(hwnd);
-            let raw = hwnd.0 as usize;
-            cx.defer(move |_| win32::move_window(HWND(raw as *mut _), x, y, w, h, true));
+            cx.defer(move |_| {
+                let hwnd = HWND(raw as *mut _);
+                win32::move_window(hwnd, x, y, w, h, true);
+                win32::set_clip(hwnd, rounded(w, h, scale));
+            });
         }
         let panel = cx.new(|cx| {
             let focus = cx.focus_handle();
@@ -165,6 +186,8 @@ pub fn open(cx: &mut App, island: &Entity<Island>, paths: Vec<PathBuf>) {
                 scale,
                 height: 240.0,
                 clip: None,
+                cards: None,
+                hwnd: raw,
             };
             panel.add(paths, cx);
             panel
@@ -211,13 +234,13 @@ impl Panel {
             path: path.clone(),
         }));
         self.files_changed(cx);
-        let size = (THUMB * self.scale).round() as i32;
+        let size = (TILE * self.scale).round() as i32;
         let (tx, rx) = async_channel::unbounded();
         std::thread::spawn(move || {
             win32::with_com(COINIT_MULTITHREADED, || {
                 for path in new {
                     let bytes = std::fs::metadata(&path).map_or(0, |m| m.len());
-                    let thumb = icon::load(&path, size);
+                    let thumb = icon::load_cover(&path, size, TILE / THUMB, None);
                     if tx.send_blocking((path, bytes, thumb)).is_err() {
                         break;
                     }
@@ -255,7 +278,7 @@ impl Panel {
             self.action = available.first().copied();
         }
         self.options.fit_to(&self.files);
-        if !matches!(self.state, State::Running { .. }) {
+        if !self.running() {
             self.state = State::Ready;
         }
         self.show_clip(cx);
@@ -273,7 +296,7 @@ impl Panel {
     }
 
     pub fn running(&self) -> bool {
-        matches!(self.state, State::Running { .. })
+        matches!(self.state, State::Running { .. } | State::Fetching { .. })
     }
 
     /// Close the panel; a job still running is cancelled first.
@@ -351,10 +374,10 @@ impl Panel {
                     _ => return,
                 },
             }
-            self.state = match self.state {
-                State::Running { .. } => return cx.notify(),
-                _ => State::Ready,
-            };
+            if self.running() {
+                return cx.notify();
+            }
+            self.state = State::Ready;
             cx.stop_propagation();
             return cx.notify();
         }
@@ -379,7 +402,7 @@ impl Panel {
     }
 
     pub fn cancel(&mut self) {
-        if let State::Running { cancel, .. } = &self.state {
+        if let State::Running { cancel } | State::Fetching { cancel, .. } = &self.state {
             cancel.store(true, Ordering::Relaxed);
         }
     }
@@ -428,6 +451,7 @@ impl Panel {
         let raw = hwnd.0 as usize;
         cx.spawn(async move |_, _: &mut AsyncApp| {
             win32::resize_window(HWND(raw as *mut _), w, h);
+            win32::set_clip(HWND(raw as *mut _), rounded(w, h, scale));
         })
         .detach();
     }

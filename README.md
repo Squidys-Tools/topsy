@@ -42,6 +42,7 @@ trimmed, turned into a GIF or a PDF, stripped of metadata or cut out of their ba
 | `src/model/hud.rs` | The HUDs: how much of the bar a level lights, and which battery changes are worth showing |
 | `src/model/dib.rs` | Reading a copied bitmap (`CF_DIB`/`CF_DIBV5`) to RGBA, and writing one back to paste |
 | `src/model/transform.rs` | Transform: which actions suit which files, the panel's summary line, and naming results and renames |
+| `src/model/transform_card.rs` | What a Transform result card says: size before and after, then the sides or the name |
 | `src/model/image_ops.rs`, `image_geometry.rs`, `magick.rs`, `size_search.rs` | Image Transforms: formats and picking one, sizes, crops and turns, ImageMagick's and oxipng's command lines, landing under a size |
 | `src/model/heif.rs` | Writing HEIC: x265's command line, lifting the coded frame out of FFmpeg's MP4, and the HEIF boxes around it |
 | `src/model/orientation.rs`, `exif.rs`, `jpeg/` | Turning a photo once (its EXIF orientation and the user's turn composed), and JPEGs turned and stripped losslessly without a decode |
@@ -65,7 +66,7 @@ trimmed, turned into a GIF or a PDF, stripped of metadata or cut out of their ba
 | `src/hud.rs` | The HUDs: the notch dropping down to show a new volume, brightness or battery state; the *Volume HUD* setting |
 | `src/settings.rs` | The on/off settings, one list shared by the menu and the settings window |
 | `src/settings_window.rs` | The settings window: a switch per setting, how long clipboard history is kept, the version, Quit |
-| `src/transform/` | The Transform panel (`mod`, `view`, `options`, `widgets`, `clip` for the trim range), its worker (`job`), the bridge to the engines (`engines`, `pictures`), the engines (`image`, `pdf`, `video`, `background`), and the downloaded tools (`fetch`, `tools`) |
+| `src/transform/` | The Transform panel (`mod`, `view`, `options`, `widgets`, `clip` for the trim range), its result cards (`cards`), its worker (`job`), the bridge to the engines (`engines`, `pictures`), the engines (`image`, `pdf`, `video`, `background`), and the downloaded tools (`fetch`, `tools`) |
 | `src/app.rs` | The app's wiring: opens the island and connects the threads, tray icon and settings window to it |
 | `src/autostart.rs` | Start with Windows: one `HKCU\...\Run` value |
 | `src/media.rs` | The system's media session (WinRT `GlobalSystemMediaTransportControlsSessionManager`) on its own thread |
@@ -266,8 +267,12 @@ it falls below 20% and 10% (or is unplugged below 20%), and when it is full on t
 *Transform* on a chip's menu, or in the shelf's header, opens a panel laid out after Droppy's: the files at the
 top, a tile for each action that suits them, the chosen action's options, and one button. Results are saved
 beside the originals (`photo (compressed).jpg`, `report (page 2).png`, `Combined.pdf`), numbered rather than
-overwriting, and parked on the shelf. Only Rename touches the originals; Cancel, or a file that fails, stops the
-work and deletes what it had made.
+overwriting, and parked on the shelf. While it works, the panel steps aside for a column of result cards where
+it stood, as Droppy's does: one per file (one for a zip, a PDF or a rename), blurred with a progress bar while
+waiting or working, then sharp with the size before and after and the picture's sides. A card opens its result;
+the cards go by themselves six seconds after the last is done, unless the cursor is on them. Only Rename touches
+the originals; a card's stop button, or a file that fails, stops the work, deletes what it had made and brings
+the panel back.
 
 - **Images:** Compress (by quality or to a size, as JPEG, PNG, HEIC, WebP or AVIF, or *Most compatible*: JPEG, or
   PNG when there is transparency; a largest side), Convert (JPEG, PNG, HEIC, WebP, AVIF, TIFF, GIF, BMP, ICO,
@@ -285,7 +290,7 @@ How it is built:
   ImageMagick 7.1.2 (portable Q16, 12 MB) and oxipng 10.2 do images; pdfium (bblanchon's Chromium build, 4 MB)
   draws PDF pages and lopdf rewrites PDFs. Each is pinned to an immutable release URL with its size and SHA-256
   (`fetch::Pinned`), downloaded under `%LOCALAPPDATA%\topsy\tools` the first time an action needs it (the
-  progress line says *Getting FFmpeg…*), resumed if cut off, and checked before it is unpacked. Bump a version by
+  card says *Getting FFmpeg…*), resumed if cut off, and checked before it is unpacked. Bump a version by
   changing the pin, size and hash together. They run as processes with no window, below normal priority
   (`tools::run`); a cancel kills the process. Nothing of them is bundled or compiled in.
 - **HEIC is packed in Rust** (`model/heif`). The portable ImageMagick reads HEIC but has no HEVC encoder, so
@@ -305,7 +310,10 @@ How it is built:
   match.
 - **Remove background runs on this PC:** BiRefNet-lite (a 178 MB model from Hugging Face, fetched once) in pure
   Rust on the CPU, through gemm and rayon.
-- **The panel takes the focus,** like the settings window, since it is typed into; the island still never does.
+- **The panel takes the focus,** like the settings window, since it is typed into; the island and the result
+  cards never do. The panel's window is transparent outside its rounded corners, with a region a pixel looser
+  so they are click-through too (as the floating tray's). A card's picture is cropped to the card before it
+  is drawn: GPUI rounds a covering image's overflowing bounds, not the box that clips it.
   The filmstrip's frames are decoded once, in parallel, when a clip is picked; an idle panel renders nothing.
 
 ## Notch

@@ -1,32 +1,94 @@
 //! The panel's layout, after Droppy's: a header (the Transform icon, what is in it, close), the
 //! files as thumbnails with an Add tile, the grid of actions that suit them, the chosen
-//! action's options, and the button that runs it, which becomes a progress bar while it does.
+//! action's options, and the button that runs it. While it runs, the result cards take over.
 
 use gpui::{
-    ClickEvent, Context, Div, FontWeight, IntoElement, ObjectFit, Render, Window, canvas, div, img,
-    prelude::*, px, rgb, rgba,
+    AnyElement, ClickEvent, Context, Div, FontWeight, IntoElement, ObjectFit, Render, Window,
+    canvas, div, img, prelude::*, px, rgb, rgba,
 };
 
 use super::widgets::{ACCENT, DIM, FAINT, ICONS, button, primary, tile};
-use super::{Panel, State, THUMB, WIDTH};
+use super::{Panel, RADIUS, State, THUMB, TILE, WIDTH};
 use crate::model::transform::{Action, actions, size, summary};
 
 const PAD: f32 = 14.0;
 
-fn glyph(action: Action) -> char {
-    match action {
+fn glyph(action: Action) -> AnyElement {
+    let c = match action {
         Action::Compress => '\u{e73f}',
         Action::Convert => '\u{e895}',
-        Action::Resize => '\u{e740}',
+        Action::Resize => '\u{e8a3}',
         Action::Trim => '\u{e8c6}',
         Action::MakeGif => '\u{f4a9}',
-        Action::RemoveBackground => '\u{e77b}',
+        Action::RemoveBackground => '\u{e8d4}',
         Action::Rotate => '\u{e7ad}',
         Action::RemoveMetadata => '\u{ed1a}',
-        Action::CombinePdf => '\u{e8a5}',
+        Action::CombinePdf => '\u{e8c8}',
         Action::Zip => '\u{f012}',
-        Action::Rename => '\u{e8ac}',
-    }
+        Action::Rename => return rename_glyph(),
+    };
+    div()
+        .font_family(ICONS)
+        .text_size(px(18.0))
+        .child(c.to_string())
+        .into_any_element()
+}
+
+/// Rename's icon, as Droppy draws it: a letter and a text cursor beside it.
+fn rename_glyph() -> AnyElement {
+    let serif = || div().w(px(6.0)).h(px(1.5)).bg(rgb(0xffffff));
+    div()
+        .flex()
+        .items_center()
+        .gap(px(1.0))
+        .child(div().text_size(px(19.0)).child("A"))
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .items_center()
+                .child(serif())
+                .child(div().w(px(1.5)).h(px(16.0)).bg(rgb(0xffffff)))
+                .child(serif()),
+        )
+        .into_any_element()
+}
+
+/// The Transform icon: a lilac page with a white badge of blue arrows.
+fn badge() -> Div {
+    div()
+        .relative()
+        .flex_none()
+        .size(px(36.0))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(px(10.0))
+        .bg(rgb(0x232326))
+        .border_1()
+        .border_color(rgba(0xffffff14))
+        .font_family(ICONS)
+        .child(
+            div()
+                .text_size(px(19.0))
+                .text_color(rgb(0x9c9aff))
+                .child("\u{e729}"),
+        )
+        .child(
+            div()
+                .absolute()
+                .right(px(4.0))
+                .bottom(px(4.0))
+                .size(px(14.0))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded_full()
+                .bg(rgb(0xffffff))
+                .text_size(px(9.0))
+                .text_color(rgb(0x0a84ff))
+                .child("\u{e895}"),
+        )
 }
 
 impl Panel {
@@ -39,18 +101,7 @@ impl Panel {
             .on_mouse_down(gpui::MouseButton::Left, |_, window, _| {
                 window.start_window_move()
             })
-            .child(
-                div()
-                    .size(px(30.0))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(px(8.0))
-                    .bg(rgb(ACCENT))
-                    .font_family(ICONS)
-                    .text_size(px(15.0))
-                    .child("\u{e8ab}"),
-            )
+            .child(badge())
             .child(
                 div()
                     .flex_1()
@@ -58,7 +109,7 @@ impl Panel {
                     .flex_col()
                     .child(
                         div()
-                            .text_sm()
+                            .text_size(px(15.0))
                             .font_weight(FontWeight::SEMIBOLD)
                             .child("Transform"),
                     )
@@ -72,17 +123,18 @@ impl Panel {
             .child(
                 div()
                     .id("close")
-                    .size(px(26.0))
+                    .flex_none()
+                    .size(px(32.0))
                     .flex()
                     .items_center()
                     .justify_center()
                     .rounded_full()
-                    .bg(rgba(FAINT))
+                    .bg(rgba(0xffffff1c))
                     .font_family(ICONS)
-                    .text_size(px(10.0))
+                    .text_size(px(11.0))
                     .cursor_pointer()
-                    .hover(|s| s.bg(rgba(0xffffff24)))
-                    .child("\u{e711}")
+                    .hover(|s| s.bg(rgba(0xffffff2e)))
+                    .child("\u{e8bb}")
                     .on_click(cx.listener(|panel, _: &ClickEvent, window, _| panel.close(window))),
             )
     }
@@ -99,7 +151,8 @@ impl Panel {
                 let picture = match &file.thumb {
                     Some(thumb) => img(thumb.clone())
                         .size_full()
-                        .object_fit(ObjectFit::Cover)
+                        .rounded(px(10.0))
+                        .object_fit(ObjectFit::Fill)
                         .into_any_element(),
                     None => div().into_any_element(),
                 };
@@ -107,7 +160,7 @@ impl Panel {
                     .id(i)
                     .group("file")
                     .relative()
-                    .w(px(80.0))
+                    .w(px(TILE))
                     .flex_none()
                     .flex()
                     .flex_col()
@@ -116,8 +169,7 @@ impl Panel {
                         div()
                             .w_full()
                             .h(px(THUMB))
-                            .rounded(px(8.0))
-                            .overflow_hidden()
+                            .rounded(px(10.0))
                             .bg(rgba(FAINT))
                             .child(picture),
                     )
@@ -126,8 +178,9 @@ impl Panel {
                             .mt(px(5.0))
                             .w_full()
                             .text_center()
-                            .text_size(px(10.0))
-                            .line_height(px(13.0))
+                            .text_size(px(11.0))
+                            .line_height(px(14.0))
+                            .font_weight(FontWeight::MEDIUM)
                             .truncate()
                             .child(name),
                     )
@@ -168,7 +221,7 @@ impl Panel {
             });
         let add = div()
             .id("add")
-            .w(px(80.0))
+            .w(px(TILE))
             .flex_none()
             .flex()
             .flex_col()
@@ -181,13 +234,21 @@ impl Panel {
                     .flex()
                     .items_center()
                     .justify_center()
-                    .rounded(px(8.0))
+                    .rounded(px(10.0))
                     .bg(rgba(FAINT))
                     .hover(|s| s.bg(rgba(0xffffff24)))
-                    .text_size(px(20.0))
-                    .child("+"),
+                    .font_family(ICONS)
+                    .text_size(px(16.0))
+                    .child("\u{e710}"),
             )
-            .child(div().mt(px(5.0)).text_size(px(10.0)).child("Add"))
+            .child(
+                div()
+                    .mt(px(5.0))
+                    .text_size(px(11.0))
+                    .line_height(px(14.0))
+                    .font_weight(FontWeight::MEDIUM)
+                    .child("Add"),
+            )
             .on_click(cx.listener(|panel, _: &ClickEvent, _, cx| panel.browse(cx)));
         div()
             .id("files")
@@ -222,9 +283,11 @@ impl Panel {
             return div();
         };
         match &self.state {
-            State::Running {
-                label, progress, ..
-            } => {
+            // The cards show the run; the panel is hidden meanwhile.
+            State::Running { .. } => {
+                div().child(primary("run", self.button_label(action).0, false))
+            }
+            State::Fetching { progress, .. } => {
                 div()
                     .flex()
                     .flex_col()
@@ -234,7 +297,7 @@ impl Panel {
                             .flex()
                             .justify_between()
                             .text_xs()
-                            .child(label.clone())
+                            .child("Getting FFmpeg…")
                             .child(button("cancel", "Cancel").on_click(
                                 cx.listener(|panel, _: &ClickEvent, _, _| panel.cancel()),
                             )),
@@ -248,34 +311,6 @@ impl Panel {
                                 .bg(rgb(ACCENT)),
                         ),
                     )
-            }
-            State::Done { message, outputs } => {
-                let first = outputs.first().cloned();
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .gap(px(8.0))
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(6.0))
-                            .text_xs()
-                            .child(
-                                div()
-                                    .font_family(ICONS)
-                                    .text_color(rgb(0x34c759))
-                                    .child("\u{e73e}"),
-                            )
-                            .child(message.clone()),
-                    )
-                    .children(first.map(|path| {
-                        button("show", "Show in folder").on_click(move |_, _, _| {
-                            let path = path.clone();
-                            std::thread::spawn(move || crate::win32::show_in_folder(&path));
-                        })
-                    }))
             }
             State::Failed(message) => div()
                 .flex()
@@ -337,7 +372,10 @@ impl Render for Panel {
                 panel.add(paths.paths().to_vec(), cx)
             }))
             .size_full()
-            .bg(rgb(0x000000))
+            .rounded(px(RADIUS))
+            .bg(rgb(0x0c0c0e))
+            .border_1()
+            .border_color(rgba(0xffffff1f))
             .text_color(rgb(0xffffff))
             .text_sm()
             .child(content)

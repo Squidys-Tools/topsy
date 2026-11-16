@@ -215,7 +215,7 @@ pub fn field(
 /// An action tile in the grid: a square-ish button with its glyph and the label under it.
 pub fn tile(
     id: impl Into<ElementId>,
-    glyph: char,
+    glyph: AnyElement,
     label: &'static str,
     selected: bool,
 ) -> Stateful<Div> {
@@ -235,11 +235,9 @@ pub fn tile(
                 .items_center()
                 .justify_center()
                 .rounded(px(10.0))
-                .font_family(ICONS)
-                .text_size(px(17.0))
                 .bg(if selected { rgb(ACCENT) } else { rgba(FAINT) })
                 .when(!selected, |s| s.hover(|s| s.bg(rgba(0xffffff24))))
-                .child(glyph.to_string()),
+                .child(glyph),
         )
         .child(
             div()
@@ -247,8 +245,12 @@ pub fn tile(
                 .text_center()
                 .text_size(px(11.0))
                 .line_height(px(14.0))
-                .when(selected, |s| s.font_weight(FontWeight::SEMIBOLD))
-                .when(!selected, |s| s.text_color(rgba(0xffffffb3)))
+                .font_weight(if selected {
+                    FontWeight::SEMIBOLD
+                } else {
+                    FontWeight::MEDIUM
+                })
+                .when(!selected, |s| s.text_color(rgba(0xffffffc7)))
                 .child(label),
         )
 }

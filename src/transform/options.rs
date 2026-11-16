@@ -98,7 +98,7 @@ impl Default for Options {
             quality: 0.75,
             pdf_quality: 1,
             image_format: 0,
-            side: 0,
+            side: 3,
             target: 3,
             resolution: 0,
             bitrate: 3,
@@ -220,7 +220,11 @@ impl Panel {
         };
         let quality = || {
             row(
-                "Quality",
+                if kind == Kind::Video {
+                    "Video quality"
+                } else {
+                    "Image quality"
+                },
                 div()
                     .flex()
                     .items_center()
