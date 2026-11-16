@@ -63,6 +63,15 @@ fn pdf_error(e: PdfiumError) -> io::Error {
     }
 }
 
+fn keep(p: &Path) -> bool {
+    p.extension().is_some_and(|e| e == "dll") || p.starts_with("LICENSE")
+}
+
+/// Fetches pdfium if it isn't here yet.
+pub fn fetch(progress: &dyn Fn(f32), cancel: &AtomicBool) -> io::Result<()> {
+    PDFIUM.get_with(&keep, progress, cancel).map(drop)
+}
+
 /// Each page as a picture at `dpi`, written to `out(page index)`. Returns how many were written.
 pub fn to_images(
     src: &Path,
@@ -73,7 +82,6 @@ pub fn to_images(
     cancel: &AtomicBool,
 ) -> io::Result<usize> {
     let steps = Steps::new(progress, cancel);
-    let keep = |p: &Path| p.extension().is_some_and(|e| e == "dll") || p.starts_with("LICENSE");
     let dll = steps.tool(&PDFIUM, &keep)?;
     steps.at(0.0)?;
     let doc = pdfium(&dll)?

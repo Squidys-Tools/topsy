@@ -75,10 +75,6 @@ impl Builder {
         }
     }
 
-    pub fn pages(&self) -> usize {
-        self.kids.len()
-    }
-
     pub fn add(
         &mut self,
         part: Part,

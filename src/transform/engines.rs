@@ -11,6 +11,7 @@ use super::Panel;
 use super::background::{self, ModelStatus};
 use super::job::{Input, into, reserve};
 use super::options::{BITRATES, Options, VIDEO_TARGETS};
+use super::pictures::{self, Pictures};
 use super::video;
 use super::widgets::note;
 use crate::model::transform::{Action, Kind, result_paths};
@@ -31,6 +32,7 @@ pub enum Work {
 pub struct Each {
     action: Action,
     media: Media,
+    pictures: Pictures,
 }
 
 /// What video and audio files get.
@@ -66,13 +68,18 @@ pub fn button_label(panel: &Panel, action: Action) -> (String, bool) {
     let ready = match action {
         Action::Trim => panel.trim_range().is_some(),
         Action::MakeGif => panel.trim_range().is_some_and(|r| r.for_gif().is_ok()),
+        Action::Resize => pictures::resize(&panel.options).is_some(),
+        // PDF pages turn but don't mirror.
+        Action::Rotate if panel.files.iter().any(|f| f.kind == Kind::Pdf) => {
+            panel.options.rotation < 3
+        }
         _ => true,
     };
     (action.label().into(), ready)
 }
 
 /// "8 MB" or "500 KB" in bytes, in the decimal units the panel shows sizes in.
-fn bytes(label: &str) -> u64 {
+pub(super) fn bytes(label: &str) -> u64 {
     let (n, unit) = label.split_once(' ').unwrap_or((label, ""));
     let n: u64 = n.parse().unwrap_or(0);
     match unit {
@@ -143,12 +150,13 @@ pub fn work(panel: &Panel, action: Action) -> Result<Work, String> {
         _ => Work::Each(Each {
             action,
             media: media(&panel.options, panel.trim_range()),
+            pictures: pictures::pictures(&panel.options),
         }),
     })
 }
 
-/// What has to happen once before the files: fetching the background model or FFmpeg on first
-/// use, with the progress line saying so.
+/// What has to happen once before the files: fetching the background model, FFmpeg or the
+/// picture tools on first use, with the progress line saying so.
 pub fn prepare(
     work: &Work,
     inputs: &[Input],
@@ -159,13 +167,14 @@ pub fn prepare(
         Work::Background if background::model_status() != ModelStatus::Ready => {
             background::download(&|p| progress("Getting the model…".into(), p), cancel)
         }
-        Work::Each(_)
-            if inputs
+        Work::Each(each) => {
+            let media = inputs
                 .iter()
-                .any(|i| matches!(i.kind, Kind::Video | Kind::Audio))
-                && video::status() != super::fetch::Status::Ready =>
-        {
-            video::prepare(&|p| progress("Getting FFmpeg…".into(), p), cancel)
+                .any(|i| matches!(i.kind, Kind::Video | Kind::Audio));
+            if media && video::status() != super::fetch::Status::Ready {
+                video::prepare(&|p| progress("Getting FFmpeg…".into(), p), cancel)?;
+            }
+            pictures::prepare(each.action, &each.pictures, inputs, progress, cancel)
         }
         _ => Ok(()),
     }
@@ -203,10 +212,12 @@ pub fn run_one(
         (Work::Each(each), Kind::Video | Kind::Audio) => {
             media_one(each.action, &each.media, src, input.kind, progress, cancel)
         }
-        (Work::Each(each), _) => Err(io::Error::other(format!(
-            "{} isn't ready for this kind of file yet",
-            each.action.label()
-        ))),
+        (Work::Each(each), Kind::Image) => {
+            pictures::image_one(each.action, &each.pictures, src, progress, cancel)
+        }
+        (Work::Each(each), Kind::Pdf) => {
+            pictures::pdf_one(each.action, &each.pictures, src, progress, cancel)
+        }
         _ => Err(io::Error::other("Not a per-file action")),
     }
 }
@@ -281,8 +292,12 @@ pub fn run_all(
     progress: &dyn Fn(String, f32),
     cancel: &AtomicBool,
 ) -> io::Result<Vec<PathBuf>> {
-    let _ = (work, inputs, progress, cancel);
-    Err(io::Error::other("Combine into PDF isn't ready yet"))
+    match work {
+        Work::Each(each) if each.action == Action::CombinePdf => {
+            pictures::combine(&each.pictures, inputs, progress, cancel)
+        }
+        _ => Err(io::Error::other("Not an action on all the files")),
+    }
 }
 
 impl Panel {

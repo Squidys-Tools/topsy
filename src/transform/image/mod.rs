@@ -28,6 +28,14 @@ use crate::model::orientation::Orientation;
 use crate::model::pdf::PageSize;
 use crate::model::size_search::fit_to_size;
 
+/// Fetches ImageMagick and oxipng if they aren't here yet.
+pub fn fetch(progress: &dyn Fn(f32), cancel: &AtomicBool) -> io::Result<()> {
+    MAGICK.get_with(&tools::magick_files, &|p| progress(0.9 * p), cancel)?;
+    OXIPNG
+        .get_with(&|_| true, &|p| progress(0.9 + 0.1 * p), cancel)
+        .map(drop)
+}
+
 /// What [`probe`] learns without the full work of an operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ImageInfo {

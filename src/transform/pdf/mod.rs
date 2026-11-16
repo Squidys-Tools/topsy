@@ -19,8 +19,8 @@ use super::image::Kit;
 use crate::model::image_geometry::Rotation;
 use crate::model::pdf::{LADDER, PageSize, PdfCompress};
 
-pub use combine::Builder;
-pub use render::{PDFIUM, to_images};
+use combine::Builder;
+pub use render::{PDFIUM, fetch, to_images};
 
 /// What Compress PDF wrote.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

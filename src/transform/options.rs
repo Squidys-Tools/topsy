@@ -7,17 +7,18 @@ use super::widgets::{field, note, picker, row, segmented, slider};
 use super::{Field, File, Panel};
 use crate::model::transform::{Action, Kind, rename_targets};
 
-pub const IMAGE_FORMATS: [&str; 7] = [
+/// In `CompressFormat::ALL` order.
+pub const IMAGE_FORMATS: [&str; 6] = [
     "Most compatible",
     "Same as original",
     "JPEG",
     "PNG",
     "WebP",
-    "HEIC",
     "AVIF",
 ];
-pub const CONVERT_IMAGE: [&str; 10] = [
-    "JPEG", "PNG", "WebP", "HEIC", "AVIF", "TIFF", "BMP", "GIF", "ICO", "PDF",
+/// In `Format::ALL` order.
+pub const CONVERT_IMAGE: [&str; 9] = [
+    "JPEG", "PNG", "WebP", "AVIF", "TIFF", "GIF", "BMP", "ICO", "PDF",
 ];
 /// The video formats in `VideoFormat::ALL` order, then the sound alone in `AudioFormat::FROM_VIDEO`'s.
 pub const CONVERT_VIDEO: [&str; 9] = [
@@ -33,11 +34,15 @@ pub const CONVERT_VIDEO: [&str; 9] = [
 ];
 /// In `AudioFormat::ALL` order.
 pub const CONVERT_AUDIO: [&str; 6] = ["M4A (AAC)", "MP3", "WAV", "FLAC", "OGG (Opus)", "AIFF"];
+/// In `PageFormat::ALL` order.
 pub const CONVERT_PDF: [&str; 2] = ["PNG images", "JPEG images"];
+/// In `PdfQuality::ALL` order.
+pub const PDF_QUALITY: [&str; 3] = ["High", "Balanced", "Smallest"];
+/// In `PAGE_DPI` order.
 pub const DPI: [&str; 3] = ["72 dpi", "150 dpi", "300 dpi"];
-pub const SIDES: [&str; 9] = [
-    "Original", "4096 px", "3840 px", "2560 px", "1920 px", "1280 px", "1024 px", "800 px",
-    "640 px",
+/// In `LargestSide::PRESETS` order.
+pub const SIDES: [&str; 8] = [
+    "Original", "3840 px", "2560 px", "1920 px", "1600 px", "1280 px", "1024 px", "640 px",
 ];
 pub const IMAGE_TARGETS: [&str; 6] = ["100 KB", "250 KB", "500 KB", "1 MB", "2 MB", "5 MB"];
 pub const VIDEO_TARGETS: [&str; 7] = [
@@ -60,6 +65,7 @@ pub const PAGES: [&str; 3] = ["Fit to image", "A4", "Letter"];
 pub struct Options {
     pub by_size: bool,
     pub quality: f32,
+    pub pdf_quality: usize,
     pub image_format: usize,
     pub side: usize,
     pub target: usize,
@@ -91,6 +97,7 @@ impl Default for Options {
         Options {
             by_size: false,
             quality: 0.75,
+            pdf_quality: 1,
             image_format: 0,
             side: 0,
             target: 3,
@@ -249,6 +256,16 @@ impl Panel {
                         "Target size",
                         choice!(self, cx, "target", Options::targets(kind), target),
                     ));
+                } else if kind == Kind::Pdf {
+                    rows.push(row(
+                        "Quality",
+                        segmented(
+                            "pdfq",
+                            &PDF_QUALITY,
+                            o.pdf_quality,
+                            seg(|p, i| p.options.pdf_quality = i),
+                        ),
+                    ));
                 } else if kind != Kind::Audio {
                     rows.push(quality());
                 }
@@ -316,7 +333,12 @@ impl Panel {
                 "Rotate",
                 segmented(
                     "rot",
-                    &ROTATIONS,
+                    // PDF pages turn but don't mirror.
+                    if kind == Kind::Pdf {
+                        &ROTATIONS[..3]
+                    } else {
+                        &ROTATIONS
+                    },
                     o.rotation,
                     seg(|p, i| p.options.rotation = i),
                 ),
