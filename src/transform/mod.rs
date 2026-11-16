@@ -7,8 +7,11 @@
 pub mod background;
 mod engines;
 pub mod fetch;
+pub mod image;
 mod job;
 mod options;
+pub mod pdf;
+mod steps;
 pub mod tools;
 mod view;
 mod widgets;
@@ -31,6 +34,7 @@ use crate::win32::{self, MenuEntry};
 use crate::{Island, icon, log};
 
 pub use options::Options;
+pub use steps::Steps;
 
 /// The panel's width; its height follows what it shows.
 const WIDTH: f32 = 384.0;
