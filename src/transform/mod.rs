@@ -4,6 +4,7 @@
 //! never does), and parks what it makes on the shelf. The rules are in `model::transform`;
 //! the work itself is in the engines beside this file, run on a worker thread by `job`.
 
+pub mod background;
 mod engines;
 mod job;
 mod options;
