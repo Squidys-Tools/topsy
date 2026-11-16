@@ -3,26 +3,23 @@
 //! into: arrows choose, Enter or a click pastes into the app that was in front, typing
 //! searches. It closes when it loses the focus. There is at most one.
 
-use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use gpui::{
-    App, Bounds, Context, FocusHandle, Global, KeyDownEvent, MouseButton, MouseDownEvent,
-    RenderImage, ScrollHandle, Subscription, TitlebarOptions, Window, WindowBackgroundAppearance,
-    WindowBounds, WindowHandle, WindowKind, WindowOptions, div, point, prelude::*, px, rgb, rgba,
-    size,
+    App, Bounds, ClickEvent, Context, FocusHandle, Global, KeyDownEvent, MouseButton, MouseUpEvent,
+    ScrollHandle, Subscription, TitlebarOptions, Window, WindowBackgroundAppearance, WindowBounds,
+    WindowHandle, WindowKind, WindowOptions, div, point, prelude::*, px, rgb, rgba, size,
 };
 use raw_window_handle::HasWindowHandle;
 use windows::Win32::Foundation::HWND;
-use windows::Win32::System::Com::COINIT_MULTITHREADED;
 
 use super::card::{self, card};
+use super::pictures::Pictures;
 use super::{Command, Event};
-use crate::model::clip_kind::matches;
+use crate::log;
+use crate::model::clip_kind::{Kind, matches};
 use crate::model::clipboard::Entry;
 use crate::win32::{self, MenuEntry, paste};
-use crate::{icon, log};
 
 /// The strip's height and its gap to the screen's edges, in logical pixels.
 const HEIGHT: f32 = 284.0;
@@ -39,6 +36,8 @@ pub struct Strip {
     focus: FocusHandle,
     scroll: ScrollHandle,
     entries: Arc<[Entry]>,
+    /// Each entry's kind, worked out once per change to the history.
+    kinds: Vec<Kind>,
     /// Indexes into `entries` that the search and tab let through, at most `MAX_SHOWN`.
     shown: Vec<usize>,
     selected: usize,
@@ -47,8 +46,7 @@ pub struct Strip {
     /// The window in front when the hotkey was pressed, which a paste goes back to.
     previous: usize,
     scale: f32,
-    pictures: HashMap<PathBuf, Arc<RenderImage>>,
-    asked: HashSet<PathBuf>,
+    pictures: Pictures,
     /// A card's menu is up; losing the focus to it doesn't close the strip.
     menu: bool,
     _activation: Option<Subscription>,
@@ -135,14 +133,14 @@ fn toggle(cx: &mut App, previous: usize) {
                 focus,
                 scroll: ScrollHandle::new(),
                 entries: Arc::new([]),
+                kinds: Vec::new(),
                 shown: Vec::new(),
                 selected: 0,
                 query: String::new(),
                 pinned_only: false,
                 previous,
                 scale,
-                pictures: HashMap::new(),
-                asked: HashSet::new(),
+                pictures: Pictures::default(),
                 menu: false,
                 _activation: Some(activation),
             };
@@ -167,6 +165,7 @@ impl Strip {
         // A copy or an expiry while open shifts the list; stay on the same entry.
         let held = self.entry(self.selected).map(|e| e.id);
         self.entries = super::entries();
+        self.kinds = self.entries.iter().map(|e| e.content.kind()).collect();
         self.filter(cx);
         if let Some(at) = held.and_then(|id| {
             (0..self.shown.len()).find(|&i| self.entry(i).is_some_and(|e| e.id == id))
@@ -176,8 +175,10 @@ impl Strip {
     }
 
     fn filter(&mut self, cx: &mut Context<Self>) {
-        self.shown = (self.entries.iter().enumerate())
-            .filter(|(_, e)| (!self.pinned_only || e.pinned) && matches(e, &self.query))
+        self.shown = (self.entries.iter().zip(&self.kinds).enumerate())
+            .filter(|&(_, (e, &kind))| {
+                (!self.pinned_only || e.pinned) && matches(e, kind, &self.query)
+            })
             .map(|(i, _)| i)
             .take(MAX_SHOWN)
             .collect();
@@ -195,46 +196,13 @@ impl Strip {
         self.entries.get(*self.shown.get(at)?)
     }
 
-    /// Load the pictures the shown cards want and don't have, on a worker thread of its own
-    /// (the shell wants COM there); each card updates as its picture arrives.
     fn fetch(&mut self, cx: &mut Context<Self>) {
-        let mut wanted = Vec::new();
-        for &i in &self.shown {
-            for (path, size) in card::wants(&self.entries[i], super::image_path) {
-                if self.asked.insert(path.clone()) {
-                    wanted.push((path, (size * self.scale).round() as i32));
-                }
-            }
-        }
-        if wanted.is_empty() {
-            return;
-        }
-        let (tx, rx) = async_channel::unbounded();
-        std::thread::spawn(move || {
-            win32::with_com(COINIT_MULTITHREADED, || {
-                for (path, size) in wanted {
-                    let picture = icon::load(&path, size);
-                    if tx.send_blocking((path, picture)).is_err() {
-                        break;
-                    }
-                }
-            })
-        });
-        cx.spawn(async move |this, cx| {
-            while let Ok((path, picture)) = rx.recv().await {
-                let Some(picture) = picture else {
-                    continue;
-                };
-                let updated = this.update(cx, |this, cx| {
-                    this.pictures.insert(path, picture);
-                    cx.notify();
-                });
-                if updated.is_err() {
-                    break;
-                }
-            }
-        })
-        .detach();
+        let wants = (self.shown.iter()).flat_map(|&i| card::wants(&self.entries[i], self.kinds[i]));
+        let wants: Vec<_> = wants.collect();
+        self.pictures
+            .fetch(wants, self.scale, cx, |strip: &mut Self| {
+                &mut strip.pictures
+            });
     }
 
     /// Close the strip; `give_back` returns the focus to the app it came from.
@@ -259,7 +227,9 @@ impl Strip {
             let put = super::data(&entry).is_some_and(|data| paste::put(&data));
             let previous = HWND(previous as *mut _);
             if put && paste {
-                paste::paste_into(previous);
+                if !paste::paste_into(previous) {
+                    log("clipboard paste skipped: no keys sent");
+                }
             } else {
                 if !put {
                     eprintln!("topsy: could not put clipboard entry {} back", entry.id);
@@ -326,7 +296,7 @@ impl Strip {
         let entries = [
             MenuEntry::Item(1, "&Paste"),
             MenuEntry::Item(2, "&Copy"),
-            MenuEntry::Item(3, if pinned { "Un&pin" } else { "&Pin" }),
+            MenuEntry::Item(3, if pinned { "Unp&in" } else { "P&in" }),
             MenuEntry::Separator,
             MenuEntry::Item(4, "&Delete"),
         ];
@@ -421,22 +391,30 @@ impl Render for Strip {
         let cards = self.shown.iter().enumerate().map(|(at, &i)| {
             let entry = &self.entries[i];
             let selected = at == self.selected;
-            card(
-                entry,
-                selected,
-                now,
-                &self.pictures,
-                super::image_path(entry.id),
-            )
-            .id(("card", entry.id as usize))
-            .when(!selected, |card| {
-                card.hover(|card| card.border_color(rgba(0xffffff59)))
-            })
-            .on_click(cx.listener(move |this, _, window, _| this.take(at, true, window)))
-            .on_mouse_down(
-                MouseButton::Right,
-                cx.listener(move |this, _: &MouseDownEvent, window, cx| this.menu(at, window, cx)),
-            )
+            let more = div()
+                .id(("more", entry.id as usize))
+                .px(px(6.0))
+                .rounded_full()
+                .text_color(rgba(0xffffffb3))
+                .hover(|more| more.bg(rgba(0xffffff26)))
+                .child("\u{22ef}")
+                .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                    cx.stop_propagation();
+                    this.menu(at, window, cx);
+                }))
+                .into_any_element();
+            card(entry, self.kinds[i], selected, now, &self.pictures, more)
+                .id(("card", entry.id as usize))
+                .when(!selected, |card| {
+                    card.hover(|card| card.border_color(rgba(0xffffff59)))
+                })
+                .on_click(cx.listener(move |this, _, window, _| this.take(at, true, window)))
+                .on_mouse_up(
+                    MouseButton::Right,
+                    cx.listener(move |this, _: &MouseUpEvent, window, cx| {
+                        this.menu(at, window, cx)
+                    }),
+                )
         });
         let row = if self.shown.is_empty() {
             let empty = if self.entries.is_empty() {

@@ -142,12 +142,12 @@ pub fn ago(secs: u64) -> String {
 
 /// The line at the foot of a card: how long the text is, where a link goes, a colour's
 /// channels, an image's size, which files.
-pub fn detail(content: &Content) -> String {
+pub fn detail(content: &Content, kind: Kind) -> String {
     let count = |n: usize, one: &str| format!("{n} {one}{}", if n == 1 { "" } else { "s" });
     match content {
         Content::Text(text) => {
             let t = text.trim();
-            match kind_of(t) {
+            match kind {
                 Kind::Link => t.into(),
                 Kind::Color => {
                     color(t).map_or_else(String::new, |[r, g, b]| format!("RGB {r}, {g}, {b}"))
@@ -168,7 +168,7 @@ pub fn detail(content: &Content) -> String {
 
 /// Whether a search finds the entry: every word of `query`, ignoring case, in its text, its
 /// files' names, the app that copied it or its kind.
-pub fn matches(entry: &Entry, query: &str) -> bool {
+pub fn matches(entry: &Entry, kind: Kind, query: &str) -> bool {
     let mut hay = match &entry.content {
         Content::Text(text) => text.to_lowercase(),
         Content::Files(files) => files
@@ -184,7 +184,7 @@ pub fn matches(entry: &Entry, query: &str) -> bool {
         hay.push_str(&app.to_string_lossy().to_lowercase());
     }
     hay.push(' ');
-    hay.push_str(&entry.content.kind().label().to_lowercase());
+    hay.push_str(&kind.label().to_lowercase());
     query
         .to_lowercase()
         .split_whitespace()
@@ -243,6 +243,7 @@ mod tests {
 
     #[test]
     fn each_kind_has_its_own_footer() {
+        let detail = |c: &Content| detail(c, c.kind());
         let text = |s: &str| Content::Text(s.into());
         assert_eq!(detail(&text("Launch review moved")), "19 characters");
         assert_eq!(detail(&text("é")), "1 character");
@@ -277,19 +278,20 @@ mod tests {
             Content::Text("Launch Review at 10".into()),
             Some(r"C:\x\Notepad.exe"),
         );
-        assert!(matches(&note, ""));
-        assert!(matches(&note, "review LAUNCH"));
-        assert!(matches(&note, "notepad"));
-        assert!(matches(&note, "text"));
-        assert!(!matches(&note, "launch dinner"));
+        assert!(matches(&note, note.content.kind(), ""));
+        assert!(matches(&note, note.content.kind(), "review LAUNCH"));
+        assert!(matches(&note, note.content.kind(), "notepad"));
+        assert!(matches(&note, note.content.kind(), "text"));
+        assert!(!matches(&note, note.content.kind(), "launch dinner"));
         let files = entry(Content::Files(vec![r"C:\work\Budget.xlsx".into()]), None);
-        assert!(matches(&files, "budget"));
-        assert!(!matches(&files, "work"));
+        assert!(matches(&files, files.content.kind(), "budget"));
+        assert!(!matches(&files, files.content.kind(), "work"));
         let image = Content::Image {
             width: 1,
             height: 1,
             hash: 0,
         };
-        assert!(matches(&entry(image, None), "image"));
+        let image = entry(image, None);
+        assert!(matches(&image, Kind::Image, "image"));
     }
 }

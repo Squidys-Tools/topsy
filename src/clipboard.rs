@@ -1,10 +1,13 @@
 //! Clipboard history on disk. One thread owns the history and its folder
 //! (`%LOCALAPPDATA%\topsy\clipboard`): each entry is `<id>.json`, an image's pixels
-//! `<id>.png` beside it. Copies arrive from the clipboard watcher and changes from the strip;
-//! the thread wakes otherwise only when the oldest entry is due to expire. It publishes each
-//! new state for the strip to read. The rules are in `model::clipboard`.
+//! `<id>.png` beside it, a link's site icon `icons\<host>.png`. Copies arrive from the
+//! clipboard watcher and changes from the strip; the thread wakes otherwise only when the
+//! oldest entry is due to expire. It publishes each new state for the strip to read. The rules
+//! are in `model::clipboard`.
 
 mod card;
+mod favicon;
+mod pictures;
 pub mod strip;
 
 use std::path::{Path, PathBuf};
@@ -14,7 +17,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::autostart::RegString;
 use crate::log;
-use crate::model::clipboard::{Added, Content, Entry, History};
+use crate::model::clipboard::{Added, Content, Entry, History, leftovers};
 use crate::model::dib::{self, Rgba};
 use crate::win32::clipboard::{self as watcher, Copy};
 use crate::win32::paste::Data;
@@ -102,6 +105,11 @@ pub fn image_path(id: u64) -> Option<PathBuf> {
     Some(STORE.get()?.dir.join(format!("{id}.png")))
 }
 
+/// Where a site's icon is kept.
+pub fn icon_path(host: &str) -> Option<PathBuf> {
+    Some(STORE.get()?.dir.join("icons").join(format!("{host}.png")))
+}
+
 /// What to put back on the clipboard for `entry`. Reads an image's file, so not on the UI
 /// thread.
 pub fn data(entry: &Entry) -> Option<Data> {
@@ -163,6 +171,7 @@ pub(crate) fn now() -> u64 {
 }
 
 fn run(dir: &Path, rx: &mpsc::Receiver<Command>, changed: &async_channel::Sender<Event>) {
+    sweep(dir);
     let mut history = History::restore(load(dir));
     log(&format!("clipboard restored {}", history.entries().len()));
     let mut dirty = true;
@@ -243,6 +252,21 @@ fn load(dir: &Path) -> Vec<Entry> {
         .filter(|p| p.extension().is_some_and(|e| e == "json"))
         .filter_map(|p| serde_json::from_slice(&std::fs::read(p).ok()?).ok())
         .collect()
+}
+
+/// Remove what a crash left half-written (see [`leftovers`]).
+fn sweep(dir: &Path) {
+    let Ok(files) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let names: Vec<String> = files
+        .filter_map(Result::ok)
+        .filter_map(|f| f.file_name().into_string().ok())
+        .collect();
+    for name in leftovers(&names) {
+        log(&format!("clipboard leftover {name}"));
+        let _ = std::fs::remove_file(dir.join(name));
+    }
 }
 
 fn save(dir: &Path, entry: Option<&Entry>) {

@@ -4,7 +4,7 @@
 use std::os::windows::ffi::OsStrExt;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use windows::Win32::Foundation::{GlobalFree, HANDLE, HWND};
 use windows::Win32::System::DataExchange::{CloseClipboard, EmptyClipboard, SetClipboardData};
@@ -15,7 +15,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 
 use super::clipboard::{WINDOW, open};
-use super::restore_foreground;
+use super::{foreground_window, restore_foreground};
 
 const CF_DIB: u32 = 8;
 const CF_UNICODETEXT: u32 = 13;
@@ -89,11 +89,23 @@ fn drop_files(files: &[PathBuf]) -> Vec<u8> {
     bytes
 }
 
-/// Bring `previous` back to the front and press Ctrl+V in it.
-pub fn paste_into(previous: HWND) {
+/// How long the app gets to come back to the front before the paste is given up.
+const FRONT_TIMEOUT: Duration = Duration::from_millis(500);
+
+/// Bring `previous` back to the front and press Ctrl+V in it; whether the keys went. If it never
+/// comes to the front the keys would land somewhere else, so none are sent; the entry stays on
+/// the clipboard.
+pub fn paste_into(previous: HWND) -> bool {
     restore_foreground(previous);
-    // Let the app take the focus back before the keys arrive.
-    std::thread::sleep(Duration::from_millis(80));
+    // Windows says nothing to a thread with no window when the foreground changes, so look,
+    // briefly, until it has.
+    let deadline = Instant::now() + FRONT_TIMEOUT;
+    while foreground_window() != previous {
+        if Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
     let key = |vk: VIRTUAL_KEY, up: bool| INPUT {
         r#type: INPUT_KEYBOARD,
         Anonymous: INPUT_0 {
@@ -115,7 +127,5 @@ pub fn paste_into(previous: HWND) {
         key(v, true),
         key(VK_CONTROL, true),
     ];
-    unsafe {
-        SendInput(&keys, size_of::<INPUT>() as i32);
-    }
+    unsafe { SendInput(&keys, size_of::<INPUT>() as i32) == keys.len() as u32 }
 }
