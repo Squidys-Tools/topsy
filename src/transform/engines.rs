@@ -7,14 +7,16 @@ use std::sync::atomic::AtomicBool;
 use gpui::{Context, Div};
 
 use super::Panel;
-use super::job::Input;
+use super::background::{self, ModelStatus};
+use super::job::{Input, into, reserve};
 use super::widgets::note;
-use crate::model::transform::Action;
+use crate::model::transform::{Action, result_paths};
 
 /// A snapshot of what to do, sent to the worker thread.
 pub enum Work {
     Zip(String),
     Rename(Vec<String>),
+    Background,
     Pending(Action),
 }
 
@@ -40,19 +42,48 @@ pub fn button_label(_panel: &Panel, action: Action) -> (String, bool) {
 }
 
 pub fn work(_panel: &Panel, action: Action) -> Result<Work, String> {
-    Ok(Work::Pending(action))
+    Ok(match action {
+        Action::RemoveBackground => Work::Background,
+        _ => Work::Pending(action),
+    })
+}
+
+/// What has to happen once before the files: fetching the background model on first use.
+pub fn prepare(work: &Work, progress: &dyn Fn(String, f32), cancel: &AtomicBool) -> io::Result<()> {
+    if matches!(work, Work::Background) && background::model_status() != ModelStatus::Ready {
+        background::download(&|p| progress("Getting the model…".into(), p), cancel)?;
+    }
+    Ok(())
+}
+
+/// A result beside `src`, `name (suffix).ext`, made by `make` and deleted again if it fails.
+fn beside(
+    src: &std::path::Path,
+    action: Action,
+    ext: &str,
+    make: impl FnOnce(&std::path::Path) -> io::Result<()>,
+) -> io::Result<Vec<PathBuf>> {
+    let candidates =
+        result_paths(src, action, ext).ok_or_else(|| io::Error::other("No folder to save in"))?;
+    Ok(vec![into(reserve(candidates)?, make)?])
 }
 
 pub fn run_one(
     work: &Work,
-    _input: &Input,
-    _progress: &dyn Fn(f32),
-    _cancel: &AtomicBool,
+    input: &Input,
+    progress: &dyn Fn(f32),
+    cancel: &AtomicBool,
 ) -> io::Result<Vec<PathBuf>> {
-    Err(io::Error::other(match work {
-        Work::Pending(action) => format!("{} isn't ready yet", action.label()),
-        _ => "Not a per-file action".into(),
-    }))
+    match work {
+        Work::Background => beside(&input.path, Action::RemoveBackground, "png", |out| {
+            background::remove(&input.path, out, progress, cancel)
+        }),
+        Work::Pending(action) => Err(io::Error::other(format!(
+            "{} isn't ready yet",
+            action.label()
+        ))),
+        _ => Err(io::Error::other("Not a per-file action")),
+    }
 }
 
 pub fn run_all(
@@ -71,6 +102,9 @@ impl Panel {
     }
 
     pub fn background_row(&self, _cx: &mut Context<Self>) -> Div {
-        note("Runs on this PC; the picture never leaves it.")
+        note(match background::model_status() {
+            ModelStatus::Ready => "Runs on this PC; the picture never leaves it.",
+            _ => "The first run downloads the 178 MB model, once. After that it runs on this PC.",
+        })
     }
 }
