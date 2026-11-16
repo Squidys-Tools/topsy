@@ -21,7 +21,7 @@ pub enum Response {
     Redirect(String),
     /// The site answered, with nothing for us.
     Missing,
-    /// It couldn't be reached.
+    /// It couldn't be reached, or was busy.
     Failed,
 }
 
@@ -92,6 +92,8 @@ unsafe fn request(host: &str, path: &str, limit: usize) -> Option<Response> {
         match status {
             200 => {}
             300..400 => return Some(Response::Redirect(location(request.0)?)),
+            // Busy or broken for now: worth asking again.
+            408 | 429 | 500.. => return Some(Response::Failed),
             _ => return Some(Response::Missing),
         }
         let mut body = Vec::new();

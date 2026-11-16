@@ -15,8 +15,8 @@ use crate::log;
 use crate::model::favicon::{page_icon, public_ip, resolve};
 use crate::win32::http::{self, Response};
 
-/// Kept icons are at most this many pixels square.
-const SIZE: u32 = 64;
+/// Kept icons are at most this many pixels square: sharp at 40 logical pixels up to 300%.
+const SIZE: u32 = 128;
 /// A favicon bigger than this is not one.
 const MAX_BYTES: usize = 512 * 1024;
 /// How much of a home page is read for its icon links, which are in its head.
@@ -45,7 +45,11 @@ pub fn load(cache: &Path, host: &str) -> Option<Arc<RenderImage>> {
             let saved = cache
                 .parent()
                 .map_or(Ok(()), std::fs::create_dir_all)
-                .and_then(|()| std::fs::write(cache, &png));
+                .and_then(|()| {
+                    // Through a temp file: a half-written icon would read as none, for good.
+                    let tmp = cache.with_extension("tmp");
+                    std::fs::write(&tmp, &png).and_then(|()| std::fs::rename(&tmp, cache))
+                });
             if let Err(err) = saved {
                 eprintln!("topsy: could not keep {host}'s icon: {err}");
             }
@@ -87,8 +91,8 @@ fn follow(host: &str, path: &str, limit: usize) -> Option<Option<(String, Vec<u8
     let (mut host, mut path) = (host.to_string(), path.to_string());
     for _ in 0..=MAX_REDIRECTS {
         // A public name can still point into the local network.
-        let addresses = (host.as_str(), 443).to_socket_addrs().ok()?;
-        if !addresses.into_iter().all(|a| public_ip(a.ip())) {
+        let addresses: Vec<_> = (host.as_str(), 443).to_socket_addrs().ok()?.collect();
+        if addresses.is_empty() || !addresses.iter().all(|a| public_ip(a.ip())) {
             return Some(None);
         }
         match http::get(&host, &path, limit) {

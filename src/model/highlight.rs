@@ -107,7 +107,7 @@ pub fn highlight(code: &str) -> Vec<(Range<usize>, Token)> {
                 i = line_end(code, i);
                 Some(Token::Comment)
             }
-            b'#' if line_start(code, i) && !rest.starts_with("#[") && !rest.starts_with("#!") => {
+            b'#' if line_start(code, i) && rest[1..].starts_with(char::is_whitespace) => {
                 i = line_end(code, i);
                 Some(Token::Comment)
             }
@@ -272,6 +272,15 @@ mod tests {
             [("'two words'", Str), ("'x'", Str)]
         );
         assert_eq!(words("color: #fff;"), []);
+        // A C directive, a CSS id, a shebang: a `#` comment needs a space after it.
+        assert!(
+            words(
+                "#include <stdio.h>
+#main {
+#!/bin/sh"
+            )
+            .is_empty()
+        );
         assert_eq!(words("é \"unclosed"), []);
         assert_eq!(words("`multi\nline`"), [("`multi\nline`", Str)]);
     }
