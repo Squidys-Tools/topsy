@@ -539,4 +539,5 @@ hook, not the media thread). It is worth a profile, because an always-on app sho
 permissively licensed (MIT, Apache-2.0, BSD, Zlib, ISC and similar); a distributed binary should ship their notices. The tools Transform downloads on first use (FFmpeg under the
 GPL, ImageMagick, oxipng, pdfium) are separate programs fetched from their own releases, never shipped with topsy.
 The icons are [Hugeicons](https://hugeicons.com)' free set (`@hugeicons/core-free-icons` 4.4.0, MIT,
-`assets/icons/LICENSE.md`), their path data written out as SVG; play, pause and skip are filled.
+`assets/icons/LICENSE.md`), their path data written out as SVG; play, pause, skip and the pin star are filled. A distributed binary should ship
+that licence too.

@@ -115,8 +115,10 @@ pub fn card(
                 .when(entry.pinned, |side| {
                     side.child(
                         div()
-                            .px(px(7.0))
-                            .py(px(2.0))
+                            .size(px(22.0))
+                            .flex()
+                            .items_center()
+                            .justify_center()
                             .rounded_full()
                             .bg(rgb(PILL))
                             .child(icon(Icon::Star, 12.0, rgb(0xe0453a))),
