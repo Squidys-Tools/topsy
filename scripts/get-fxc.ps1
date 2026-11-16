@@ -8,7 +8,7 @@ $dest = Join-Path $env:LOCALAPPDATA 'topsy-build\fxc'
 $fxc = Join-Path $dest 'fxc.exe'
 
 if (-not $Force) {
-    $found = @($env:GPUI_FXC_PATH, $fxc, (Get-Command fxc.exe -ErrorAction SilentlyContinue).Source,
+    $found = @($env:GPUI_FXC_PATH, (Get-Command fxc.exe -ErrorAction SilentlyContinue).Source,
         "${env:ProgramFiles(x86)}\Windows Kits\10\bin\10.0.26100.0\x64\fxc.exe") |
         Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
     if ($found) { "fxc.exe is already there: $found"; return }
