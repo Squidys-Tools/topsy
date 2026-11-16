@@ -268,7 +268,7 @@ fn run(
             outcome.renamed = rename(inputs, names)?;
         }
         _ => {
-            engines::prepare(work, report, cancel)?;
+            engines::prepare(work, inputs, report, cancel)?;
             let total = inputs.len() as f32;
             let verb = engines::verb(action);
             if action.combines() {

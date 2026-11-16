@@ -5,6 +5,7 @@
 //! the work itself is in the engines beside this file, run on a worker thread by `job`.
 
 pub mod background;
+mod clip;
 mod engines;
 pub mod fetch;
 mod job;
@@ -82,6 +83,8 @@ pub struct Panel {
     focus: FocusHandle,
     scale: f32,
     height: f32,
+    /// The clip Trim and Make GIF show, once it is loaded.
+    clip: Option<clip::Clip>,
 }
 
 fn hwnd(window: &Window) -> Option<HWND> {
@@ -153,6 +156,7 @@ pub fn open(cx: &mut App, island: &Entity<Island>, paths: Vec<PathBuf>) {
                 focus,
                 scale,
                 height: 240.0,
+                clip: None,
             };
             panel.add(paths, cx);
             panel
@@ -237,6 +241,7 @@ impl Panel {
         if !matches!(self.state, State::Running { .. }) {
             self.state = State::Ready;
         }
+        self.show_clip(cx);
         cx.notify();
     }
 
@@ -245,6 +250,7 @@ impl Panel {
             self.action = Some(action);
             self.field = None;
             self.state = State::Ready;
+            self.show_clip(cx);
             cx.notify();
         }
     }

@@ -19,14 +19,20 @@ pub const IMAGE_FORMATS: [&str; 7] = [
 pub const CONVERT_IMAGE: [&str; 10] = [
     "JPEG", "PNG", "WebP", "HEIC", "AVIF", "TIFF", "BMP", "GIF", "ICO", "PDF",
 ];
-pub const CONVERT_VIDEO: [&str; 5] = [
+/// The video formats in `VideoFormat::ALL` order, then the sound alone in `AudioFormat::FROM_VIDEO`'s.
+pub const CONVERT_VIDEO: [&str; 9] = [
     "MP4 (H.264)",
     "MP4 (HEVC)",
+    "MOV",
+    "WebM",
+    "MKV",
     "M4A (audio only)",
     "MP3 (audio only)",
     "WAV (audio only)",
+    "FLAC (audio only)",
 ];
-pub const CONVERT_AUDIO: [&str; 3] = ["M4A", "MP3", "WAV"];
+/// In `AudioFormat::ALL` order.
+pub const CONVERT_AUDIO: [&str; 6] = ["M4A (AAC)", "MP3", "WAV", "FLAC", "OGG (Opus)", "AIFF"];
 pub const CONVERT_PDF: [&str; 2] = ["PNG images", "JPEG images"];
 pub const DPI: [&str; 3] = ["72 dpi", "150 dpi", "300 dpi"];
 pub const SIDES: [&str; 9] = [
@@ -38,13 +44,15 @@ pub const VIDEO_TARGETS: [&str; 7] = [
     "8 MB", "10 MB", "25 MB", "50 MB", "100 MB", "250 MB", "500 MB",
 ];
 pub const PDF_TARGETS: [&str; 5] = ["500 KB", "1 MB", "2 MB", "5 MB", "10 MB"];
-pub const RESOLUTIONS: [&str; 5] = ["Original", "4K", "1080p", "720p", "480p"];
+/// In `MaxResolution::ALL` order.
+pub const RESOLUTIONS: [&str; 6] = ["Original", "4K", "1440p", "1080p", "720p", "480p"];
 pub const BITRATES: [&str; 5] = ["320 kbps", "256 kbps", "192 kbps", "128 kbps", "96 kbps"];
 pub const RESIZE_BY: [&str; 3] = ["Largest side", "Percent", "Exact"];
 pub const PERCENTS: [&str; 6] = ["200%", "75%", "50%", "33%", "25%", "10%"];
 pub const FIT: [&str; 2] = ["Fit", "Fill"];
 pub const ROTATIONS: [&str; 5] = ["Left", "Right", "180°", "Flip ↔", "Flip ↕"];
 pub const FPS: [&str; 3] = ["10 fps", "15 fps", "24 fps"];
+pub const TRIM_MODES: [&str; 2] = ["Exact", "Fast"];
 pub const GIF_WIDTHS: [&str; 4] = ["320 px", "480 px", "640 px", "Original"];
 pub const PAGES: [&str; 3] = ["Fit to image", "A4", "Letter"];
 
@@ -70,6 +78,7 @@ pub struct Options {
     pub range: (f32, f32),
     pub fps: usize,
     pub gif_width: usize,
+    pub trim_fast: bool,
     pub page: usize,
     pub zip_name: String,
     pub rename: String,
@@ -99,6 +108,7 @@ impl Default for Options {
             range: (0.0, 1.0),
             fps: 1,
             gif_width: 1,
+            trim_fast: false,
             page: 0,
             zip_name: "Archive".into(),
             rename: String::new(),

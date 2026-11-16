@@ -203,11 +203,7 @@ pub fn field(
         .rounded(px(6.0))
         .bg(rgba(0x00000066))
         .border_1()
-        .border_color(if focused {
-            rgb(BLUE).into()
-        } else {
-            rgba(0xffffff1f)
-        })
+        .border_color(if focused { rgb(BLUE) } else { rgba(0xffffff1f) })
         .text_xs()
         .overflow_hidden()
         .child(shown)
@@ -241,11 +237,7 @@ pub fn tile(
                 .rounded(px(10.0))
                 .font_family(ICONS)
                 .text_size(px(17.0))
-                .bg(if selected {
-                    rgb(ACCENT).into()
-                } else {
-                    rgba(FAINT)
-                })
+                .bg(if selected { rgb(ACCENT) } else { rgba(FAINT) })
                 .when(!selected, |s| s.hover(|s| s.bg(rgba(0xffffff24))))
                 .child(glyph.to_string()),
         )
