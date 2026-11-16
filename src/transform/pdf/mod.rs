@@ -1,27 +1,26 @@
 //! The PDF Transforms: Combine into PDF, Compress PDF, PDF to images, and turning pages or
-//! dropping a PDF's metadata.
+//! dropping a PDF's metadata. lopdf rewrites the file, ImageMagick re-encodes the pictures in
+//! it, and pdfium draws its pages.
 
 mod combine;
 mod compress;
+mod render;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use lopdf::{Document, Object};
-use windows::Win32::System::Com::COINIT_MULTITHREADED;
 
 use super::Steps;
-use super::image::encode::{Meta, encode};
-use super::image::source::{Source, load as load_picture};
+use super::image::Kit;
 use crate::model::image_geometry::Rotation;
-use crate::model::image_ops::{Format, Kind};
-use crate::model::pdf::{LADDER, PageFormat, PageSize, PdfCompress};
-use crate::win32::{pdf_render, with_com};
+use crate::model::pdf::{LADDER, PageSize, PdfCompress};
 
 pub use combine::Builder;
+pub use render::{PDFIUM, to_images};
 
 /// What Compress PDF wrote.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,9 +68,14 @@ pub(crate) fn save(doc: &mut Document) -> io::Result<Vec<u8>> {
     Ok(out)
 }
 
-/// The page count, from Windows' PDF reader (quick even for a large file).
+/// The page count, from the cross-reference table and page tree, without parsing the pages.
 pub fn page_count(path: &Path) -> io::Result<u32> {
-    with_com(COINIT_MULTITHREADED, || pdf_render::open(path)?.pages())
+    Document::load_metadata(path)
+        .map(|m| m.page_count)
+        .map_err(|e| {
+            crate::log(&format!("transform: pdf metadata: {e}"));
+            unreadable()
+        })
 }
 
 /// One PDF from pictures and PDFs, in order: a page for each picture, every page of each PDF.
@@ -84,30 +88,24 @@ pub fn combine(
     cancel: &AtomicBool,
 ) -> io::Result<u32> {
     let steps = Steps::new(progress, cancel);
+    let parts = srcs
+        .iter()
+        .map(|src| combine::Part::read(src))
+        .collect::<io::Result<Vec<_>>>()?;
+    let kit = match parts.iter().any(combine::Part::needs_magick) {
+        true => Some(Kit::get(&steps, false)?),
+        false => None,
+    };
     let mut builder = Builder::new();
-    for (i, src) in srcs.iter().enumerate() {
+    for (i, part) in parts.into_iter().enumerate() {
         steps.at(0.9 * i as f32 / srcs.len().max(1) as f32)?;
-        let head = std::fs::read(src)?;
-        if Kind::sniff(&head) == Some(Kind::Pdf) {
-            builder.add_pdf(&head)?;
-        } else {
-            builder.add_picture(&load_picture(src)?, size)?;
-        }
+        builder.add(part, size, kit.as_ref(), &steps)?;
     }
     steps.check()?;
     let (bytes, pages) = builder.finish()?;
     std::fs::write(out, bytes)?;
     steps.at(1.0)?;
     Ok(pages)
-}
-
-/// A PDF of `sources`, a page each.
-pub(crate) fn combine_sources(sources: &[Source], size: PageSize) -> io::Result<Vec<u8>> {
-    let mut builder = Builder::new();
-    for s in sources {
-        builder.add_picture(s, size)?;
-    }
-    builder.finish().map(|(bytes, _)| bytes)
 }
 
 pub fn compress(
@@ -118,8 +116,12 @@ pub fn compress(
     cancel: &AtomicBool,
 ) -> io::Result<PdfWritten> {
     let steps = Steps::new(progress, cancel);
-    steps.at(0.0)?;
     let original = std::fs::read(src)?;
+    let kit = match compress::has_pictures(&load(&original)?) {
+        true => Some(Kit::get(&steps, false)?),
+        false => None,
+    };
+    steps.at(0.0)?;
     let presets = match how {
         PdfCompress::Quality(q) => vec![q.preset()],
         PdfCompress::FileSize(_) => LADDER.to_vec(),
@@ -135,6 +137,7 @@ pub fn compress(
         compress::shrink(
             &mut doc,
             *preset,
+            kit.as_ref(),
             &steps,
             (i as f32 * span, (i as f32 + 0.9) * span),
         )?;
@@ -157,36 +160,6 @@ pub fn compress(
         bytes: bytes.len() as u64,
         kept_original,
         fits: bytes.len() as u64 <= target,
-    })
-}
-
-/// Each page as a picture at `dpi`, written to `out(page index)`. Returns how many were written.
-pub fn to_images(
-    src: &Path,
-    format: PageFormat,
-    dpi: u32,
-    out: &dyn Fn(usize) -> io::Result<PathBuf>,
-    progress: &dyn Fn(f32),
-    cancel: &AtomicBool,
-) -> io::Result<usize> {
-    let steps = Steps::new(progress, cancel);
-    steps.at(0.0)?;
-    with_com(COINIT_MULTITHREADED, || {
-        let doc = pdf_render::open(src)?;
-        let pages = doc.pages()? as usize;
-        for i in 0..pages {
-            steps.at(i as f32 / pages.max(1) as f32)?;
-            let page = doc.render(i as u32, dpi.clamp(36, 1200))?;
-            let (format, quality) = match format {
-                PageFormat::Png => (Format::Png, 100),
-                PageFormat::Jpeg => (Format::Jpeg, 90),
-            };
-            let bytes = encode(&page, format, quality, Meta::default())?;
-            steps.check()?;
-            std::fs::write(out(i)?, bytes)?;
-        }
-        steps.at(1.0)?;
-        Ok(pages)
     })
 }
 

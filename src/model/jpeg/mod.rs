@@ -1,7 +1,7 @@
-//! JPEG without a decode: metadata stripping, lossless rotation, and a baseline encoder.
+//! JPEG without a decode: metadata stripping and lossless rotation. No tool fits this job:
+//! libjpeg-turbo ships jpegtran for Windows only inside installers.
 
 pub mod coeffs;
-pub mod encode;
 pub mod huffman;
 pub mod lossless;
 pub mod markers;
@@ -44,16 +44,8 @@ pub fn orientation(bytes: &[u8]) -> Orientation {
         .unwrap_or(Orientation::Normal)
 }
 
-/// The IJG quality the file was most likely saved at.
-pub fn quality(bytes: &[u8]) -> Option<u8> {
-    let jpeg = coeffs::read(bytes).ok()?;
-    let luma = jpeg.components.first()?.tq as usize;
-    Some(encode::estimate_quality(&jpeg.qtables[luma]))
-}
-
 #[cfg(test)]
 mod tests {
-    use super::encode::{Metadata, Pixels, encode};
     use super::*;
     use crate::model::exif::sample;
 
@@ -71,67 +63,42 @@ mod tests {
         v
     }
 
+    /// A JPEG from the `image` crate's encoder, with a tiny ICC profile and `exif`.
     fn jpeg(w: usize, h: usize, quality: u8, exif: Option<&[u8]>) -> Vec<u8> {
-        let data = picture(w, h);
-        let px = Pixels {
-            width: w,
-            height: h,
-            channels: 3,
-            data: &data,
+        let mut plain = Vec::new();
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut plain, quality)
+            .encode(
+                &picture(w, h),
+                w as u32,
+                h as u32,
+                image::ExtendedColorType::Rgb8,
+            )
+            .unwrap();
+        let mut out = vec![0xFF, markers::SOI];
+        for p in markers::icc_segments(&[1, 2, 3]) {
+            markers::write_segment(&mut out, markers::APP2, &p);
+        }
+        out.extend_from_slice(&plain[2..]);
+        match exif {
+            Some(e) => markers::with_exif(&out, e).unwrap(),
+            None => out,
+        }
+    }
+
+    /// Basis function `u` of the 8x8 DCT-II at sample `x`, scaled as T.81 A.3.3 defines it.
+    fn basis(u: usize, x: usize) -> f32 {
+        let c = if u == 0 {
+            std::f32::consts::FRAC_1_SQRT_2
+        } else {
+            1.0
         };
-        encode(
-            &px,
-            quality,
-            &Metadata {
-                exif,
-                icc: Some(&[1, 2, 3]),
-            },
-        )
-        .unwrap()
+        0.5 * c * (((2 * x + 1) as f32 * u as f32 * std::f32::consts::PI) / 16.0).cos()
     }
 
     fn decode(bytes: &[u8]) -> image::RgbImage {
         image::load_from_memory_with_format(bytes, image::ImageFormat::Jpeg)
             .unwrap()
             .to_rgb8()
-    }
-
-    fn mean_error(a: &[u8], b: &[u8]) -> f64 {
-        a.iter()
-            .zip(b)
-            .map(|(x, y)| f64::from(x.abs_diff(*y)))
-            .sum::<f64>()
-            / a.len() as f64
-    }
-
-    #[test]
-    fn encoder_output_decodes_close_to_the_source() {
-        for (w, h, q) in [
-            (64, 48, 75),
-            (37, 21, 50),
-            (1, 1, 75),
-            (200, 120, 95),
-            (17, 300, 10),
-        ] {
-            let bytes = jpeg(w, h, q, None);
-            let img = decode(&bytes);
-            assert_eq!(img.dimensions(), (w as u32, h as u32));
-            let err = mean_error(img.as_raw(), &picture(w, h));
-            assert!(
-                err < if q >= 50 { 6.0 } else { 20.0 },
-                "{w}x{h} q{q}: mean error {err}"
-            );
-            assert!(quality(&bytes).unwrap().abs_diff(q.max(1)) <= 1);
-        }
-    }
-
-    #[test]
-    fn higher_quality_is_bigger() {
-        let sizes: Vec<usize> = [20, 50, 75, 90]
-            .iter()
-            .map(|&q| jpeg(160, 120, q, None).len())
-            .collect();
-        assert!(sizes.windows(2).all(|w| w[0] < w[1]), "{sizes:?}");
     }
 
     #[test]
@@ -148,7 +115,6 @@ mod tests {
         let c = &jpeg.components[ci];
         let (bw, bh) = jpeg.used_blocks(c);
         let q = jpeg.qtables[c.tq as usize];
-        let basis = encode::Dct::new();
         let mut out = vec![0f32; bw * 8 * bh * 8];
         for by in 0..bh {
             for bx in 0..bw {
@@ -158,8 +124,8 @@ mod tests {
                         let mut s = 0f32;
                         for v in 0..8 {
                             for u in 0..8 {
-                                s += basis.at(u, x)
-                                    * basis.at(v, y)
+                                s += basis(u, x)
+                                    * basis(v, y)
                                     * f32::from(b[v * 8 + u])
                                     * f32::from(q[v * 8 + u]);
                             }

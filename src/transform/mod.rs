@@ -7,9 +7,11 @@
 pub mod background;
 mod engines;
 pub mod fetch;
+#[allow(dead_code, unused_imports)] // Until the panel calls it.
 pub mod image;
 mod job;
 mod options;
+#[allow(dead_code, unused_imports)]
 pub mod pdf;
 mod steps;
 pub mod tools;

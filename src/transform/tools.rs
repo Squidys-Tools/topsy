@@ -47,6 +47,16 @@ impl Tool {
 
     /// The program, downloading and unpacking the tool first if it isn't here yet. Blocking.
     pub fn get(&self, progress: &dyn Fn(f32), cancel: &AtomicBool) -> io::Result<PathBuf> {
+        self.get_with(&|_| true, progress, cancel)
+    }
+
+    /// As `get`, unpacking only the archive's files that `keep` takes (by their path in it).
+    pub fn get_with(
+        &self,
+        keep: &dyn Fn(&Path) -> bool,
+        progress: &dyn Fn(f32),
+        cancel: &AtomicBool,
+    ) -> io::Result<PathBuf> {
         let program = self.program()?;
         if program.is_file() {
             return Ok(program);
@@ -56,7 +66,7 @@ impl Tool {
         // Unpacked beside its final place and renamed in, so a half-unpacked tool never counts.
         let staging = home.with_extension("unpacking");
         let _ = fs::remove_dir_all(&staging);
-        let unpacked = unzip(&archive, &staging, cancel);
+        let unpacked = unpack(&archive, &staging, keep, cancel);
         if let Err(err) = unpacked {
             let _ = fs::remove_dir_all(&staging);
             return Err(err);
@@ -74,8 +84,108 @@ impl Tool {
     }
 }
 
-/// Unpack every entry of a zip under `to`, refusing names that would land outside it.
-fn unzip(archive: &Path, to: &Path, cancel: &AtomicBool) -> io::Result<()> {
+/// Unpack the entries `keep` takes under `to`, by the archive's kind: `.zip`, `.tgz` or
+/// `.tar.gz`, or `.7z`. Names that would land outside `to` are skipped.
+fn unpack(
+    archive: &Path,
+    to: &Path,
+    keep: &dyn Fn(&Path) -> bool,
+    cancel: &AtomicBool,
+) -> io::Result<()> {
+    let name = archive.to_string_lossy().to_ascii_lowercase();
+    if name.ends_with(".tgz") || name.ends_with(".tar.gz") {
+        untar_gz(archive, to, keep, cancel)
+    } else if name.ends_with(".7z") {
+        un7z(archive, to, keep, cancel)
+    } else {
+        unzip(archive, to, keep, cancel)
+    }
+}
+
+/// `name` as a path under the archive's root, or `None` if it would escape it.
+fn enclosed(name: &Path) -> Option<PathBuf> {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for part in name.components() {
+        match part {
+            Component::Normal(p) => out.push(p),
+            Component::CurDir => {}
+            _ => return None,
+        }
+    }
+    (!out.as_os_str().is_empty()).then_some(out)
+}
+
+fn write_entry(to: &Path, name: &Path, data: &mut dyn Read) -> io::Result<()> {
+    let path = to.join(name);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    io::copy(data, &mut File::create(&path)?)?;
+    Ok(())
+}
+
+fn untar_gz(
+    archive: &Path,
+    to: &Path,
+    keep: &dyn Fn(&Path) -> bool,
+    cancel: &AtomicBool,
+) -> io::Result<()> {
+    let gz = flate2::read::GzDecoder::new(BufReader::new(File::open(archive)?));
+    let mut tar = tar::Archive::new(gz);
+    for entry in tar.entries()? {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(io::ErrorKind::Interrupted.into());
+        }
+        let mut entry = entry?;
+        if !entry.header().entry_type().is_file() {
+            continue;
+        }
+        let Some(name) = enclosed(&entry.path()?) else {
+            continue;
+        };
+        if keep(&name) {
+            write_entry(to, &name, &mut entry)?;
+        }
+    }
+    Ok(())
+}
+
+fn un7z(
+    archive: &Path,
+    to: &Path,
+    keep: &dyn Fn(&Path) -> bool,
+    cancel: &AtomicBool,
+) -> io::Result<()> {
+    let mut reader = sevenz_rust2::ArchiveReader::open(archive, sevenz_rust2::Password::empty())
+        .map_err(io::Error::other)?;
+    reader
+        .for_each_entries(|entry, data| {
+            if cancel.load(Ordering::Relaxed) {
+                return Err(io::Error::from(io::ErrorKind::Interrupted).into());
+            }
+            if entry.is_directory() || !entry.has_stream() {
+                return Ok(true);
+            }
+            if let Some(name) = enclosed(Path::new(entry.name()))
+                && keep(&name)
+            {
+                write_entry(to, &name, data)?;
+            }
+            Ok(true)
+        })
+        .map_err(|e| match e {
+            sevenz_rust2::Error::Io(io, _) => io,
+            other => io::Error::other(other),
+        })
+}
+
+fn unzip(
+    archive: &Path,
+    to: &Path,
+    keep: &dyn Fn(&Path) -> bool,
+    cancel: &AtomicBool,
+) -> io::Result<()> {
     let mut zip = zip::ZipArchive::new(File::open(archive)?).map_err(io::Error::other)?;
     for i in 0..zip.len() {
         if cancel.load(Ordering::Relaxed) {
@@ -85,15 +195,9 @@ fn unzip(archive: &Path, to: &Path, cancel: &AtomicBool) -> io::Result<()> {
         let Some(name) = entry.enclosed_name() else {
             continue;
         };
-        let path = to.join(name);
-        if entry.is_dir() {
-            fs::create_dir_all(&path)?;
-            continue;
+        if !entry.is_dir() && keep(&name) {
+            write_entry(to, &name, &mut entry)?;
         }
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        io::copy(&mut entry, &mut File::create(&path)?)?;
     }
     Ok(())
 }
@@ -177,6 +281,53 @@ mod tests {
         let args = ["/c", "echo broken 1>&2 && exit 3"].map(std::ffi::OsStr::new);
         let err = run(cmd, &args, &AtomicBool::new(false), &mut |_| {}).unwrap_err();
         assert_eq!(err.to_string(), "cmd: broken");
+    }
+
+    fn scratch(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("topsy-tools-{}-{tag}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn tar_gz_unpacks_what_it_keeps_and_nothing_outside() {
+        let dir = scratch("tgz");
+        let archive = dir.join("t.tgz");
+        let gz = flate2::write::GzEncoder::new(
+            File::create(&archive).unwrap(),
+            flate2::Compression::fast(),
+        );
+        let mut tar = tar::Builder::new(gz);
+        for (name, body) in [("bin/pdfium.dll", &b"dll"[..]), ("LICENSE", b"text")] {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(body.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            tar.append_data(&mut header, name, body).unwrap();
+        }
+        tar.into_inner().unwrap().finish().unwrap();
+        let out = dir.join("out");
+        let keep = |p: &Path| p.starts_with("bin");
+        unpack(&archive, &out, &keep, &AtomicBool::new(false)).unwrap();
+        assert_eq!(fs::read(out.join("bin/pdfium.dll")).unwrap(), b"dll");
+        assert!(!out.join("LICENSE").exists());
+        assert_eq!(enclosed(Path::new("../evil")), None);
+        assert_eq!(enclosed(Path::new("./a/b")), Some(PathBuf::from("a/b")));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn seven_zip_unpacks_what_it_keeps() {
+        let dir = scratch("7z");
+        let archive = dir.join("tiny.7z");
+        fs::write(&archive, include_bytes!("testdata/tiny.7z")).unwrap();
+        let out = dir.join("out");
+        let keep = |p: &Path| p.extension().is_some() && p.starts_with("tool/bin");
+        unpack(&archive, &out, &keep, &AtomicBool::new(false)).unwrap();
+        assert_eq!(fs::read(out.join("tool/bin/keep.txt")).unwrap(), b"kept");
+        assert!(!out.join("tool/skip.txt").exists());
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

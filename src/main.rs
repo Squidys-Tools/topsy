@@ -24,9 +24,10 @@ mod tray;
 mod tray_view;
 mod win32;
 
+use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use std::{collections::HashMap, path::PathBuf};
 
 use gpui::{
     ClickEvent, Context, ExternalPaths, MouseButton, MouseDownEvent, Pixels, Point, RenderImage,

@@ -4,11 +4,10 @@ use std::sync::atomic::AtomicBool;
 
 use image::{Rgba, RgbaImage};
 
-use crate::model::jpeg::encode as jpeg_encode;
+use crate::model::jpeg::markers;
 
-mod compress;
-mod edit;
 mod manual;
+mod tools;
 
 /// Something like a photo: smooth light, texture, and a few hard edges. `alpha` fades the
 /// left third out and cuts a hole in the middle.
@@ -75,18 +74,22 @@ pub fn png_of(img: &RgbaImage) -> Vec<u8> {
     out
 }
 
+/// A quality 90 JPEG of `img`, with `exif` and `icc` blocks when given.
 pub fn jpeg_of(img: &RgbaImage, exif: Option<&[u8]>, icc: Option<&[u8]>) -> Vec<u8> {
-    let rgb: Vec<u8> = img
-        .pixels()
-        .flat_map(|p| [p.0[0], p.0[1], p.0[2]])
-        .collect();
-    let px = jpeg_encode::Pixels {
-        width: img.width() as usize,
-        height: img.height() as usize,
-        channels: 3,
-        data: &rgb,
-    };
-    jpeg_encode::encode(&px, 90, &jpeg_encode::Metadata { exif, icc }).unwrap()
+    let rgb = image::DynamicImage::ImageRgba8(img.clone()).into_rgb8();
+    let mut plain = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut plain, 90)
+        .encode_image(&rgb)
+        .unwrap();
+    let mut out = vec![0xFF, markers::SOI];
+    for p in icc.map(markers::icc_segments).unwrap_or_default() {
+        markers::write_segment(&mut out, markers::APP2, &p);
+    }
+    out.extend_from_slice(&plain[2..]);
+    match exif {
+        Some(e) => markers::with_exif(&out, e).unwrap(),
+        None => out,
+    }
 }
 
 pub fn never() -> AtomicBool {

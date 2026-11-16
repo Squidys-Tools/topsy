@@ -198,6 +198,7 @@ pub fn result_paths(
 }
 
 /// Where the `page`th (from 0) of several results from one source goes: `report (page 3).png`.
+#[allow(dead_code)]
 pub fn page_paths(source: &Path, page: usize, ext: &str) -> Option<impl Iterator<Item = PathBuf>> {
     let parent = source.parent()?.to_path_buf();
     let stem = source.file_stem()?.to_string_lossy().into_owned();

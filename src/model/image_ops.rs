@@ -1,6 +1,5 @@
 //! What the image Transform offers (formats, quality, sizes, turns) and the rules behind it:
-//! picking an output format, fitting dimensions, mapping one quality slider onto each encoder,
-//! and searching for the quality and size that land a file under a target.
+//! picking an output format and mapping the quality slider onto a PNG palette.
 
 use super::image_geometry::LargestSide;
 
@@ -74,13 +73,12 @@ impl Kind {
     }
 }
 
-/// What Convert writes.
+/// What Convert writes. Not HEIC: ImageMagick's Windows build reads it but has no HEVC encoder.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Format {
     Jpeg,
     Png,
     Webp,
-    Heic,
     Avif,
     Tiff,
     Bmp,
@@ -90,10 +88,9 @@ pub enum Format {
 }
 
 impl Format {
-    pub const ALL: [Format; 10] = [
+    pub const ALL: [Format; 9] = [
         Format::Jpeg,
         Format::Png,
-        Format::Heic,
         Format::Webp,
         Format::Avif,
         Format::Tiff,
@@ -108,7 +105,6 @@ impl Format {
             Format::Jpeg => "JPEG",
             Format::Png => "PNG",
             Format::Webp => "WebP",
-            Format::Heic => "HEIC",
             Format::Avif => "AVIF",
             Format::Tiff => "TIFF",
             Format::Bmp => "BMP",
@@ -123,7 +119,6 @@ impl Format {
             Format::Jpeg => "jpg",
             Format::Png => "png",
             Format::Webp => "webp",
-            Format::Heic => "heic",
             Format::Avif => "avif",
             Format::Tiff => "tiff",
             Format::Bmp => "bmp",
@@ -139,13 +134,19 @@ impl Format {
 
     /// Whether a quality setting changes the output.
     pub fn is_lossy(self) -> bool {
-        matches!(
-            self,
-            Format::Jpeg | Format::Webp | Format::Heic | Format::Avif
-        )
+        matches!(self, Format::Jpeg | Format::Webp | Format::Avif)
     }
 
-    /// The format a file of `kind` is rewritten in when an operation keeps its format.
+    /// The format a file of `kind` is rewritten in when an operation keeps its format: its own,
+    /// or JPEG for HEIC, which can't be written.
+    pub fn kept(kind: Kind) -> Option<Format> {
+        match kind {
+            Kind::Heic => Some(Format::Jpeg),
+            other => Format::matching(other),
+        }
+    }
+
+    /// The format of a `kind` file, when it can be written.
     pub fn matching(kind: Kind) -> Option<Format> {
         Some(match kind {
             Kind::Gif => Format::Gif,
@@ -162,7 +163,6 @@ impl Format {
             Kind::Jpeg => Format::Jpeg,
             Kind::Png => Format::Png,
             Kind::Webp => Format::Webp,
-            Kind::Heic => Format::Heic,
             Kind::Avif => Format::Avif,
             _ => return None,
         })
@@ -193,17 +193,15 @@ pub enum CompressFormat {
     Jpeg,
     Png,
     Webp,
-    Heic,
     Avif,
 }
 
 impl CompressFormat {
-    pub const ALL: [CompressFormat; 7] = [
+    pub const ALL: [CompressFormat; 6] = [
         CompressFormat::MostCompatible,
         CompressFormat::SameAsOriginal,
         CompressFormat::Jpeg,
         CompressFormat::Png,
-        CompressFormat::Heic,
         CompressFormat::Webp,
         CompressFormat::Avif,
     ];
@@ -215,7 +213,6 @@ impl CompressFormat {
             CompressFormat::Jpeg => "JPEG",
             CompressFormat::Png => "PNG",
             CompressFormat::Webp => "WebP",
-            CompressFormat::Heic => "HEIC",
             CompressFormat::Avif => "AVIF",
         }
     }
@@ -229,7 +226,6 @@ impl CompressFormat {
             CompressFormat::Jpeg => Format::Jpeg,
             CompressFormat::Png => Format::Png,
             CompressFormat::Webp => Format::Webp,
-            CompressFormat::Heic => Format::Heic,
             CompressFormat::Avif => Format::Avif,
         }
     }
@@ -275,15 +271,18 @@ impl Default for ConvertOptions {
     }
 }
 
-/// The lossy WebP encoder's own quality for a slider value, so 75 % looks like libwebp's 75.
-/// Measured on 12 MP photos: its 85 lands at the size and PSNR libwebp's 75 does.
-pub fn webp_quality(q: u8) -> u8 {
-    let q = u32::from(q.clamp(1, 100));
-    (if q <= 75 {
-        q * 85 / 75
-    } else {
-        85 + (q - 75) * 15 / 25
-    }) as u8
+/// The quality a picture is re-encoded at when an operation keeps its format: `None` leaves it
+/// to ImageMagick, which reads a JPEG's own; 90 for the other lossy formats.
+pub fn reencode_quality(kind: Kind) -> Option<u8> {
+    match kind {
+        Kind::Webp | Kind::Avif => Some(90),
+        _ => None,
+    }
+}
+
+/// Whether a WebP file's first image chunk is lossless (VP8L) rather than lossy (VP8).
+pub fn is_lossless_webp(head: &[u8]) -> bool {
+    head.windows(4).find(|w| *w == b"VP8 " || *w == b"VP8L") == Some(b"VP8L")
 }
 
 /// The palette size a lossy PNG gets for a slider value; `None` keeps it lossless.
@@ -328,10 +327,24 @@ mod tests {
     }
 
     #[test]
-    fn quality_maps_are_monotonic_and_in_range() {
-        let w: Vec<u8> = (1..=100).map(webp_quality).collect();
-        assert!(w.windows(2).all(|p| p[0] <= p[1]));
-        assert_eq!((webp_quality(75), webp_quality(100)), (85, 100));
+    fn heic_is_rewritten_as_jpeg() {
+        assert_eq!(Format::matching(Kind::Heic), None);
+        assert_eq!(Format::kept(Kind::Heic), Some(Format::Jpeg));
+        assert_eq!(Format::kept(Kind::Gif), Some(Format::Gif));
+        assert_eq!(Format::kept(Kind::Pdf), None);
+    }
+
+    #[test]
+    fn lossless_webp_is_told_from_lossy() {
+        assert!(is_lossless_webp(b"RIFF....WEBPVP8L"));
+        assert!(is_lossless_webp(b"RIFF....WEBPVP8X....ALPHVP8L"));
+        assert!(!is_lossless_webp(b"RIFF....WEBPVP8 "));
+        assert_eq!(reencode_quality(Kind::Jpeg), None);
+        assert_eq!(reencode_quality(Kind::Avif), Some(90));
+    }
+
+    #[test]
+    fn png_palettes_shrink_with_quality() {
         assert_eq!(png_colors(100), None);
         assert_eq!(png_colors(75), Some(256));
         assert_eq!(png_colors(30), Some(64));

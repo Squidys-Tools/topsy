@@ -1,30 +1,18 @@
-//! Compress PDF: pictures re-encoded as JPEG and scaled down to what their page can show,
-//! streams deflated, unused objects dropped, and the rest packed into object streams.
+//! Compress PDF: pictures re-encoded as JPEG by ImageMagick and scaled down to what their page
+//! can show, streams deflated, unused objects dropped, and the rest packed into object streams.
 
 use std::collections::{HashMap, HashSet};
 use std::io;
 
-use image::RgbaImage;
 use lopdf::{Document, Object, ObjectId, Stream};
 
-use crate::model::jpeg::{self, encode as jpeg_encode};
-use crate::model::pdf::{Preset, downsample};
+use crate::model::magick::pdf_image_args;
+use crate::model::pdf::{Preset, downsample, worth_replacing};
 use crate::transform::Steps;
-use crate::transform::image::pixels::scale;
+use crate::transform::image::{Kit, Scratch};
 
-/// Applies `preset` to every picture in `doc`, reporting progress from `from` to `to`.
-pub fn shrink(
-    doc: &mut Document,
-    preset: Preset,
-    steps: &Steps,
-    (from, to): (f32, f32),
-) -> io::Result<()> {
-    let pages = page_sizes(doc);
-    let fallback =
-        pages.values().copied().fold(
-            (612.0, 792.0),
-            |a: (f64, f64), b| if b.0 * b.1 > a.0 * a.1 { b } else { a },
-        );
+/// The pictures in `doc`, without the masks that belong to them.
+fn pictures(doc: &Document) -> Vec<ObjectId> {
     let masks: HashSet<ObjectId> = doc
         .objects
         .values()
@@ -32,8 +20,7 @@ pub fn shrink(
         .flat_map(|s| [s.dict.get(b"SMask"), s.dict.get(b"Mask")])
         .filter_map(|m| m.ok()?.as_reference().ok())
         .collect();
-    let images: Vec<ObjectId> = doc
-        .objects
+    doc.objects
         .iter()
         .filter(|(id, o)| {
             !masks.contains(id)
@@ -45,19 +32,47 @@ pub fn shrink(
                 })
         })
         .map(|(id, _)| *id)
-        .collect();
+        .collect()
+}
+
+pub fn has_pictures(doc: &Document) -> bool {
+    !pictures(doc).is_empty()
+}
+
+/// Applies `preset` to every picture in `doc`, reporting progress from `from` to `to`. Without
+/// `kit` (a PDF with no pictures) only the structure is packed.
+pub fn shrink(
+    doc: &mut Document,
+    preset: Preset,
+    kit: Option<&Kit>,
+    steps: &Steps,
+    (from, to): (f32, f32),
+) -> io::Result<()> {
+    let pages = page_sizes(doc);
+    let fallback =
+        pages.values().copied().fold(
+            (612.0, 792.0),
+            |a: (f64, f64), b| if b.0 * b.1 > a.0 * a.1 { b } else { a },
+        );
+    let images = if kit.is_some() {
+        pictures(doc)
+    } else {
+        Vec::new()
+    };
     for (i, id) in images.iter().enumerate() {
         steps.at(from + (to - from) * i as f32 / images.len().max(1) as f32)?;
         let components = match doc.get_object(*id).and_then(Object::as_stream) {
             Ok(stream) => components(doc, stream),
             Err(_) => continue,
         };
-        let Some(n) = components else { continue };
+        let (Some(n), Some(kit)) = (components, kit) else {
+            continue;
+        };
         let page = pages.get(id).copied().unwrap_or(fallback);
         let Ok(Object::Stream(stream)) = doc.get_object_mut(*id) else {
             continue;
         };
-        if let Some((jpeg, w, h)) = reencode(stream, n, page, preset) {
+        if let Some((jpeg, w, h)) = reencode(stream, n, page, preset, kit, steps)? {
             stream.dict.set("Width", w);
             stream.dict.set("Height", h);
             stream.dict.set("Filter", "DCTDecode");
@@ -178,69 +193,54 @@ fn components(doc: &Document, s: &Stream) -> Option<u8> {
     }
 }
 
-/// The picture as a JPEG at `preset`, scaled for `page`, when that is smaller than it is now.
-fn reencode(s: &Stream, n: u8, page: (f64, f64), preset: Preset) -> Option<(Vec<u8>, u32, u32)> {
-    let w = u32::try_from(s.dict.get(b"Width").ok()?.as_i64().ok()?).ok()?;
-    let h = u32::try_from(s.dict.get(b"Height").ok()?.as_i64().ok()?).ok()?;
+/// The picture as a JPEG at `preset`, scaled for `page`, when that is worth it. ImageMagick
+/// reads a JPEG as it is and raw samples as a PPM or PGM.
+fn reencode(
+    s: &Stream,
+    n: u8,
+    page: (f64, f64),
+    preset: Preset,
+    kit: &Kit,
+    steps: &Steps,
+) -> io::Result<Option<(Vec<u8>, u32, u32)>> {
+    let int = |k: &[u8]| s.dict.get(k).ok()?.as_i64().ok()?.try_into().ok();
+    let (Some(w), Some(h)) = (int(b"Width"), int(b"Height")) else {
+        return Ok(None);
+    };
+    let (w, h): (u32, u32) = (w, h);
     if w < 16 || h < 16 {
-        return None;
+        return Ok(None);
     }
-    let filters = s.filters().unwrap_or_default();
     let target = downsample(w, h, page, preset.dpi);
-    let pixels: RgbaImage = match filters.as_slice() {
-        [b"DCTDecode"] => {
-            if target.is_none()
-                && jpeg::quality(&s.content).is_some_and(|q| q <= preset.quality + 5)
-            {
-                return None;
-            }
-            let img =
-                image::load_from_memory_with_format(&s.content, image::ImageFormat::Jpeg).ok()?;
-            (img.width() == w && img.height() == h).then(|| img.into_rgba8())?
-        }
+    let filters = s.filters().unwrap_or_default();
+    let (input, ext) = match filters.as_slice() {
+        [b"DCTDecode"] => (s.content.clone(), "jpg"),
         [] | [b"FlateDecode"] => {
             let expected = w as usize * h as usize * usize::from(n);
-            let raw = s
-                .decompressed_content_with_limit(expected + h as usize + 1)
-                .ok()?;
+            let Ok(raw) = s.decompressed_content_with_limit(expected + h as usize + 1) else {
+                return Ok(None);
+            };
             if raw.len() != expected {
-                return None;
+                return Ok(None);
             }
-            let px = raw.chunks_exact(usize::from(n)).flat_map(|p| {
-                if n == 1 {
-                    [p[0], p[0], p[0], 255]
-                } else {
-                    [p[0], p[1], p[2], 255]
-                }
-            });
-            RgbaImage::from_raw(w, h, px.collect())?
+            let magic = if n == 1 { "P5" } else { "P6" };
+            let mut pnm = format!("{magic}\n{w} {h}\n255\n").into_bytes();
+            pnm.extend_from_slice(&raw);
+            (pnm, if n == 1 { "pgm" } else { "ppm" })
         }
-        _ => return None,
+        _ => return Ok(None),
     };
+    let (src, out) = (Scratch::new(ext), Scratch::new("jpg"));
+    std::fs::write(&src.0, &input)?;
     let (tw, th) = target.unwrap_or((w, h));
-    let pixels = scale(&pixels, tw, th);
-    let data: Vec<u8> = if n == 1 {
-        pixels.pixels().map(|p| p.0[0]).collect()
-    } else {
-        pixels
-            .pixels()
-            .flat_map(|p| [p.0[0], p.0[1], p.0[2]])
-            .collect()
-    };
-    let px = jpeg_encode::Pixels {
-        width: tw as usize,
-        height: th as usize,
-        channels: usize::from(n),
-        data: &data,
-    };
-    let bytes = jpeg_encode::encode(
-        &px,
-        preset.quality,
-        &jpeg_encode::Metadata {
-            exif: None,
-            icc: None,
-        },
-    )
-    .ok()?;
-    (bytes.len() < s.content.len()).then_some((bytes, tw, th))
+    let path = |p: &std::path::Path| p.to_string_lossy().into_owned();
+    let args = pdf_image_args(&path(&src.0), n, (tw, th), preset.quality, &path(&out.0));
+    match kit.magick(&args, steps) {
+        Ok(_) => {}
+        Err(e) if e.kind() == io::ErrorKind::Interrupted => return Err(e),
+        // A picture ImageMagick can't read stays as it is.
+        Err(_) => return Ok(None),
+    }
+    let bytes = std::fs::read(&out.0)?;
+    Ok(worth_replacing(s.content.len(), bytes.len(), target.is_some()).then_some((bytes, tw, th)))
 }

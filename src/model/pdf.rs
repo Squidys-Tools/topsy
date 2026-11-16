@@ -176,6 +176,16 @@ pub fn downsample(w: u32, h: u32, page: (f64, f64), dpi: u32) -> Option<(u32, u3
     ))
 }
 
+/// Whether a re-encoded picture should replace the one in the PDF. One that wasn't scaled down
+/// has to save a tenth: a JPEG already near the preset's quality loses a generation for little.
+pub fn worth_replacing(old: usize, new: usize, scaled: bool) -> bool {
+    if scaled {
+        new < old
+    } else {
+        new * 10 < old * 9
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -219,6 +229,14 @@ mod tests {
             f64::from(w) / 8.5 >= 72.0 - 1.0 && f64::from(h) / 11.0 >= 72.0 - 1.0,
             "{w}x{h}"
         );
+    }
+
+    #[test]
+    fn a_re_encode_has_to_earn_its_place() {
+        assert!(worth_replacing(1000, 999, true));
+        assert!(!worth_replacing(1000, 950, false));
+        assert!(worth_replacing(1000, 800, false));
+        assert!(!worth_replacing(1000, 1200, true));
     }
 
     #[test]
