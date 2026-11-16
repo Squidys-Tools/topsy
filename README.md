@@ -44,8 +44,8 @@ it (see [Notch](#notch)), the tray holds a **shelf** of files you can drag back 
 | `src/app.rs` | The app's wiring: opens the island and connects the threads, tray icon and settings window to it |
 | `src/autostart.rs` | Start with Windows: one `HKCU\...\Run` value |
 | `src/media.rs` | The system's media session (WinRT `GlobalSystemMediaTransportControlsSessionManager`) on its own thread |
-| `src/now_playing.rs` | Now Playing's tray row, its buttons and the peek's hint |
-| `src/tray_view.rs` | The tray's layout: Now Playing above the shelf's header and chips |
+| `src/now_playing.rs` | Now Playing's player (art, progress bar, buttons) and the peek's hint |
+| `src/tray_view.rs` | The tray's layout: the player above the shelf's header and chips |
 | `src/look.rs` | The *Black notch* setting: one `HKCU\Software\topsy` value |
 | `src/frame.rs` | The island's window and shape: where it sits (the notch, or the floating tray), its size, fill, ears and rim, kept in step with the spring |
 | `src/main.rs` | The island view: hidden, peeking or open as the tray with the shelf; file-drop target |
@@ -149,17 +149,23 @@ Two things about dragging out of a window that is itself a drop target, both fou
 
 ## Now Playing
 
-The tray shows what the system's current media session is playing (the one the volume flyout shows: Spotify, a
-browser tab, the Media Player): the art, title and artist, and previous, play/pause and next buttons, greyed
-where the app doesn't take them. It sits above the shelf, and the tray grows by its row only while there is one.
+A tray opened to look (a click on the notch, the tray icon) leads with a player for the system's current media
+session (the one the volume flyout shows: Spotify, a browser tab, the Media Player), laid out after Droppy's: the
+art, title and artist; elapsed time, a progress bar and the time left; then previous, play/pause and next, greyed
+where the app doesn't take them. The shelf follows under it once it holds something. A tray opened for a drag
+(a jiggle, a drag up to the edge) or by a drop is about the shelf and leaves the player out (`TrayCause::sections`).
 While something is playing (not paused) the peek shows its art and title instead of the shelf count, with the
-count beside it. Stopped or no session shows nothing, as before.
+count beside it. Stopped or no session shows nothing.
 
-- **Event-driven only.** `src/media.rs` subscribes to `CurrentSessionChanged`, `MediaPropertiesChanged` and
-  `PlaybackInfoChanged`. WinRT raises them on thread-pool threads, whose handlers only wake one `topsy-media`
+- **Event-driven only.** `src/media.rs` subscribes to `CurrentSessionChanged`, `MediaPropertiesChanged`,
+  `PlaybackInfoChanged` and `TimelinePropertiesChanged`. WinRT raises them on thread-pool threads, whose handlers only wake one `topsy-media`
   thread; it reads the session (and decodes the art, scaled down by WIC) and sends the result to the UI thread
-  over a channel. Between events nothing runs, and a change while the notch is hidden doesn't render.
-- **No progress bar.** Timeline events are not subscribed: a moving position would repaint continuously.
+  over a channel. Between events nothing runs (but for the progress bar's once-a-second redraw while the player is open, below),
+  and a change while the notch is hidden doesn't render.
+- **The progress bar** is carried forward from the app's last report of its position, which apps send rarely
+  and not always on pause, so `model::media` holds the position where it got to when playback stops. While the
+  player is open (a tray opened to look) and the track playing, one redraw is booked for each new second;
+  anything else books none.
 - **Buttons** go to the same thread, which calls the session's `Try*Async` without waiting; the glyph changes
   when the app reports its new state.
 
@@ -353,6 +359,8 @@ hook, not the media thread). It is worth a profile, because an always-on app sho
   the same drive moves the file, as in Explorer; the chip then leaves the shelf.
 - *Compress to ZIP file* shows no progress, and a big folder can take a while before its chip appears. Errors only
   go to stderr. Quitting mid-zip leaves the partial zip behind.
+- A file dragged straight into a tray already opened by a click keeps the player on screen until it lands; a
+  jiggle on the way turns it into the shelf's drop zone. The drop lands anywhere on the tray either way.
 - Now Playing follows only the system's *current* session (the one Windows picks), with no way to switch between
   several. Its art is fetched on every properties change, not cached by track. Not checked on the desktop yet:
   apps that report art late or not at all, and an app that never answers a button.

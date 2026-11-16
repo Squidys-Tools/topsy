@@ -34,7 +34,6 @@ use windows::Win32::Foundation::HWND;
 use windows::Win32::System::Com::COINIT_MULTITHREADED;
 
 use crate::frame::{Frame, Glass, Mode, PEEK};
-use crate::model::media::NowPlaying;
 use crate::model::shelf::{self, Shelf};
 use crate::model::spring::{Spring, SpringConfig};
 use crate::model::tray_cause::{HeldDrag, TrayCause};
@@ -45,11 +44,8 @@ const REVEAL_AFTER: Duration = Duration::from_millis(150);
 /// How long a notch that peeked down stays once the cursor has left it.
 const PEEK_LINGER: Duration = Duration::from_millis(400);
 const COLLAPSE_AFTER_RELEASE: Duration = Duration::from_millis(1200);
-const COLLAPSE_AFTER_DROP: Duration = Duration::from_millis(4000);
 /// How long the tray stays once the cursor has left it.
 const COLLAPSE_AFTER_LEAVE: Duration = Duration::from_millis(1500);
-/// How long a tray opened by a click (on the pill or the tray icon) waits for the cursor to arrive.
-const COLLAPSE_AFTER_CLICK: Duration = Duration::from_millis(5000);
 
 /// Event trace for scripted tests; silent unless TOPSY_LOG is set.
 fn log(message: &str) {
@@ -86,9 +82,7 @@ struct Island {
     writer: Option<state::Writer>,
     /// Each chip's thumbnail or icon, by its path; a chip without one shows a type badge.
     icons: HashMap<PathBuf, Arc<RenderImage>>,
-    /// What the system's media session is playing, and its art.
-    media: NowPlaying,
-    art: Option<Arc<RenderImage>>,
+    media: now_playing::Media,
 }
 
 impl Island {
@@ -112,7 +106,7 @@ impl Island {
             hwnd,
             scale,
             frame: Frame::new(hwnd, scale, glass, black, backdrop),
-            tray_cause: TrayCause::Timed(Duration::ZERO),
+            tray_cause: TrayCause::Opened,
             held: HeldDrag::default(),
             collapse_generation: 0,
             press: None,
@@ -120,8 +114,7 @@ impl Island {
             chip_menu: false,
             writer: persistence.writer,
             icons: HashMap::new(),
-            media: NowPlaying::default(),
-            art: None,
+            media: Default::default(),
         }
     }
 
@@ -178,6 +171,7 @@ impl Island {
             .collect();
         icon::forget(icons, cx);
         tray::set_shelf_count(self.shelf.len());
+        self.fit_tray();
         if let Some(writer) = &self.writer {
             writer.send(shelf::serialize(self.shelf.items()));
         }
@@ -257,7 +251,7 @@ impl Island {
         self.collapse_generation += 1;
         self.tray_cause = cause;
         self.set_mode(Mode::Tray, cx);
-        if let TrayCause::Timed(after) = cause {
+        if let Some(after) = cause.folds_after() {
             self.schedule_collapse(after, cx);
         }
     }
@@ -440,12 +434,12 @@ impl Render for Island {
                 let added = this.add_paths(paths.paths().to_vec(), cx);
                 log(&format!("shelf {} (+{added})", this.shelf.len()));
                 // Open so the file is seen to land, then fold away unless the cursor is on it.
-                this.open_tray(TrayCause::Timed(COLLAPSE_AFTER_DROP), cx);
+                this.open_tray(TrayCause::Dropped, cx);
             }))
             .on_hover(cx.listener(|this, hovered: &bool, _window, cx| this.on_hover(*hovered, cx)))
             .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
                 if this.mode != Mode::Tray {
-                    this.open_tray(TrayCause::Timed(COLLAPSE_AFTER_CLICK), cx);
+                    this.open_tray(TrayCause::Opened, cx);
                 }
             }))
             .on_mouse_down(

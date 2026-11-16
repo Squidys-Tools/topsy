@@ -1,6 +1,9 @@
 //! Now Playing: what the system's current media session reports, reduced to what the island
 //! shows. The glue (`src/media.rs`) turns each WinRT event into an [`Event`]; nothing here
-//! ticks, so a song playing costs nothing until the app reports a change.
+//! ticks, so a song playing costs nothing until the app reports a change. The position is
+//! carried forward from the app's last report when it is drawn, at the moment it is drawn.
+
+use std::time::{Duration, Instant};
 
 /// Longest title or artist kept, in characters. The row truncates to its width anyway; this
 /// only stops an app's runaway string (a page title, a whole lyric) from being shaped at all.
@@ -59,7 +62,54 @@ pub enum Event {
     Playback {
         status: Status,
         controls: Controls,
+        /// When the app reported it.
+        at: Instant,
     },
+    /// Where the track is; `None` when the app gives no length (a live stream).
+    Timeline(Option<Timeline>),
+}
+
+/// The app's report of where the track was at `at`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Timeline {
+    pub position: Duration,
+    pub length: Duration,
+    pub at: Instant,
+}
+
+/// The progress bar: how far in, out of how long.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Progress {
+    pub elapsed: Duration,
+    pub length: Duration,
+}
+
+impl Progress {
+    pub fn fraction(self) -> f32 {
+        (self.elapsed.as_secs_f32() / self.length.as_secs_f32()).clamp(0.0, 1.0)
+    }
+
+    pub fn remaining(self) -> Duration {
+        self.length.saturating_sub(self.elapsed)
+    }
+
+    /// How long until the elapsed time reads a new second: when the times next need a redraw.
+    /// A hair past it, so a timer that fires on time doesn't land just short.
+    pub fn until_next_second(self) -> Duration {
+        let into = Duration::from_nanos(self.elapsed.subsec_nanos().into());
+        Duration::from_secs(1) - into + Duration::from_millis(5)
+    }
+}
+
+/// A duration as a player shows it: `1:29`, or `1:02:09` past the hour.
+pub fn clock(d: Duration) -> String {
+    let s = d.as_secs();
+    let (h, m, s) = (s / 3600, s / 60 % 60, s % 60);
+    if h > 0 {
+        format!("{h}:{m:02}:{s:02}")
+    } else {
+        format!("{m}:{s:02}")
+    }
 }
 
 /// The tray's row: what is playing and which buttons work.
@@ -76,6 +126,7 @@ pub struct NowPlaying {
     track: Option<Track>,
     status: Status,
     controls: Controls,
+    timeline: Option<Timeline>,
 }
 
 impl NowPlaying {
@@ -85,13 +136,63 @@ impl NowPlaying {
         let before = self.card().map(Card::owned);
         match event {
             Event::Gone => *self = Self::default(),
-            Event::Track(track) => self.track = Some(track),
-            Event::Playback { status, controls } => {
+            Event::Track(track) => {
+                if self.track.as_ref() != Some(&track) {
+                    self.timeline = None;
+                }
+                self.track = Some(track);
+            }
+            Event::Playback {
+                status,
+                controls,
+                at,
+            } => {
+                // Apps don't always report the position when playback stops or starts: hold it
+                // where it got to, and carry it forward from now.
+                if (status == Status::Playing) != (self.status == Status::Playing)
+                    && let Some(t) = self.timeline
+                {
+                    self.timeline = Some(Timeline {
+                        position: self.position(t, at),
+                        at,
+                        ..t
+                    });
+                }
                 self.status = status;
                 self.controls = controls;
             }
+            Event::Timeline(timeline) => {
+                // A report from before the held position is stale.
+                let fresh = match (timeline, self.timeline) {
+                    (Some(new), Some(old)) => new.at >= old.at,
+                    _ => true,
+                };
+                let changed = fresh && self.timeline != timeline;
+                if changed {
+                    self.timeline = timeline;
+                }
+                return changed && self.card().is_some();
+            }
         }
         before != self.card().map(Card::owned)
+    }
+
+    fn position(&self, t: Timeline, now: Instant) -> Duration {
+        let ran = match self.status {
+            Status::Playing => now.saturating_duration_since(t.at),
+            _ => Duration::ZERO,
+        };
+        (t.position + ran).min(t.length)
+    }
+
+    /// Where the card's track is at `now`, when the app says how long it is.
+    pub fn progress(&self, now: Instant) -> Option<Progress> {
+        self.card()?;
+        let t = self.timeline.filter(|t| !t.length.is_zero())?;
+        Some(Progress {
+            elapsed: self.position(t, now),
+            length: t.length,
+        })
     }
 
     /// Shown in the tray while a titled track is playing or paused; stopped shows nothing.
@@ -132,10 +233,23 @@ mod tests {
     };
 
     fn playback(status: Status) -> Event {
+        playback_at(status, Instant::now())
+    }
+
+    fn playback_at(status: Status, at: Instant) -> Event {
         Event::Playback {
             status,
             controls: ALL,
+            at,
         }
+    }
+
+    fn timeline(position: u64, length: u64, at: Instant) -> Event {
+        Event::Timeline(Some(Timeline {
+            position: Duration::from_secs(position),
+            length: Duration::from_secs(length),
+            at,
+        }))
     }
 
     fn playing(title: &str, artist: &str) -> NowPlaying {
@@ -206,6 +320,7 @@ mod tests {
         let event = Event::Playback {
             status: Status::Playing,
             controls,
+            at: Instant::now(),
         };
         assert!(media.apply(event));
         assert_eq!(media.card().unwrap().controls, controls);
@@ -230,5 +345,71 @@ mod tests {
         assert!(title.ends_with('…'));
         let exact = "a".repeat(MAX_CHARS);
         assert_eq!(Track::new(&exact, "").title, exact);
+    }
+
+    #[test]
+    fn progress_runs_on_from_the_last_report_while_playing() {
+        let t0 = Instant::now();
+        let s = Duration::from_secs;
+        let mut media = playing("Song", "Band");
+        assert_eq!(media.progress(t0), None, "no timeline yet");
+        assert!(media.apply(timeline(89, 200, t0)));
+        let at = |secs| media.progress(t0 + s(secs)).unwrap().elapsed;
+        assert_eq!(at(0), s(89));
+        assert_eq!(at(10), s(99));
+        assert_eq!(at(500), s(200), "never past the end");
+        let p = media.progress(t0).unwrap();
+        assert_eq!(p.remaining(), s(111));
+        assert!((p.fraction() - 0.445).abs() < 1e-6);
+    }
+
+    #[test]
+    fn pausing_holds_the_position_even_when_the_app_reports_none() {
+        let t0 = Instant::now();
+        let s = Duration::from_secs;
+        let mut media = playing("Song", "Band");
+        media.apply(timeline(10, 200, t0));
+        media.apply(playback_at(Status::Paused, t0 + s(5)));
+        assert_eq!(media.progress(t0 + s(60)).unwrap().elapsed, s(15));
+        // A report from before the pause is stale; one after it is taken.
+        assert!(!media.apply(timeline(12, 200, t0 + s(2))));
+        assert_eq!(media.progress(t0 + s(60)).unwrap().elapsed, s(15));
+        media.apply(playback_at(Status::Playing, t0 + s(30)));
+        assert_eq!(media.progress(t0 + s(40)).unwrap().elapsed, s(25));
+        assert!(media.apply(timeline(50, 200, t0 + s(41))));
+        assert_eq!(media.progress(t0 + s(41)).unwrap().elapsed, s(50));
+    }
+
+    #[test]
+    fn no_progress_without_a_length_a_card_or_the_same_track() {
+        let t0 = Instant::now();
+        let mut media = playing("Radio", "");
+        media.apply(timeline(0, 0, t0));
+        assert_eq!(media.progress(t0), None, "a live stream has no length");
+        media.apply(timeline(5, 100, t0));
+        media.apply(Event::Track(Track::new("Next", "")));
+        assert_eq!(media.progress(t0), None, "the old track's position");
+        media.apply(timeline(5, 100, t0));
+        media.apply(playback(Status::Idle));
+        assert_eq!(media.progress(t0), None, "stopped");
+    }
+
+    #[test]
+    fn the_times_redraw_as_the_next_second_turns() {
+        let progress = |ms| Progress {
+            elapsed: Duration::from_millis(ms),
+            length: Duration::from_secs(200),
+        };
+        let ms = Duration::from_millis;
+        assert_eq!(progress(89_300).until_next_second(), ms(705));
+        assert_eq!(progress(90_000).until_next_second(), ms(1005));
+    }
+
+    #[test]
+    fn clock_reads_like_a_player() {
+        let s = Duration::from_secs;
+        assert_eq!(clock(s(0)), "0:00");
+        assert_eq!(clock(s(89)), "1:29");
+        assert_eq!(clock(s(3729)), "1:02:09");
     }
 }

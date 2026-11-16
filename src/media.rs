@@ -8,6 +8,7 @@
 
 use std::sync::mpsc;
 use std::sync::{Arc, OnceLock};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use gpui::RenderImage;
 use image::{Frame, RgbaImage};
@@ -24,7 +25,7 @@ use windows::Media::Control::{
 };
 use windows::Win32::System::Com::COINIT_MULTITHREADED;
 
-use crate::model::media::{Controls, Event, Status, Track};
+use crate::model::media::{Controls, Event, Status, Timeline, Track};
 use crate::win32;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -44,6 +45,7 @@ enum Wake {
     Session,
     Properties,
     Playback,
+    Timeline,
     Press(Button),
 }
 
@@ -82,16 +84,17 @@ pub fn press(button: Button) {
 /// The current session and its event registrations, removed when it is replaced.
 struct Watched {
     session: Session,
-    tokens: (i64, i64),
+    tokens: (i64, i64, i64),
 }
 
 impl Watched {
     fn new(session: Session, wake: &mpsc::Sender<Wake>) -> windows::core::Result<Self> {
         let props = session.MediaPropertiesChanged(&handler(wake, || Wake::Properties))?;
         let playback = session.PlaybackInfoChanged(&handler(wake, || Wake::Playback))?;
+        let timeline = session.TimelinePropertiesChanged(&handler(wake, || Wake::Timeline))?;
         Ok(Self {
             session,
-            tokens: (props, playback),
+            tokens: (props, playback, timeline),
         })
     }
 }
@@ -100,6 +103,7 @@ impl Drop for Watched {
     fn drop(&mut self) {
         let _ = self.session.RemoveMediaPropertiesChanged(self.tokens.0);
         let _ = self.session.RemovePlaybackInfoChanged(self.tokens.1);
+        let _ = self.session.RemoveTimelinePropertiesChanged(self.tokens.2);
     }
 }
 
@@ -125,6 +129,8 @@ fn run(
     manager.CurrentSessionChanged(&handler(wake, || Wake::Session))?;
     let _ = wake.send(Wake::Session);
     let send = |event: Event, art| tx.send_blocking(Update { event, art }).is_ok();
+    // Nothing to send counts as sent.
+    let report = |event: Option<Event>| event.is_none_or(|event| send(event, None));
     let mut current: Option<Watched> = None;
     while let Ok(wake_up) = woken.recv() {
         let session = current.as_ref().map(|w| &w.session);
@@ -136,15 +142,22 @@ fn run(
                     Some(session) => {
                         current = Watched::new(session.clone(), wake).ok();
                         let (track, art) = track(&session, art_size);
-                        send(Event::Track(track), art) && send(playback(&session), None)
+                        send(Event::Track(track), art)
+                            && report(playback(&session))
+                            && report(timeline(&session))
                     }
                 }
             }
             (Wake::Properties, Some(session)) => {
+                // A new track drops the old one's position, so read the new one's after it.
                 let (track, art) = track(session, art_size);
-                send(Event::Track(track), art)
+                send(Event::Track(track), art) && report(timeline(session))
             }
-            (Wake::Playback, Some(session)) => send(playback(session), None),
+            // Some apps only report the position along with a change of playback.
+            (Wake::Playback, Some(session)) => {
+                report(playback(session)) && report(timeline(session))
+            }
+            (Wake::Timeline, Some(session)) => report(timeline(session)),
             (Wake::Press(button), Some(session)) => {
                 // Not waited on: the app reports the outcome as a playback event.
                 let _ = match button {
@@ -177,13 +190,17 @@ fn track(session: &Session, art_size: u32) -> (Track, Option<Arc<RenderImage>>) 
     (track, art(&props, art_size).ok())
 }
 
-fn playback(session: &Session) -> Event {
+/// `None` while the app is between tracks (`Changing`): what it reports next stands, and the
+/// player doesn't fold away and back for a moment.
+fn playback(session: &Session) -> Option<Event> {
+    let at = Instant::now();
     let Ok(info) = session.GetPlaybackInfo() else {
-        return Event::Gone;
+        return Some(Event::Gone);
     };
     let status = match info.PlaybackStatus() {
         Ok(PlaybackStatus::Playing) => Status::Playing,
         Ok(PlaybackStatus::Paused) => Status::Paused,
+        Ok(PlaybackStatus::Changing) => return None,
         _ => Status::Idle,
     };
     let controls = info.Controls().ok().map(|c| {
@@ -196,10 +213,40 @@ fn playback(session: &Session) -> Event {
             next: on(c.IsNextEnabled()),
         }
     });
-    Event::Playback {
+    Some(Event::Playback {
         status,
         controls: controls.unwrap_or_default(),
-    }
+        at,
+    })
+}
+
+/// Where the track is, as of when the app last said. WinRT counts in 100 ns ticks; its clock
+/// starts in 1601. `None` if it can't be read, so the last report stands.
+fn timeline(session: &Session) -> Option<Event> {
+    const UNIX_IN_TICKS: i64 = 11_644_473_600 * 10_000_000;
+    let ticks = |t: i64| Duration::from_nanos(t.max(0) as u64 * 100);
+    let props = session.GetTimelineProperties().ok()?;
+    let get = || -> windows::core::Result<(i64, i64, i64, i64)> {
+        let start = props.StartTime()?.Duration;
+        Ok((
+            start,
+            props.EndTime()?.Duration,
+            props.Position()?.Duration,
+            props.LastUpdatedTime()?.UniversalTime,
+        ))
+    };
+    let (start, end, position, updated) = get().ok()?;
+    let now = Instant::now();
+    let updated = UNIX_EPOCH + ticks(updated - UNIX_IN_TICKS);
+    // A report from the future (a clock change) counts as now.
+    let age = SystemTime::now()
+        .duration_since(updated)
+        .unwrap_or_default();
+    Some(Event::Timeline((end > start).then(|| Timeline {
+        position: ticks(position - start),
+        length: ticks(end - start),
+        at: now.checked_sub(age).unwrap_or(now),
+    })))
 }
 
 /// The track's art, decoded and scaled down (never up) so its shorter side is `size`.
