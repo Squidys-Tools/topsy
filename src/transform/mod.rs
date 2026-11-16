@@ -111,6 +111,9 @@ pub fn open(cx: &mut App, island: &Entity<Island>, paths: Vec<PathBuf>) {
     {
         return;
     }
+    if !paths.iter().any(|p| p.is_file()) {
+        return;
+    }
     log(&format!("transform {} files", paths.len()));
     let Some((_, work, scale)) = win32::cursor_monitor() else {
         return;
@@ -148,7 +151,7 @@ pub fn open(cx: &mut App, island: &Entity<Island>, paths: Vec<PathBuf>) {
             let raw = hwnd.0 as usize;
             cx.defer(move |_| win32::move_window(HWND(raw as *mut _), x, y, w, h, true));
         }
-        cx.new(|cx| {
+        let panel = cx.new(|cx| {
             let focus = cx.focus_handle();
             window.focus(&focus);
             let mut panel = Panel {
@@ -165,7 +168,13 @@ pub fn open(cx: &mut App, island: &Entity<Island>, paths: Vec<PathBuf>) {
             };
             panel.add(paths, cx);
             panel
-        })
+        });
+        let weak = panel.downgrade();
+        window.on_window_should_close(cx, move |_, cx| {
+            weak.update(cx, |panel, _| panel.cancel()).ok();
+            true
+        });
+        panel
     });
     match opened {
         Ok(handle) => cx.set_global(Open(handle)),
@@ -266,9 +275,7 @@ impl Panel {
 
     /// Close the panel; a job still running is cancelled first.
     pub fn close(&mut self, window: &mut Window) {
-        if let State::Running { cancel, .. } = &self.state {
-            cancel.store(true, Ordering::Relaxed);
-        }
+        self.cancel();
         window.remove_window();
     }
 
@@ -281,6 +288,9 @@ impl Panel {
         apply: fn(&mut Options, usize),
         cx: &mut Context<Self>,
     ) {
+        if self.running() {
+            return;
+        }
         let (tx, rx) = async_channel::bounded(1);
         let spawned = std::thread::Builder::new()
             .name("topsy-transform-menu".into())
@@ -301,6 +311,9 @@ impl Panel {
         cx.spawn(async move |this, cx: &mut AsyncApp| {
             if let Ok(Some(id)) = rx.recv().await {
                 this.update(cx, |this, cx| {
+                    if this.running() {
+                        return;
+                    }
                     apply(&mut this.options, id - 1);
                     this.state = State::Ready;
                     cx.notify();

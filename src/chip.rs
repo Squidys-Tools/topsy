@@ -6,7 +6,7 @@ use gpui::{
     ObjectFit, div, hsla, img, prelude::*, px, rgba,
 };
 
-use crate::model::shelf::Item;
+use crate::model::shelf::{Item, Kind};
 use crate::win32::{self, DragOutcome, MenuEntry};
 use crate::{COLLAPSE_AFTER_LEAVE, COLLAPSE_AFTER_RELEASE, Island, archive, log};
 
@@ -262,8 +262,10 @@ impl Island {
             return;
         }
         let (tx, rx) = async_channel::bounded(1);
+        // Transform, first, takes files only.
+        let from = usize::from(item.kind == Kind::Dir);
         if !on_thread("topsy-chip-menu", move || {
-            let _ = tx.send_blocking(win32::popup_menu(&MENU));
+            let _ = tx.send_blocking(win32::popup_menu(&MENU[from..]));
         }) {
             return;
         }

@@ -111,7 +111,9 @@ pub fn prepare(
             && match action {
                 Action::Compress | Action::Resize => true,
                 Action::Convert => p.convert != Format::Pdf,
-                Action::Rotate | Action::RemoveMetadata => sniff(&i.path) != Some(Sniffed::Jpeg),
+                Action::Rotate | Action::RemoveMetadata | Action::CombinePdf => {
+                    sniff(&i.path) != Some(Sniffed::Jpeg)
+                }
                 _ => false,
             }
     });
@@ -124,6 +126,10 @@ pub fn prepare(
         pdf::fetch(&|f| progress("Getting the PDF renderer…".into(), f), cancel)?;
     }
     Ok(())
+}
+
+fn over_target() -> io::Error {
+    io::Error::other("Couldn't get it under that size; try a larger one")
 }
 
 fn no_folder() -> io::Error {
@@ -144,7 +150,11 @@ fn written(
 ) -> io::Result<Vec<PathBuf>> {
     let mut format = None;
     let out = into(reserve(paths(src, action, guess)?)?, |out| {
-        format = Some(make(out)?.format);
+        let written = make(out)?;
+        if !written.fits {
+            return Err(over_target());
+        }
+        format = Some(written.format);
         Ok(())
     })?;
     let ext = format.map_or(guess, Format::extension);
@@ -220,7 +230,12 @@ pub fn pdf_one(
         Ok(vec![into(reserve(paths(src, action, "pdf")?)?, make)?])
     };
     match action {
-        Action::Compress => pdf(&|out| pdf::compress(src, p.pdf, out, progress, cancel).map(drop)),
+        Action::Compress => pdf(
+            &|out| match pdf::compress(src, p.pdf, out, progress, cancel)?.fits {
+                true => Ok(()),
+                false => Err(over_target()),
+            },
+        ),
         Action::Convert => to_images(src, p, progress, cancel),
         Action::Rotate => {
             pdf(&|out| pdf::rotate_pages(src, p.rotation, out, progress, cancel).map(drop))

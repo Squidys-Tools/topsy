@@ -88,8 +88,6 @@ pub struct Options {
     pub page: usize,
     pub zip_name: String,
     pub rename: String,
-    /// Formats this machine can't write, by label, greyed in the pickers.
-    pub unavailable: Vec<&'static str>,
 }
 
 impl Default for Options {
@@ -119,7 +117,6 @@ impl Default for Options {
             page: 0,
             zip_name: "Archive".into(),
             rename: String::new(),
-            unavailable: Vec::new(),
         }
     }
 }
@@ -165,9 +162,7 @@ impl Options {
     }
 
     fn menu(&self, list: &'static [&'static str]) -> Vec<(&'static str, bool)> {
-        list.iter()
-            .map(|&label| (label, !self.unavailable.contains(&label)))
-            .collect()
+        list.iter().map(|&label| (label, true)).collect()
     }
 }
 
@@ -177,7 +172,7 @@ macro_rules! choice {
         let list: &'static [&'static str] = $list;
         let at = $panel.options.$field.min(list.len() - 1);
         let menu = $panel.options.menu(list);
-        picker($id, list[at], true, {
+        picker($id, list[at], !$panel.running(), {
             let this = $cx.entity().downgrade();
             move |_, cx| {
                 let menu = menu.clone();
@@ -347,7 +342,7 @@ impl Panel {
             Action::RemoveBackground => vec![self.background_row(cx)],
             Action::RemoveMetadata => vec![note(match kind {
                 Kind::Image => {
-                    "Removes the location, camera details and dates. JPEG, PNG and WebP keep every pixel as it was."
+                    "Removes the location, camera details and dates. JPEG and PNG keep every pixel as it was."
                 }
                 _ => "Removes the location, device and dates the file carries.",
             })],

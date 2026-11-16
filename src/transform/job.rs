@@ -83,11 +83,6 @@ impl Panel {
             }
             Action::Zip => ("Zip".into(), name_problem(&o.zip_name).is_none()),
             Action::CombinePdf => (format!("Combine {n} into PDF"), n > 0),
-            Action::Resize if o.resize_by == 2 => (
-                "Resize".into(),
-                o.width.parse::<u32>().is_ok_and(|w| w > 0)
-                    || o.height.parse::<u32>().is_ok_and(|h| h > 0),
-            ),
             _ => engines::button_label(self, action),
         }
     }
@@ -275,9 +270,6 @@ fn run(
                 outcome.outputs = engines::run_all(work, inputs, report, cancel)?;
             } else {
                 for (i, input) in inputs.iter().enumerate() {
-                    if cancel.load(Ordering::Relaxed) {
-                        return Err(cancelled());
-                    }
                     let label = if inputs.len() == 1 {
                         format!("{verb}…")
                     } else {
@@ -285,16 +277,24 @@ fn run(
                     };
                     report(label.clone(), i as f32 / total);
                     let step = |p: f32| report(label.clone(), (i as f32 + p) / total);
-                    let made = engines::run_one(work, input, &step, cancel);
+                    let made = match cancel.load(Ordering::Relaxed) {
+                        true => Err(cancelled()),
+                        false => engines::run_one(work, input, &step, cancel),
+                    };
                     match made {
                         Ok(paths) => outcome.outputs.extend(paths),
-                        // Results already made stay, and so does what is on the shelf.
-                        Err(err) if outcome.outputs.is_empty() => return Err(err),
+                        // All or nothing: what the earlier files made goes too.
                         Err(err) => {
-                            log(&format!("transform step failed: {err}"));
+                            for path in &outcome.outputs {
+                                let _ = fs::remove_file(path);
+                            }
+                            if inputs.len() == 1 || err.kind() == io::ErrorKind::Interrupted {
+                                return Err(err);
+                            }
+                            let name = input.path.file_name().unwrap_or_default();
                             return Err(io::Error::new(
                                 err.kind(),
-                                format!("{err} ({} of {} done)", i, inputs.len()),
+                                format!("{}: {err}", name.to_string_lossy()),
                             ));
                         }
                     }

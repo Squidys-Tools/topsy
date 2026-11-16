@@ -265,8 +265,8 @@ it falls below 20% and 10% (or is unplugged below 20%), and when it is full on t
 *Transform* on a chip's menu, or in the shelf's header, opens a panel laid out after Droppy's: the files at the
 top, a tile for each action that suits them, the chosen action's options, and one button. Results are saved
 beside the originals (`photo (compressed).jpg`, `report (page 2).png`, `Combined.pdf`), numbered rather than
-overwriting, and parked on the shelf. The originals are never changed; Cancel stops the work and deletes the
-partial result.
+overwriting, and parked on the shelf. Only Rename touches the originals; Cancel, or a file that fails, stops the
+work and deletes what it had made.
 
 - **Images:** Compress (by quality or to a size, as JPEG, PNG, WebP or AVIF, or *Most compatible*: JPEG, or PNG
   when there is transparency; a largest side), Convert (JPEG, PNG, WebP, AVIF, TIFF, GIF, BMP, ICO, PDF; HEIC is
@@ -512,7 +512,7 @@ hook, not the media thread). It is worth a profile, because an always-on app sho
   `vcomp140.dll`), so a PC without it can't run the image actions (FFmpeg and pdfium don't need it). HEIC is read
   but not written (the portable ImageMagick has no HEVC encoder), so it isn't offered as an output. HDR video comes
   out as SDR without tone mapping. A video keeps its main picture and its sound: subtitles, data tracks and cover
-  art are dropped. ICO and AVIF results are bigger than a tuned encoder would make. The panel was matched to Droppy's
+  art are dropped. An animated GIF or WebP comes out as its first frame. ICO and AVIF results are bigger than a tuned encoder would make. The panel was matched to Droppy's
   site, not side by side with Droppy.
 - No droplets yet. The settings window is a plain dark fill, not Mica.
 
