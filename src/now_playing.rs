@@ -179,6 +179,9 @@ impl Island {
 
     /// What the peek says: the playing title with its art, or what is on the shelf.
     pub(crate) fn peek_content(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        if let Some(hud) = self.hud_peek() {
+            return hud;
+        }
         let count = self.shelf.len();
         let Some(title) = self.media.now.hint() else {
             let label = match count {

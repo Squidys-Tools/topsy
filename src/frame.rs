@@ -410,6 +410,16 @@ impl Island {
         self.open_tray(TrayCause::Drag, cx);
     }
 
+    /// A fullscreen video, game or slideshow has the screen: the hook's gestures stay out of its
+    /// way. Read at the moment of the gesture rather than tracked, so nothing runs meanwhile.
+    pub(crate) fn fullscreen(&self) -> bool {
+        let fullscreen = self.hwnd.is_some_and(win32::fullscreen_over);
+        if fullscreen {
+            log("fullscreen app in front: staying hidden");
+        }
+        fullscreen
+    }
+
     /// Once the floating tray has folded away, the window goes back to the notch, in whatever
     /// mode the island is in by then. True if the notch now has somewhere to spring to.
     pub(crate) fn settle_float(&mut self) -> bool {
@@ -417,7 +427,7 @@ impl Island {
             return false;
         }
         self.frame.place = Place::Notch;
-        let (w, h) = self.mode.size();
+        let (w, h) = self.size_for(self.mode);
         self.width.set_target(w);
         self.height.set_target(h);
         self.mode != Mode::Hidden

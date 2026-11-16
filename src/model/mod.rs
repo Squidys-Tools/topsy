@@ -10,6 +10,7 @@ pub mod edge;
 pub mod favicon;
 pub mod float;
 pub mod highlight;
+pub mod hud;
 pub mod jiggle;
 pub mod levels;
 pub mod media;

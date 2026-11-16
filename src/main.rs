@@ -10,6 +10,7 @@ mod chip;
 mod clipboard;
 mod config;
 mod frame;
+mod hud;
 mod icon;
 mod look;
 mod media;
@@ -84,6 +85,7 @@ struct Island {
     /// Each chip's thumbnail or icon, by its path; a chip without one shows a type badge.
     icons: HashMap<PathBuf, Arc<RenderImage>>,
     media: now_playing::Media,
+    hud: hud::State,
 }
 
 impl Island {
@@ -116,6 +118,7 @@ impl Island {
             writer: persistence.writer,
             icons: HashMap::new(),
             media: Default::default(),
+            hud: Default::default(),
         }
     }
 
@@ -307,16 +310,6 @@ impl Island {
         }
     }
 
-    /// A fullscreen video, game or slideshow has the screen: the hook's gestures stay out of its
-    /// way. Read at the moment of the gesture rather than tracked, so nothing runs meanwhile.
-    fn fullscreen(&self) -> bool {
-        let fullscreen = self.hwnd.is_some_and(win32::fullscreen_over);
-        if fullscreen {
-            log("fullscreen app in front: staying hidden");
-        }
-        fullscreen
-    }
-
     /// Bring the notch down if the cursor is still resting on the edge after a moment, so
     /// sweeping across the top of the screen doesn't flash it.
     fn schedule_reveal(&mut self, cx: &mut Context<Self>) {
@@ -364,7 +357,7 @@ impl Island {
         } else if self.mode == Mode::Peek {
             // The linger re-checks the cursor itself, so it needs no "leave", which a cursor
             // flicked off the top edge doesn't always deliver.
-            if !hovered {
+            if !hovered && !self.hud.is_shown() {
                 self.schedule_collapse(PEEK_LINGER, cx);
             }
         } else if hovered {
