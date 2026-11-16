@@ -30,10 +30,11 @@ it (see [Notch](#notch)), the tray holds a **shelf** of files you can drag back 
 | `src/model/shelf.rs` | The shelf: files parked on the island, and its save format |
 | `src/model/archive.rs` | Naming a chip's zip (`report.zip`, `report (2).zip`) and the entries inside it |
 | `src/model/media.rs` | Now Playing: the media session's events reduced to what the tray and the peek show |
+| `src/model/levels.rs` | Now Playing's level bars: peak readings to bar heights, and the colour they take from the art |
 | `src/model/tray_cause.rs` | Why the tray is open, and which events fold it early |
 | `src/config.rs` | Every `TOPSY_*` switch, read once at startup |
 | `src/backdrop.rs` | The glass: the compositor's blurred backdrop behind GPUI's content, clipped to the notch's shape |
-| `src/win32/` | Win32 glue GPUI doesn't expose: `window` (overlay styles, acrylic fallback, geometry, fullscreen), `dialog` (the settings window's dark caption and raising it), `dragdrop` (the drop-target wrapper that reports refused drags, dragging files out), `hook` (`WH_MOUSE_LL` thread), `shell` (opening files, showing them in Explorer), `menu` (a popup menu on a thread of its own), `sendto` (the Send to shortcut), `inbox` (paths handed over by a second topsy) |
+| `src/win32/` | Win32 glue GPUI doesn't expose: `window` (overlay styles, acrylic fallback, geometry, fullscreen), `dialog` (the settings window's dark caption and raising it), `dragdrop` (the drop-target wrapper that reports refused drags, dragging files out), `hook` (`WH_MOUSE_LL` thread), `shell` (opening files, showing them in Explorer), `menu` (a popup menu on a thread of its own), `meter` (the output device's peak meter), `sendto` (the Send to shortcut), `inbox` (paths handed over by a second topsy) |
 | `src/chip.rs` | A chip: how it is drawn, opening it, dragging it out, and its right-click actions |
 | `src/archive.rs` | *Compress to ZIP file*: a chip's file or folder zipped beside it ([`zip`](https://crates.io/crates/zip), MIT) |
 | `src/icon.rs` | A chip's picture: the shell's thumbnail or icon for a file, as Explorer shows it |
@@ -44,7 +45,7 @@ it (see [Notch](#notch)), the tray holds a **shelf** of files you can drag back 
 | `src/app.rs` | The app's wiring: opens the island and connects the threads, tray icon and settings window to it |
 | `src/autostart.rs` | Start with Windows: one `HKCU\...\Run` value |
 | `src/media.rs` | The system's media session (WinRT `GlobalSystemMediaTransportControlsSessionManager`) on its own thread |
-| `src/now_playing.rs` | Now Playing's player (art, progress bar, buttons) and the peek's hint |
+| `src/now_playing.rs` | Now Playing's player (art, level bars, progress bar, buttons) and the peek's hint |
 | `src/tray_view.rs` | The tray's layout: the player above the shelf's header and chips |
 | `src/look.rs` | The *Black notch* setting: one `HKCU\Software\topsy` value |
 | `src/frame.rs` | The island's window and shape: where it sits (the notch, or the floating tray), its size, fill, ears and rim, kept in step with the spring |
@@ -156,21 +157,28 @@ Two things about dragging out of a window that is itself a drop target, both fou
 
 A tray opened to look (a click on the notch, the tray icon) leads with a player for the system's current media
 session (the one the volume flyout shows: Spotify, a browser tab, the Media Player), laid out after Droppy's: the
-art, title and artist; elapsed time, a progress bar and the time left; then previous, play/pause and next, greyed
+art, title and artist with level bars beside them; elapsed time, a progress bar and the time left; then previous, play/pause and next, greyed
 where the app doesn't take them. The shelf follows under it once it holds something. A tray opened for a drag
 (a jiggle, a drag up to the edge) or by a drop is about the shelf and leaves the player out (`TrayCause::sections`).
-While something is playing (not paused) the peek shows its art and title instead of the shelf count, with the
-count beside it. Stopped or no session shows nothing.
+While something is playing (not paused) the peek shows its art, title and level bars instead of the shelf count,
+with the count beside it. Stopped or no session shows nothing.
 
 - **Event-driven only.** `src/media.rs` subscribes to `CurrentSessionChanged`, `MediaPropertiesChanged`,
   `PlaybackInfoChanged` and `TimelinePropertiesChanged`. WinRT raises them on thread-pool threads, whose handlers only wake one `topsy-media`
   thread; it reads the session (and decodes the art, scaled down by WIC) and sends the result to the UI thread
-  over a channel. Between events nothing runs (but for the progress bar's once-a-second redraw while the player is open, below),
+  over a channel. Between events nothing runs (but for the progress bar and the level bars while they are on screen, below),
   and a change while the notch is hidden doesn't render.
 - **The progress bar** is carried forward from the app's last report of its position, which apps send rarely
   and not always on pause, so `model::media` holds the position where it got to when playback stops. While the
   player is open (a tray opened to look) and the track playing, one redraw is booked for each new second;
   anything else books none.
+- **The level bars** move with the default output device's peak meter (`IAudioMeterInformation`, what the
+  volume flyout draws), so they follow everything playing, not only the session shown; capturing the app's own
+  audio would need a loopback stream, far heavier. While the peek or the player shows them and the track plays,
+  the meter is read about 12 times a second (each read is a whole redraw of the island, a few ms of CPU; measured
+  at about 2.5–3% of a core on top of idle), and reopened each second to follow a change of output device.
+  Otherwise it is let go and nothing is booked. `model::levels` gives the bars an automatic gain (a quiet track fills them as a loud one does) and ripples each beat out from the middle.
+  They take a colour averaged from the art's vivid pixels, lifted to read on black, or white when the art has none.
 - **Buttons** go to the same thread, which calls the session's `Try*Async` without waiting; the glyph changes
   when the app reports its new state.
 
@@ -366,6 +374,8 @@ hook, not the media thread). It is worth a profile, because an always-on app sho
   go to stderr. Quitting mid-zip leaves the partial zip behind.
 - A file dragged straight into a tray already opened by a click keeps the player on screen until it lands; a
   jiggle on the way turns it into the shelf's drop zone. The drop lands anywhere on the tray either way.
+- Now Playing's level bars read the default output device, so a player routed to another output (per-app output
+  in Sound settings) shows resting bars.
 - Now Playing follows only the system's *current* session (the one Windows picks), with no way to switch between
   several. Its art is fetched on every properties change, not cached by track. Not checked on the desktop yet:
   apps that report art late or not at all, and an app that never answers a button.

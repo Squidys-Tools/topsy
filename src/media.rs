@@ -38,7 +38,13 @@ pub enum Button {
 /// An event for the island, with the track's art when the event is a track.
 pub struct Update {
     pub event: Event,
-    pub art: Option<Arc<RenderImage>>,
+    pub art: Option<Art>,
+}
+
+/// A track's art, and the colour Now Playing's bars take from it.
+pub struct Art {
+    pub image: Arc<RenderImage>,
+    pub accent: Option<[u8; 3]>,
 }
 
 enum Wake {
@@ -176,7 +182,7 @@ fn run(
     Ok(())
 }
 
-fn track(session: &Session, art_size: u32) -> (Track, Option<Arc<RenderImage>>) {
+fn track(session: &Session, art_size: u32) -> (Track, Option<Art>) {
     let Ok(props) = session
         .TryGetMediaPropertiesAsync()
         .and_then(|op| op.join())
@@ -250,7 +256,7 @@ fn timeline(session: &Session) -> Option<Event> {
 }
 
 /// The track's art, decoded and scaled down (never up) so its shorter side is `size`.
-fn art(props: &Properties, size: u32) -> windows::core::Result<Arc<RenderImage>> {
+fn art(props: &Properties, size: u32) -> windows::core::Result<Art> {
     let stream = props.Thumbnail()?.OpenReadAsync()?.join()?;
     let decoder = BitmapDecoder::CreateAsync(&stream)?.join()?;
     let (w, h) = (decoder.PixelWidth()?, decoder.PixelHeight()?);
@@ -274,7 +280,9 @@ fn art(props: &Properties, size: u32) -> windows::core::Result<Arc<RenderImage>>
         .join()?
         .DetachPixelData()?;
     // GPUI's images are BGRA with straight alpha, whatever the buffer's type says.
-    let buffer =
-        RgbaImage::from_raw(w, h, pixels.to_vec()).ok_or_else(windows::core::Error::empty)?;
-    Ok(Arc::new(RenderImage::new(vec![Frame::new(buffer)])))
+    let pixels = pixels.to_vec();
+    let accent = crate::model::levels::accent(&pixels);
+    let buffer = RgbaImage::from_raw(w, h, pixels).ok_or_else(windows::core::Error::empty)?;
+    let image = Arc::new(RenderImage::new(vec![Frame::new(buffer)]));
+    Ok(Art { image, accent })
 }

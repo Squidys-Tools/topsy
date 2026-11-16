@@ -6,6 +6,7 @@ pub mod archive;
 pub mod edge;
 pub mod float;
 pub mod jiggle;
+pub mod levels;
 pub mod media;
 pub mod notch;
 // Drawn by build.rs into the exe's icon; here only for its tests.
