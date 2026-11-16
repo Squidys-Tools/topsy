@@ -17,18 +17,14 @@ use crate::model::tray_cause::TrayCause;
 use crate::settings::Setting;
 use crate::settings_window::{self, OnChange};
 use crate::tray::{self, TrayEvent};
-use crate::{
-    COLLAPSE_AFTER_CLICK, Island, Mode, autostart, backdrop, config, log, look, state, win32,
-};
+use crate::{Island, Mode, autostart, backdrop, config, log, look, state, win32};
 
 impl Island {
     fn on_tray(&mut self, event: TrayEvent, cx: &mut Context<Self>) {
         log(&format!("tray {event:?} (mode {:?})", self.mode));
         match event {
             TrayEvent::Toggle if self.mode == Mode::Tray => self.fold(cx),
-            TrayEvent::Toggle | TrayEvent::Show => {
-                self.open_notch_tray(TrayCause::Timed(COLLAPSE_AFTER_CLICK), cx)
-            }
+            TrayEvent::Toggle | TrayEvent::Show => self.open_notch_tray(TrayCause::Opened, cx),
             TrayEvent::Setting(setting, on) => {
                 self.on_setting(setting, on, cx);
                 settings_window::refresh(cx);

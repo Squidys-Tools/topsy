@@ -7,7 +7,7 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot
 $MaxLines = 500
 $Ceilings = @{
-    'src/main.rs' = 466
+    'src/main.rs' = 460
 }
 
 $failures = @()

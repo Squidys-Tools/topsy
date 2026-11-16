@@ -1,23 +1,59 @@
-//! The tray's layout: what is playing, if anything, then the shelf's header and its chips.
+//! The tray's layout: Now Playing's player when the tray was opened to look, then the shelf's
+//! header and its chips (see `TrayCause::sections` for which show when).
 
 use gpui::{ClickEvent, Context, div, prelude::*, px, rgb, rgba};
 
+use crate::model::tray_cause::Sections;
 use crate::{Island, Mode, now_playing};
 
 impl Island {
-    /// The notch body's size for `mode`; the tray grows by Now Playing's row while it shows.
+    pub(crate) fn sections(&self) -> Sections {
+        let playing = self.media.now.card().is_some();
+        self.tray_cause.sections(playing, self.shelf.is_empty())
+    }
+
+    /// The notch body's size for `mode`; the tray's height is its sections'.
     pub(crate) fn size_for(&self, mode: Mode) -> (f32, f32) {
         let (w, h) = self.frame.size(mode);
-        if mode == Mode::Tray && self.media.card().is_some() {
-            (w, h + now_playing::ROW)
+        if mode != Mode::Tray {
+            return (w, h);
+        }
+        let sections = self.sections();
+        let player = if sections.media {
+            now_playing::HEIGHT
         } else {
-            (w, h)
+            0.0
+        };
+        let shelf = if sections.shelf { h } else { 0.0 };
+        (w, player + shelf)
+    }
+
+    /// The open tray springs to its sections' height when they change under it: the track
+    /// stops, the first file lands.
+    pub(crate) fn fit_tray(&mut self) {
+        if self.mode == Mode::Tray {
+            self.height.set_target(self.size_for(Mode::Tray).1);
         }
     }
 
-    /// The expanded tray: Now Playing, a header and a row of chips (or the hint, when the
-    /// shelf is empty).
+    /// The expanded tray: the player and the shelf, as its sections say.
     pub(crate) fn tray_content(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let sections = self.sections();
+        // Fixed size and centred in the window, so it is revealed (not squashed) while the
+        // pill springs open.
+        let (w, h) = self.size_for(Mode::Tray);
+        div()
+            .w(px(w))
+            .h(px(h))
+            .flex_shrink_0()
+            .flex()
+            .flex_col()
+            .children(sections.media.then(|| self.player(cx)).flatten())
+            .children(sections.shelf.then(|| self.shelf_section(cx)))
+    }
+
+    /// The shelf's header and its chips, or the hint when it is empty.
+    fn shelf_section(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let count = self.shelf.len();
         let title = if count == 0 {
             "Shelf".to_string()
@@ -65,18 +101,15 @@ impl Island {
                 .into_any_element()
         };
 
-        // Fixed size and centred in the window, so it is revealed (not squashed) while the
-        // pill springs open.
-        let (w, h) = self.size_for(Mode::Tray);
+        let (_, h) = self.frame.size(Mode::Tray);
         div()
-            .w(px(w))
+            .w_full()
             .h(px(h))
             .flex_shrink_0()
             .flex()
             .flex_col()
             .p(px(10.0))
             .gap(px(6.0))
-            .children(self.media_row(cx))
             .child(
                 div()
                     .w_full()

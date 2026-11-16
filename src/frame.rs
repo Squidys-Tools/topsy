@@ -401,6 +401,7 @@ impl Island {
             && let Some((cursor, work, scale)) = win32::cursor_monitor()
         {
             let px = |v: f32| (v * scale).round() as i32;
+            self.tray_cause = TrayCause::Drag;
             let (w, h) = self.size_for(Mode::Tray);
             let center = float::center_under(cursor, (px(w), px(h)), work, px(MARGIN));
             log(&format!("floating tray at {center:?}"));
