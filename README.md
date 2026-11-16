@@ -271,9 +271,8 @@ overwriting, and parked on the shelf. While it works, the panel steps aside for 
 it stood, as Droppy's does: one per file (one for a zip, a PDF or a rename), blurred with a progress bar while
 waiting or working, then sharp with the size before and after and the picture's sides. A card opens its result;
 the panel closes once the run is done, and the cards go by themselves six seconds later, unless the cursor is
-on them. Only Rename touches
-the originals; a card's stop button, or a file that fails, stops the work, deletes what it had made and brings
-the panel back.
+on them. Only Rename touches the originals; a card's stop button, or a file that fails, stops the work,
+deletes what it had made and brings the panel back.
 
 - **Images:** Compress (by quality or to a size, as JPEG, PNG, HEIC, WebP or AVIF, or *Most compatible*: JPEG, or
   PNG when there is transparency; a largest side), Convert (JPEG, PNG, HEIC, WebP, AVIF, TIFF, GIF, BMP, ICO,
