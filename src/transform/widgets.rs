@@ -4,6 +4,7 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
+use crate::icons::{Icon, icon};
 use gpui::{
     AnyElement, App, Bounds, Div, ElementId, FontWeight, MouseButton, MouseDownEvent,
     MouseMoveEvent, Pixels, SharedString, Stateful, Window, canvas, div, prelude::*, px, rgb, rgba,
@@ -11,7 +12,6 @@ use gpui::{
 
 pub const ACCENT: u32 = 0x5e5ce6;
 pub const BLUE: u32 = 0x0a84ff;
-pub const ICONS: &str = "Segoe Fluent Icons";
 pub const DIM: u32 = 0xffffff8c;
 pub const FAINT: u32 = 0xffffff14;
 
@@ -90,16 +90,11 @@ pub fn picker(
                 .on_click(move |_, window, cx| open(window, cx))
         })
         .child(label.into())
-        .child(
-            div()
-                .font_family(ICONS)
-                .text_size(px(8.0))
-                .flex()
-                .flex_col()
-                .line_height(px(7.0))
-                .child("\u{e70e}")
-                .child("\u{e70d}"),
-        )
+        .child(icon(
+            Icon::Unfold,
+            14.0,
+            rgba(if enabled { 0xffffffff } else { 0xffffff59 }),
+        ))
 }
 
 /// A slider from 0 to 1 with a round knob, `width` wide; `set` hears new values while dragged.

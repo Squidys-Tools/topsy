@@ -9,10 +9,10 @@ use std::time::{Duration, Instant};
 
 use gpui::{
     App, Bounds, ClickEvent, Context, Entity, FontWeight, MouseButton, MouseDownEvent, ObjectFit,
-    Pixels, RenderImage, Window, canvas, div, fill, img, point, prelude::*, px, relative, rgb,
-    rgba,
+    RenderImage, canvas, div, fill, img, point, prelude::*, px, relative, rgb, rgba,
 };
 
+use crate::icons::{self, Icon};
 use crate::media::{self, Button};
 use crate::model::levels::{self, BARS, Levels};
 use crate::model::media::{Card, Event, NowPlaying, Progress, clock};
@@ -92,13 +92,13 @@ impl Island {
             controls,
         } = card;
         let buttons = [
-            (Button::Previous, Glyph::Previous, controls.previous),
+            (Button::Previous, Icon::Previous, controls.previous),
             (
                 Button::PlayPause,
-                if playing { Glyph::Pause } else { Glyph::Play },
+                if playing { Icon::Pause } else { Icon::Play },
                 controls.play_pause,
             ),
-            (Button::Next, Glyph::Next, controls.next),
+            (Button::Next, Icon::Next, controls.next),
         ]
         .map(|(button, glyph, enabled)| control(button, glyph, enabled, cx));
         let progress = self.media.now.progress(Instant::now());
@@ -341,33 +341,19 @@ fn art(art: Option<&Arc<RenderImage>>, side: f32, radius: f32) -> Option<impl In
     })
 }
 
-#[derive(Clone, Copy)]
-enum Glyph {
-    Previous,
-    Play,
-    Pause,
-    Next,
-}
-
-impl Glyph {
-    /// Play and pause are the larger hero button, as in Droppy.
-    fn size(self) -> (f32, f32) {
-        match self {
-            Glyph::Play | Glyph::Pause => (18.0, 22.0),
-            Glyph::Previous | Glyph::Next => (26.0, 15.0),
-        }
-    }
-}
-
-/// A button drawn with paths (no icon font to depend on). Pressing it asks the session's app
-/// from the media thread; the glyph changes when the app reports back.
+/// A media button. Pressing it asks the session's app from the media thread; the icon changes
+/// when the app reports back. Play and pause are the larger hero button, as in Droppy.
 fn control(
     button: Button,
-    glyph: Glyph,
+    glyph: Icon,
     enabled: bool,
     cx: &mut Context<Island>,
 ) -> impl IntoElement + use<> {
-    let (w, h) = glyph.size();
+    let side = if matches!(glyph, Icon::Play | Icon::Pause) {
+        30.0
+    } else {
+        26.0
+    };
     let base = div()
         .id(("media", button as usize))
         .w(px(BUTTON.0))
@@ -376,14 +362,7 @@ fn control(
         .flex()
         .items_center()
         .justify_center()
-        .child(
-            canvas(
-                |_, _, _| {},
-                move |bounds, (), window, _| paint(glyph, bounds, window),
-            )
-            .w(px(w))
-            .h(px(h)),
-        );
+        .child(icons::icon(glyph, side, rgb(GLYPH)));
     if !enabled {
         return base.opacity(0.3);
     }
@@ -401,39 +380,4 @@ fn control(
             log(&format!("media press {button:?}"));
             media::press(button);
         }))
-}
-
-fn paint(glyph: Glyph, bounds: Bounds<Pixels>, window: &mut Window) {
-    let o = bounds.origin;
-    let p = |x: f32, y: f32| point(o.x + px(x), o.y + px(y));
-    let (w, h) = glyph.size();
-    let color = rgb(GLYPH);
-    // A triangle from a flat side at `base` to a point at `tip`, the glyph's full height.
-    let triangle = |base: f32, tip: f32, window: &mut Window| {
-        let mut path = gpui::PathBuilder::fill();
-        path.move_to(p(base, 0.0));
-        path.line_to(p(tip, h / 2.0));
-        path.line_to(p(base, h));
-        path.close();
-        if let Ok(path) = path.build() {
-            window.paint_path(path, color);
-        }
-    };
-    match glyph {
-        Glyph::Play => triangle(1.0, w, window),
-        Glyph::Pause => {
-            for x in [1.0, w - 7.0] {
-                let bar = Bounds::new(p(x, 0.0), gpui::size(px(6.0), px(h)));
-                window.paint_quad(fill(bar, color).corner_radii(px(2.0)));
-            }
-        }
-        Glyph::Next => {
-            triangle(0.0, w / 2.0, window);
-            triangle(w / 2.0, w, window);
-        }
-        Glyph::Previous => {
-            triangle(w / 2.0, 0.0, window);
-            triangle(w, w / 2.0, window);
-        }
-    }
 }

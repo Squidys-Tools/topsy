@@ -1,6 +1,7 @@
 //! How a result card is drawn.
 
 use super::*;
+use crate::icons::{Icon, icon};
 
 impl Cards {
     fn card(&self, index: usize, card: &Card, cx: &mut Context<Self>) -> Stateful<gpui::Div> {
@@ -23,18 +24,24 @@ impl Cards {
             Status::Done { output, .. } => output.clone(),
             _ => card.source.clone(),
         };
-        let left = if done {
-            circle(("dismiss", index), glyph('\u{e8bb}', 10.0))
+        let left =
+            if done {
+                circle(
+                    ("dismiss", index),
+                    icon(Icon::Close, 14.0, rgb(0x1c1c1e)).into_any_element(),
+                )
                 .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.dismiss(index, cx)))
-        } else {
-            let stop = div().size(px(10.0)).rounded(px(2.0)).bg(rgb(0x1c1c1e));
-            circle(("stop", index), stop.into_any_element()).on_click(
-                cx.listener(|this, _: &ClickEvent, _, _| {
-                    this.cancel.store(true, Ordering::Relaxed)
-                }),
-            )
-        };
-        let right = circle(("open", index), glyph('\u{e8b9}', 13.0)).on_click(move |_, _, _| {
+            } else {
+                let stop = div().size(px(10.0)).rounded(px(2.0)).bg(rgb(0x1c1c1e));
+                circle(("stop", index), stop.into_any_element()).on_click(cx.listener(
+                    |this, _: &ClickEvent, _, _| this.cancel.store(true, Ordering::Relaxed),
+                ))
+            };
+        let right = circle(
+            ("open", index),
+            icon(Icon::Open, 16.0, rgb(0x1c1c1e)).into_any_element(),
+        )
+        .on_click(move |_, _, _| {
             let path = opened.clone();
             std::thread::spawn(move || win32::open_path(&path));
         });
@@ -153,14 +160,6 @@ fn circle(id: impl Into<gpui::ElementId>, content: AnyElement) -> Stateful<gpui:
         .cursor_pointer()
         .hover(|s| s.bg(rgb(0xffffff)))
         .child(content)
-}
-
-fn glyph(c: char, size: f32) -> AnyElement {
-    div()
-        .font_family(ICONS)
-        .text_size(px(size))
-        .child(c.to_string())
-        .into_any_element()
 }
 
 impl Render for Cards {

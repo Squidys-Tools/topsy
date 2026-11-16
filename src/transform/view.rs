@@ -7,51 +7,28 @@ use gpui::{
     canvas, div, img, prelude::*, px, rgb, rgba,
 };
 
-use super::widgets::{ACCENT, DIM, FAINT, ICONS, button, primary, tile};
+use super::widgets::{ACCENT, DIM, FAINT, button, primary, tile};
 use super::{Panel, RADIUS, State, THUMB, TILE, WIDTH};
+use crate::icons::{Icon, icon};
 use crate::model::transform::{Action, actions, size, summary};
 
 const PAD: f32 = 14.0;
 
 fn glyph(action: Action) -> AnyElement {
-    let c = match action {
-        Action::Compress => '\u{e73f}',
-        Action::Convert => '\u{e895}',
-        Action::Resize => '\u{e8a3}',
-        Action::Trim => '\u{e8c6}',
-        Action::MakeGif => '\u{f4a9}',
-        Action::RemoveBackground => '\u{e8d4}',
-        Action::Rotate => '\u{e7ad}',
-        Action::RemoveMetadata => '\u{ed1a}',
-        Action::CombinePdf => '\u{e8c8}',
-        Action::Zip => '\u{f012}',
-        Action::Rename => return rename_glyph(),
+    let i = match action {
+        Action::Compress => Icon::Compress,
+        Action::Convert => Icon::Convert,
+        Action::Resize => Icon::Resize,
+        Action::Trim => Icon::Trim,
+        Action::MakeGif => Icon::Gif,
+        Action::RemoveBackground => Icon::RemoveBackground,
+        Action::Rotate => Icon::Rotate,
+        Action::RemoveMetadata => Icon::RemoveMetadata,
+        Action::CombinePdf => Icon::Combine,
+        Action::Zip => Icon::Zip,
+        Action::Rename => Icon::Rename,
     };
-    div()
-        .font_family(ICONS)
-        .text_size(px(18.0))
-        .child(c.to_string())
-        .into_any_element()
-}
-
-/// Rename's icon, as Droppy draws it: a letter and a text cursor beside it.
-fn rename_glyph() -> AnyElement {
-    let serif = || div().w(px(6.0)).h(px(1.5)).bg(rgb(0xffffff));
-    div()
-        .flex()
-        .items_center()
-        .gap(px(1.0))
-        .child(div().text_size(px(19.0)).child("A"))
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .items_center()
-                .child(serif())
-                .child(div().w(px(1.5)).h(px(16.0)).bg(rgb(0xffffff)))
-                .child(serif()),
-        )
-        .into_any_element()
+    icon(i, 22.0, rgb(0xffffff)).into_any_element()
 }
 
 /// The Transform icon: a lilac page with a white badge of blue arrows.
@@ -67,13 +44,7 @@ fn badge() -> Div {
         .bg(rgb(0x232326))
         .border_1()
         .border_color(rgba(0xffffff14))
-        .font_family(ICONS)
-        .child(
-            div()
-                .text_size(px(19.0))
-                .text_color(rgb(0x9c9aff))
-                .child("\u{e729}"),
-        )
+        .child(icon(Icon::File, 22.0, rgb(0x9c9aff)))
         .child(
             div()
                 .absolute()
@@ -85,9 +56,7 @@ fn badge() -> Div {
                 .justify_center()
                 .rounded_full()
                 .bg(rgb(0xffffff))
-                .text_size(px(9.0))
-                .text_color(rgb(0x0a84ff))
-                .child("\u{e895}"),
+                .child(icon(Icon::Convert, 10.0, rgb(0x0a84ff))),
         )
 }
 
@@ -130,11 +99,9 @@ impl Panel {
                     .justify_center()
                     .rounded_full()
                     .bg(rgba(0xffffff1c))
-                    .font_family(ICONS)
-                    .text_size(px(11.0))
                     .cursor_pointer()
                     .hover(|s| s.bg(rgba(0xffffff2e)))
-                    .child("\u{e8bb}")
+                    .child(icon(Icon::Close, 16.0, rgb(0xffffff)))
                     .on_click(cx.listener(|panel, _: &ClickEvent, window, _| panel.close(window))),
             )
     }
@@ -208,11 +175,9 @@ impl Panel {
                                 .justify_center()
                                 .rounded_full()
                                 .bg(rgb(0x3a3a3c))
-                                .font_family(ICONS)
-                                .text_size(px(7.0))
                                 .invisible()
                                 .group_hover("file", |s| s.visible())
-                                .child("\u{e711}")
+                                .child(icon(Icon::Close, 10.0, rgb(0xffffff)))
                                 .on_click(cx.listener(move |panel, _: &ClickEvent, _, cx| {
                                     panel.remove(i, cx)
                                 })),
@@ -237,9 +202,7 @@ impl Panel {
                     .rounded(px(10.0))
                     .bg(rgba(FAINT))
                     .hover(|s| s.bg(rgba(0xffffff24)))
-                    .font_family(ICONS)
-                    .text_size(px(16.0))
-                    .child("\u{e710}"),
+                    .child(icon(Icon::Add, 20.0, rgb(0xffffff))),
             )
             .child(
                 div()

@@ -16,6 +16,7 @@ use windows::Win32::Foundation::HWND;
 use super::card::{self, card};
 use super::pictures::Pictures;
 use super::{Command, Event};
+use crate::icons::{Icon, icon};
 use crate::log;
 use crate::model::clip_kind::{Kind, matches};
 use crate::model::clipboard::Entry;
@@ -364,12 +365,7 @@ impl Render for Strip {
             .py(px(4.0))
             .rounded_full()
             .bg(rgba(0xffffff14))
-            .child(
-                div()
-                    .font_family("Segoe Fluent Icons")
-                    .text_color(rgba(0xffffff8c))
-                    .child("\u{e721}"),
-            )
+            .child(icon(Icon::Search, 14.0, rgba(0xffffff8c)))
             .child(if self.query.is_empty() {
                 div().text_color(rgba(0xffffff66)).child("Type to search")
             } else {
@@ -395,9 +391,9 @@ impl Render for Strip {
                 .id(("more", entry.id as usize))
                 .px(px(6.0))
                 .rounded_full()
-                .text_color(rgba(0xffffffb3))
+                .py(px(2.0))
                 .hover(|more| more.bg(rgba(0xffffff26)))
-                .child("\u{22ef}")
+                .child(icon(Icon::More, 16.0, rgba(0xffffffb3)))
                 .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                     cx.stop_propagation();
                     this.menu(at, window, cx);

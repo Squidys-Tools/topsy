@@ -10,6 +10,7 @@ use gpui::{
 };
 
 use super::pictures::{Pictures, Want};
+use crate::icons::{Icon, icon};
 use crate::model::clip_kind::{self, Kind, ago, detail};
 use crate::model::clipboard::{Content, Entry};
 use crate::model::favicon::icon_host;
@@ -118,9 +119,7 @@ pub fn card(
                             .py(px(2.0))
                             .rounded_full()
                             .bg(rgb(PILL))
-                            .text_color(rgb(0xe0453a))
-                            .text_xs()
-                            .child("\u{2605}"),
+                            .child(icon(Icon::Star, 12.0, rgb(0xe0453a))),
                     )
                 })
                 .child(more),

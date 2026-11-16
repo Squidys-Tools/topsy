@@ -18,7 +18,6 @@ use gpui::{
 use windows::Win32::Foundation::HWND;
 use windows::Win32::System::Com::COINIT_MULTITHREADED;
 
-use super::widgets::ICONS;
 use crate::model::float::Rect;
 use crate::model::transform::Action;
 use crate::model::transform_card::{Headline, Made};
