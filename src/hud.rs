@@ -8,6 +8,7 @@ use gpui::{App, Context, Div, Entity, FontWeight, div, prelude::*, px, rgb, rgba
 
 use crate::autostart::RegString;
 use crate::frame::{Mode, PEEK};
+use crate::icons::{self, Icon};
 use crate::model::hud::{Battery, BatteryWatch, Hud, Power, SEGMENTS, lit};
 use crate::win32::{self, battery, brightness, volume};
 use crate::{Island, PEEK_LINGER, config, log};
@@ -17,7 +18,6 @@ const VOLUME_KEYS: RegString<'static> = RegString::new(r"Software\topsy", "Volum
 const LINGER: Duration = Duration::from_millis(1500);
 /// The notch's body while it shows a HUD: the peek's height, wider for the bar.
 pub const SIZE: (f32, f32) = (280.0, PEEK.1);
-const ICONS: &str = "Segoe Fluent Icons";
 const UNLIT: u32 = 0xffffff33;
 const GREEN: u32 = 0x34c759;
 const RED: u32 = 0xff453a;
@@ -169,16 +169,15 @@ fn row(hud: Hud) -> Div {
     match hud {
         Hud::Volume { level, muted } => {
             let glyph = match level {
-                _ if muted => '\u{e74f}',
-                0.0 => '\u{e992}',
-                l if l < 0.34 => '\u{e993}',
-                l if l < 0.67 => '\u{e994}',
-                _ => '\u{e995}',
+                _ if muted => Icon::VolumeMute,
+                0.0 => Icon::VolumeOff,
+                l if l < 0.5 => Icon::VolumeLow,
+                _ => Icon::VolumeHigh,
             };
             base.child(icon(glyph))
                 .child(bar(if muted { 0.0 } else { level }))
         }
-        Hud::Brightness(level) => base.child(icon('\u{e706}')).child(bar(level)),
+        Hud::Brightness(level) => base.child(icon(Icon::Brightness)).child(bar(level)),
         Hud::Battery(battery) => {
             let (label, percent, fill) = match battery {
                 Battery::Charging(p) => ("Charging", p, GREEN),
@@ -202,13 +201,8 @@ fn row(hud: Hud) -> Div {
     }
 }
 
-fn icon(glyph: char) -> Div {
-    div()
-        .w(px(16.0))
-        .flex_none()
-        .font_family(ICONS)
-        .text_size(px(14.0))
-        .child(glyph.to_string())
+fn icon(i: Icon) -> gpui::Svg {
+    icons::icon(i, 16.0, rgb(0xffffff))
 }
 
 /// Droppy's bar: a row of short dashes, lit up to the level.

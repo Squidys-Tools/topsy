@@ -6,6 +6,7 @@ use gpui::{
     ObjectFit, div, hsla, img, prelude::*, px, rgba,
 };
 
+use crate::icons::{Icon, icon};
 use crate::model::shelf::{Item, Kind};
 use crate::win32::{self, DragOutcome, MenuEntry};
 use crate::{COLLAPSE_AFTER_LEAVE, COLLAPSE_AFTER_RELEASE, Island, archive, log};
@@ -76,8 +77,7 @@ impl Island {
             .flex()
             .items_center()
             .justify_center()
-            .text_xs()
-            .child("×")
+            .child(icon(Icon::Close, 10.0, rgba(0xffffffff)))
             .invisible()
             .group_hover("chip", |style| style.visible())
             .on_mouse_down(

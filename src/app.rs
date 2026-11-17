@@ -104,7 +104,8 @@ pub fn run() {
     let config = config::get();
     let persistence = state::start(config.state.as_deref());
     log(&format!("restored {}", persistence.shelf.len()));
-    Application::new().run(move |cx: &mut App| {
+    let app = Application::new().with_assets(crate::icons::Assets);
+    app.run(move |cx: &mut App| {
         let display = cx.primary_display();
         let display_bounds = display
             .as_ref()

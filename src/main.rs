@@ -1,5 +1,4 @@
-// A release build is a pure GUI app. Without this Windows opens a console window for it, and
-// that window takes foreground focus at launch. Debug builds keep the console for logging.
+// A release build is a GUI app: a console window would take the focus at launch. Debug keeps it.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
@@ -12,6 +11,7 @@ mod config;
 mod frame;
 mod hud;
 mod icon;
+mod icons;
 mod look;
 mod media;
 mod model;

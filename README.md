@@ -56,6 +56,7 @@ trimmed, turned into a GIF or a PDF, stripped of metadata or cut out of their ba
 | `src/chip.rs` | A chip: how it is drawn, opening it, dragging it out, and its right-click actions |
 | `src/archive.rs` | *Compress to ZIP file*: a chip's file or folder zipped beside it ([`zip`](https://crates.io/crates/zip), MIT) |
 | `src/icon.rs` | A chip's picture: the shell's thumbnail or icon for a file, as Explorer shows it |
+| `src/icons.rs` | The interface's icons, built into the exe from `assets/icons` and drawn as SVG in any colour |
 | `src/state.rs` | The shelf's save file and the thread that writes it |
 | `src/tray.rs` | The notification-area icon and its menu, on their own thread |
 | `src/clipboard.rs` | Clipboard history on disk, owned by one thread; the history setting and how long it is kept |
@@ -209,7 +210,7 @@ with the count beside it. Stopped or no session shows nothing.
   at about 2.5–3% of a core on top of idle), and reopened each second to follow a change of output device.
   Otherwise it is let go and nothing is booked. `model::levels` gives the bars an automatic gain (a quiet track fills them as a loud one does) and ripples each beat out from the middle.
   They take a colour averaged from the art's vivid pixels, lifted to read on black, or white when the art has none.
-- **Buttons** go to the same thread, which calls the session's `Try*Async` without waiting; the glyph changes
+- **Buttons** go to the same thread, which calls the session's `Try*Async` without waiting; the icon changes
   when the app reports its new state.
 
 ## Clipboard history
@@ -538,3 +539,6 @@ hook, not the media thread). It is worth a profile, because an always-on app sho
 [MIT](LICENSE). The crates this builds on (GPUI and its dependency tree, 485 packages on Windows) are all
 permissively licensed (MIT, Apache-2.0, BSD, Zlib, ISC and similar); a distributed binary should ship their notices. The tools Transform downloads on first use (FFmpeg under the
 GPL, ImageMagick, oxipng, pdfium) are separate programs fetched from their own releases, never shipped with topsy.
+The icons are [Hugeicons](https://hugeicons.com)' free set (`@hugeicons/core-free-icons` 4.4.0, MIT,
+`assets/icons/LICENSE.md`), their path data written out as SVG; play, pause, skip and the pin star are filled. A distributed binary should ship
+that licence too.
