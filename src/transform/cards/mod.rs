@@ -69,7 +69,7 @@ pub struct Cards {
     wait: u32,
 }
 
-/// Open the cards for `sources`, their right edge on `anchor`'s, from its top down. The
+/// Open the cards for `sources`, their right edge on `anchor`'s, stacked up from its bottom. The
 /// caller has hidden the panel; whatever has the focus now keeps it.
 pub fn open(
     cx: &mut App,
@@ -86,8 +86,9 @@ pub fn open(
     };
     let w = (CARD_W * scale).round() as i32;
     let x = anchor.right - w;
-    let y = anchor.top.max(work.top);
-    let h = column_height(sources.len(), scale).min(work.bottom - y);
+    let bottom = anchor.bottom.min(work.bottom);
+    let h = column_height(sources.len(), scale).min(bottom - work.top);
+    let y = bottom - h;
     let logical = |v: i32| px(v as f32 / scale);
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(Bounds::new(
@@ -316,7 +317,8 @@ impl Cards {
         let h = column_height(shown, scale).min(rect.bottom - rect.top);
         let shape = column_clip(shown, scale, h);
         cx.spawn(async move |_, _: &mut AsyncApp| {
-            win32::resize_window(HWND(raw as *mut _), rect.right - rect.left, h);
+            let w = rect.right - rect.left;
+            win32::move_window(HWND(raw as *mut _), rect.left, rect.bottom - h, w, h, false);
             win32::set_clip(HWND(raw as *mut _), shape);
         })
         .detach();

@@ -276,23 +276,6 @@ pub fn move_window(hwnd: HWND, x: i32, y: i32, w: i32, h: i32, raise: bool) {
     }
 }
 
-/// Set a window's outer size in physical pixels, leaving where it is. For a bare popup, whose
-/// outer size is its content's; GPUI's `Window::resize` adds the frame of a titled window.
-/// Like [`move_window`], run it from a foreground task, never inside a GPUI callback.
-pub fn resize_window(hwnd: HWND, w: i32, h: i32) {
-    unsafe {
-        let _ = SetWindowPos(
-            hwnd,
-            None,
-            0,
-            0,
-            w,
-            h,
-            SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOMOVE,
-        );
-    }
-}
-
 /// What of the window may draw and take clicks, in physical pixels of the window.
 pub enum Clip {
     /// Nothing: the notch is hidden.
