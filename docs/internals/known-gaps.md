@@ -68,4 +68,4 @@ Keep this honest: remove a gap you close, add one you find and leave.
   PDFs of up to a few hundred pages; a PDF of thousands of pictures runs one ImageMagick per picture.
 - **Idle CPU** is ~1–2% of a core on a busy machine, not close to 0%, and the cause was never found; see
   [Measurements](../operations/measurements.md).
-- No droplets yet. The settings window is a plain dark fill, not Mica.
+- No droplets yet.
