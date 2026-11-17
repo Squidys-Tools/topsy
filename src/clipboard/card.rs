@@ -142,7 +142,10 @@ pub fn card(
             div()
                 .w(px(INNER - 20.0))
                 .text_center()
-                .truncate()
+                // Not `truncate`: GPUI keeps a no-wrap text's first measure, taken before this
+                // row knows its width, so it would never cut. One wrapped line is measured again.
+                .line_clamp(1)
+                .text_ellipsis()
                 .child(detail(&entry.content, kind)),
         );
     div()
