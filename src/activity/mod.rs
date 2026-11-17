@@ -5,6 +5,7 @@
 mod downloads;
 mod view;
 
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
@@ -82,6 +83,13 @@ impl Island {
             }
         }
         self.activities_changed(now, cx);
+    }
+
+    fn show_download(&mut self, key: &Key, path: PathBuf, cx: &mut Context<Self>) {
+        log(&format!("activity {key:?} shown in folder"));
+        crate::chip::show_in_folder(path);
+        self.activity.list.remove(key);
+        self.activities_changed(Instant::now(), cx);
     }
 
     pub(crate) fn activities_changed(&mut self, now: Instant, cx: &mut Context<Self>) {

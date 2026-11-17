@@ -2,6 +2,7 @@
 //! stays until it ends; a finished one, or earbuds coming and going, passes after [`LINGER`].
 //! The notch shows the [`SHOWN`] at the front, newest first.
 
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 /// How many show at once, side by side.
@@ -19,7 +20,7 @@ pub enum Key {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Activity {
     Downloading { name: String, bytes: u64 },
-    Downloaded { name: String },
+    Downloaded { name: String, path: PathBuf },
     Connected { name: String, battery: Option<u8> },
     Disconnected { name: String },
 }
@@ -87,8 +88,11 @@ impl Activities {
         self.entries.iter().filter_map(|e| e.until).min()
     }
 
-    pub fn shown(&self) -> impl Iterator<Item = &Activity> {
-        self.entries.iter().take(SHOWN).map(|e| &e.activity)
+    pub fn shown(&self) -> impl Iterator<Item = (&Key, &Activity)> {
+        self.entries
+            .iter()
+            .take(SHOWN)
+            .map(|e| (&e.key, &e.activity))
     }
 
     pub fn is_empty(&self) -> bool {
@@ -109,9 +113,9 @@ mod tests {
 
     fn names(a: &Activities) -> Vec<String> {
         a.shown()
-            .map(|a| match a {
+            .map(|(_, a)| match a {
                 Activity::Downloading { name, .. }
-                | Activity::Downloaded { name }
+                | Activity::Downloaded { name, .. }
                 | Activity::Connected { name, .. }
                 | Activity::Disconnected { name } => name.clone(),
             })
@@ -131,6 +135,7 @@ mod tests {
             Key::Download(1),
             Activity::Downloaded {
                 name: "a.zip".into(),
+                path: "a.zip".into(),
             },
             done,
         );
@@ -154,7 +159,10 @@ mod tests {
 
         a.set(
             Key::Download(1),
-            Activity::Downloaded { name: "one".into() },
+            Activity::Downloaded {
+                name: "one".into(),
+                path: "one".into(),
+            },
             t,
         );
         assert_eq!(names(&a), ["one", "three"]);

@@ -333,8 +333,8 @@ While something is going on, the notch stays down a little wider and shows it, a
 download with its name and the size it has reached, then a green tick and *Done*; Bluetooth headphones or a
 speaker connecting, with the battery where Windows knows it, or leaving. A download stays for as long as it runs;
 the rest pass after 3 s. Two show side by side, newest first. A HUD takes over the notch for its moment, an open
-tray folds back to the activity, and a fullscreen app in front keeps it hidden. The *Live Activities* setting
-turns it off.
+tray folds back to the activity, and a fullscreen app in front keeps it hidden. Clicking a finished download
+shows it in Explorer; clicking anything else opens the tray as usual. The *Live Activities* setting turns it off.
 
 - **Downloads** are told apart from the Downloads folder's changes alone (`ReadDirectoryChangesW` on a thread
   that blocks in it): browsers write to a partial file (`.crdownload` for Chrome and Edge, `.part` for Firefox)
@@ -342,7 +342,9 @@ turns it off.
   ring filling up, only the size so far, read at most once a second while it grows.
 - **Bluetooth audio** comes from `IMMNotificationClient`: an output endpoint turning active or going away. Its
   device container is looked up in Configuration Manager to tell Bluetooth from a monitor's speakers, and for
-  the name and battery; a device's several endpoints count once.
+  the name and battery; a device's several endpoints count once. Windows often learns the battery a few seconds
+  after the connection, so a device that had none is asked once more 2 s later, inside its 3 s, and the
+  activity updates in place (its 3 s start again).
 
 ## Transform
 
@@ -642,8 +644,9 @@ hook, not the media thread). It is worth a profile, because an always-on app sho
   PDFs of up to a few hundred pages; a PDF of thousands of pictures runs one ImageMagick per picture.
 - Live Activities: only the Downloads folder is watched, so a download saved elsewhere doesn't show, and a file
   any app writes there as `.part` or `.crdownload` counts as a download. A download running when topsy starts
-  shows once it next grows. Earbuds' battery is read once as they connect, and Windows often learns it a few
-  seconds later; not checked with real Bluetooth devices yet. No timers, calls or coding agents yet.
+  shows once it next grows. Earbuds' battery is read as they connect and once more 2 s later, so one Windows
+  learns after that doesn't show; not checked with real Bluetooth devices yet. No timers, calls or coding agents
+  yet.
 - No droplets yet. The settings window is a plain dark fill, not Mica.
 
 ## License

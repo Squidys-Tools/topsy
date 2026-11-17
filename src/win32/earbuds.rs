@@ -1,9 +1,11 @@
 //! Bluetooth audio coming and going. An `IMMNotificationClient` hears an output endpoint turn
 //! active or go away and hands its id to a thread of its own, which asks Configuration Manager
 //! whether the endpoint's device container is a Bluetooth one, for its name, and for its
-//! battery where Windows knows it. Nothing polls.
+//! battery where Windows knows it, asking once more a moment later if it didn't yet. Nothing
+//! polls.
 
 use std::sync::mpsc;
+use std::time::{Duration, Instant};
 
 use windows::Win32::Devices::DeviceAndDriverInstallation::{
     CM_GETIDLIST_FILTER_ENUMERATOR, CM_Get_DevNode_PropertyW, CM_Get_Device_ID_List_SizeW,
@@ -33,6 +35,8 @@ const BATTERY: DEVPROPKEY = DEVPROPKEY {
     fmtid: GUID::from_u128(0x104ea319_6ee2_4701_bd47_8ddbf425bbe5),
     pid: 2,
 };
+/// Inside the activity's 3 s linger, so a late battery updates it in place.
+const RECHECK: Duration = Duration::from_secs(2);
 const ENUMERATORS: [&str; 4] = ["BTHENUM", "BTHLE", "BTHHFENUM", "BTHLEDEVICE"];
 
 /// One Bluetooth output device arriving or leaving.
@@ -93,14 +97,42 @@ pub fn watch(report: impl Fn(Seen) + Send + 'static) {
                 Ok(devices) => devices,
                 Err(err) => return eprintln!("topsy: no audio device events: {err}"),
             };
-            for (id, state) in rx {
+            let mut recheck: Vec<(String, Instant)> = Vec::new();
+            loop {
+                let wait = recheck
+                    .iter()
+                    .map(|(_, at)| *at)
+                    .min()
+                    .map_or(Duration::MAX, |at| {
+                        at.saturating_duration_since(Instant::now())
+                    });
+                let (id, state) = match rx.recv_timeout(wait) {
+                    Ok(event) => event,
+                    Err(mpsc::RecvTimeoutError::Timeout) => {
+                        let now = Instant::now();
+                        for (id, _) in recheck.extract_if(.., |(_, at)| *at <= now) {
+                            // SAFETY: COM calls on the thread that created `devices`.
+                            if let Some(seen) = unsafe { look_up(&devices, &id, true) }
+                                && seen.battery.is_some()
+                            {
+                                report(seen);
+                            }
+                        }
+                        continue;
+                    }
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                };
                 let connected = match state {
                     DEVICE_STATE_ACTIVE => true,
                     DEVICE_STATE_NOTPRESENT | DEVICE_STATE_UNPLUGGED => false,
                     _ => continue,
                 };
+                recheck.retain(|(pending, _)| *pending != id);
                 // SAFETY: COM calls on the thread that created `devices`.
                 if let Some(seen) = unsafe { look_up(&devices, &id, connected) } {
+                    if connected && seen.battery.is_none() {
+                        recheck.push((id, Instant::now() + RECHECK));
+                    }
                     report(seen);
                 }
             }

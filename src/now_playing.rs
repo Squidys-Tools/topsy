@@ -231,7 +231,7 @@ impl Island {
         if let Some(hud) = self.hud_peek() {
             return hud;
         }
-        if let Some(activities) = self.activity_peek() {
+        if let Some(activities) = self.activity_peek(cx) {
             return activities;
         }
         let count = self.shelf.len();

@@ -1,14 +1,14 @@
 //! How an activity looks in the notch: an icon, its name, and on the right what it's at. Two
-//! share the notch side by side.
+//! share the notch side by side. A finished download shows itself in Explorer when clicked.
 
-use gpui::{Div, div, prelude::*, px, rgb, rgba};
+use gpui::{AnyElement, ClickEvent, Context, Div, div, prelude::*, px, rgb, rgba};
 
+use crate::Island;
 use crate::frame::PEEK;
 use crate::hud::{GREEN, RED, cell};
 use crate::icons::{self, Icon};
-use crate::model::activity::Activity;
+use crate::model::activity::{Activity, Key};
 use crate::model::transform::size;
-use crate::{Island, Mode};
 
 const ONE: f32 = 280.0;
 const TWO: f32 = 440.0;
@@ -25,9 +25,8 @@ impl Island {
     }
 
     /// The activities in the dropped notch, if any are on. A peek opened to look shows them too.
-    pub(crate) fn activity_peek(&self) -> Option<Div> {
+    pub(crate) fn activity_peek(&self, cx: &mut Context<Self>) -> Option<Div> {
         let (w, h) = self.activity_size()?;
-        debug_assert!(self.mode != Mode::Tray);
         Some(
             div()
                 .w(px(w))
@@ -39,16 +38,35 @@ impl Island {
                 .items_center()
                 .gap(px(12.0))
                 .text_xs()
-                .children(self.activity.list.shown().enumerate().flat_map(|(i, a)| {
-                    let divider =
-                        (i > 0).then(|| div().w(px(1.0)).h(px(14.0)).bg(rgba(0xffffff2e)));
-                    divider
-                        .map(IntoElement::into_any_element)
-                        .into_iter()
-                        .chain([row(a).into_any_element()])
-                })),
+                .children(
+                    self.activity
+                        .list
+                        .shown()
+                        .enumerate()
+                        .flat_map(|(i, (key, a))| {
+                            let divider =
+                                (i > 0).then(|| div().w(px(1.0)).h(px(14.0)).bg(rgba(0xffffff2e)));
+                            divider
+                                .map(IntoElement::into_any_element)
+                                .into_iter()
+                                .chain([clickable(row(a), key, a, cx)])
+                        }),
+                ),
         )
     }
+}
+
+fn clickable(row: Div, key: &Key, activity: &Activity, cx: &mut Context<Island>) -> AnyElement {
+    let (Key::Download(id), Activity::Downloaded { path, .. }) = (key, activity) else {
+        return row.into_any_element();
+    };
+    let (key, path) = (key.clone(), path.clone());
+    row.id(("download", *id as usize))
+        .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+            cx.stop_propagation();
+            this.show_download(&key, path.clone(), cx);
+        }))
+        .into_any_element()
 }
 
 fn row(activity: &Activity) -> Div {
@@ -59,7 +77,7 @@ fn row(activity: &Activity) -> Div {
             name,
             div().text_color(rgba(DIM)).child(size(*bytes)),
         ),
-        Activity::Downloaded { name } => (
+        Activity::Downloaded { name, .. } => (
             Icon::Tick,
             rgb(GREEN),
             name,
