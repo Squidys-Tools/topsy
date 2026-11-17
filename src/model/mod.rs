@@ -33,6 +33,7 @@ pub mod magick;
 pub mod marquee;
 pub mod matte;
 pub mod media;
+pub mod name_field;
 pub mod notch;
 #[allow(dead_code)]
 pub mod orientation;

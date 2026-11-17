@@ -1,6 +1,7 @@
 //! How the basket draws, measured from Droppy's: a handle and two round buttons along the top,
 //! then "Drop files here" while it is empty, or the stack of what it holds over a pill that
-//! counts them. The pill opens the list, a tile per file.
+//! counts them. The pill opens the list, a tile per file, and gives way to the name field
+//! while a file is renamed.
 
 use std::time::Instant;
 
@@ -22,6 +23,10 @@ const BUTTON: u32 = 0xffffff1f;
 const HANDLE: u32 = 0xffffff3e;
 const PILL: u32 = 0xffffff22;
 const GREY: u32 = 0x8b8b8bff;
+/// The rename field's ring and selection: Windows' default accent.
+const ACCENT: u32 = 0x0a84ffff;
+/// A name that can't be used.
+const WARN: u32 = 0xff9f0aff;
 /// The top strip: buttons, handle, and room to move the basket by.
 const HEADER: f32 = 52.0;
 const BUTTON_SIZE: f32 = 28.0;
@@ -139,7 +144,8 @@ impl Basket {
             .flex_shrink_0()
             .relative()
             .child(body)
-            .children((!self.files.is_empty()).then(|| self.pill(h, cx)))
+            .children((!self.files.is_empty() && self.rename.is_none()).then(|| self.pill(h, cx)))
+            .children(self.rename.is_some().then(|| self.name_field(w, h, cx)))
             .child(self.header(cx))
     }
 
@@ -240,6 +246,15 @@ impl Basket {
             .size_full()
             .cursor_grab()
             .children(cards)
+            // On the release, as the clipboard strip's: opened on the press, the release still
+            // goes to the basket and the menu never gets the keyboard.
+            .on_mouse_up(
+                MouseButton::Right,
+                cx.listener(|this, _: &MouseUpEvent, window, cx| {
+                    cx.stop_propagation();
+                    this.stack_menu(window, cx);
+                }),
+            )
     }
 
     /// Press-and-move on `el` drags `grip`'s files out; a click without moving is left to `el`.
@@ -316,8 +331,10 @@ impl Basket {
 
     /// Every file as a tile: drag one out, click to open it, right-click for its actions.
     fn tiles(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let renaming = self.rename.as_ref().map(|r| r.path.clone());
         let tiles: Vec<_> = (self.files.items().iter().enumerate())
             .map(|(i, item)| {
+                let lit = renaming.as_ref() == Some(&item.path);
                 self.grip(
                     div().id(ElementId::NamedInteger("tile".into(), i as u64)),
                     Grip::Tile(i),
@@ -333,6 +350,7 @@ impl Basket {
                 .rounded(px(10.0))
                 .cursor_pointer()
                 .hover(|style| style.bg(rgba(0xffffff1a)))
+                .when(lit, |tile| tile.bg(rgba(ACCENT & 0xffffff00 | 0x55)))
                 .child(picture(item, self.icons.get(&item.path), TILE_THUMB))
                 .child(
                     div()
@@ -346,11 +364,11 @@ impl Basket {
                     let item = item.clone();
                     move |_: &ClickEvent, _window, _cx| crate::chip::open(item.clone())
                 })
-                .on_mouse_down(
+                .on_mouse_up(
                     MouseButton::Right,
-                    cx.listener(move |this, _: &MouseDownEvent, _window, cx| {
+                    cx.listener(move |this, _: &MouseUpEvent, window, cx| {
                         cx.stop_propagation();
-                        this.tile_menu(i, cx);
+                        this.tile_menu(i, window, cx);
                     }),
                 )
             })
@@ -369,5 +387,68 @@ impl Basket {
             .content_start()
             .gap(px(6.0))
             .children(tiles)
+    }
+
+    /// The new name being typed, where the pill was: the selection lit, the caret where it is
+    /// typed. A name that can't be used says why above it.
+    fn name_field(&self, w: f32, h: f32, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let rename = self.rename.as_ref().expect("renaming");
+        let field = &rename.field;
+        let text = field.text();
+        let sel = field.selection();
+        let caret = div()
+            .w(px(1.5))
+            .h(px(15.0))
+            .flex_shrink_0()
+            .bg(rgb(0xffffff));
+        // A long name shows the end it is being typed at.
+        let long = text.chars().count() > 22;
+        let tail = long && text[..field.caret()].chars().count() > 18;
+        let span = |t: &str| div().flex_shrink_0().child(t.to_owned());
+        div()
+            .absolute()
+            .top(px(h
+                - 41.0
+                - if rename.problem.is_some() { 18.0 } else { 0.0 }))
+            .left(px(12.0))
+            .w(px(w - 24.0))
+            .flex()
+            .flex_col()
+            .items_center()
+            .gap(px(4.0))
+            .children(rename.problem.clone().map(|problem| {
+                div()
+                    .text_size(px(11.0))
+                    .text_color(rgba(WARN))
+                    .truncate()
+                    .child(problem)
+            }))
+            .child(
+                div()
+                    .id("basket-rename")
+                    .track_focus(&self.focus)
+                    .on_key_down(cx.listener(Self::on_rename_key))
+                    .w_full()
+                    .h(px(28.0))
+                    .px(px(8.0))
+                    .rounded(px(8.0))
+                    .bg(rgba(0x0000004d))
+                    .border_1()
+                    .border_color(rgba(ACCENT))
+                    .overflow_hidden()
+                    .flex()
+                    .items_center()
+                    .map(|row| match (long, tail) {
+                        (false, _) => row.justify_center(),
+                        (true, false) => row.justify_start(),
+                        (true, true) => row.justify_end(),
+                    })
+                    .whitespace_nowrap()
+                    .text_size(px(13.0))
+                    .child(span(&text[..sel.start]))
+                    .children(sel.is_empty().then_some(caret))
+                    .child(span(&text[sel.clone()]).bg(rgba(ACCENT & 0xffffff00 | 0x99)))
+                    .child(span(&text[sel.end..])),
+            )
     }
 }

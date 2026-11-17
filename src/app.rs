@@ -44,7 +44,32 @@ impl Island {
                 cx.defer(move |cx| settings_window::open(cx, on_change, previous));
             }
             TrayEvent::ClearShelf => self.clear_shelf(cx),
+            TrayEvent::ShowBasket => {
+                if let Some(basket) = self.basket.clone() {
+                    basket.update(cx, |basket, cx| basket.show(cx));
+                }
+            }
             TrayEvent::Quit => cx.quit(),
+        }
+    }
+
+    /// Files renamed on disk (by Transform or the basket): their chips follow, where they were.
+    pub(crate) fn follow_renames(
+        &mut self,
+        renamed: &[(PathBuf, PathBuf)],
+        cx: &mut Context<Self>,
+    ) {
+        let mut moved = false;
+        for (from, to) in renamed {
+            if self.shelf.rename(from, to.clone()) {
+                if let Some(icon) = self.icons.remove(from) {
+                    self.icons.insert(to.clone(), icon);
+                }
+                moved = true;
+            }
+        }
+        if moved {
+            self.shelf_changed(cx);
         }
     }
 
@@ -109,8 +134,12 @@ pub fn run() {
     // The shelf comes back before the window opens, without touching the disk for its files
     // (a dead share would stall launch); `settle_restored` checks them in the background.
     let config = config::get();
-    let persistence = state::start(config.state.as_deref());
-    log(&format!("restored {}", persistence.shelf.len()));
+    let (persistence, saved_basket) = state::start(config.state.as_deref());
+    log(&format!(
+        "restored {} (basket {})",
+        persistence.shelf.len(),
+        saved_basket.shelf.len()
+    ));
     let app = Application::new().with_assets(crate::icons::Assets);
     app.run(move |cx: &mut App| {
         let display = cx.primary_display();
@@ -164,7 +193,14 @@ pub fn run() {
                             basket.follow_window()
                         })
                         .detach();
-                        Basket::new(hwnd, scale, frame, weak)
+                        // Renaming is the one time it holds the keyboard; a click away ends it.
+                        cx.observe_window_activation(window, |basket: &mut Basket, window, cx| {
+                            if !window.is_window_active() {
+                                basket.deactivated(window, cx);
+                            }
+                        })
+                        .detach();
+                        Basket::new(hwnd, scale, frame, weak, saved_basket, cx)
                     })
                 }
             },
@@ -179,16 +215,21 @@ pub fn run() {
             tray::set_shelf_count(island.shelf.len());
             island.settle_restored(cx);
         });
+        basket.update(cx, |basket, cx| basket.settle_restored(cx));
 
-        // However the app ends, the writer thread lands the queued shelf save first.
+        // However the app ends, the writer threads land the queued shelf and basket saves first.
         {
             let island = island.clone();
             cx.on_app_quit(move |cx| {
-                island.update(cx, |island, _| {
+                let basket = island.update(cx, |island, _| {
                     if let Some(writer) = island.writer.take() {
                         writer.drain();
                     }
+                    island.basket.clone()
                 });
+                if let Some(basket) = basket {
+                    basket.update(cx, |basket, _| basket.drain_writer());
+                }
                 async {}
             })
             .detach();

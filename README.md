@@ -34,6 +34,7 @@ trimmed, turned into a GIF or a PDF, stripped of metadata or cut out of their ba
 | `src/model/basket.rs` | The basket's pill ("1 Image", "3 Items") and its stack |
 | `src/model/edge.rs` | Reaching for the hidden notch: the cursor arriving on the top row above it; what counts as fullscreen |
 | `src/model/shelf.rs` | The shelf: files parked on the island, and its save format |
+| `src/model/name_field.rs` | The basket's rename field: the stem selected at first, typing, the caret and Shift-selection |
 | `src/model/archive.rs` | Naming a chip's zip (`report.zip`, `report (2).zip`) and the entries inside it |
 | `src/model/media.rs` | Now Playing: the media session's events reduced to what the tray and the peek show |
 | `src/model/levels.rs` | Now Playing's level bars: peak readings to bar heights, and the colour they take from the art |
@@ -56,12 +57,12 @@ trimmed, turned into a GIF or a PDF, stripped of metadata or cut out of their ba
 | `src/model/tray_cause.rs` | Why the tray is open, and which events fold it early |
 | `src/config.rs` | Every `TOPSY_*` switch, read once at startup |
 | `src/backdrop.rs` | The glass: the compositor's blurred backdrop behind GPUI's content, clipped to the notch's shape |
-| `src/win32/` | Win32 glue GPUI doesn't expose: `window` (overlay styles, acrylic fallback, geometry, fullscreen), `dialog` (the settings window's dark caption and raising it), `dragdrop` (the drop-target wrapper that reports refused drags, dragging files out), `hook` (`WH_MOUSE_LL` thread), `shell` (opening files, showing them in Explorer), `menu` (a popup menu on a thread of its own), `meter` (the output device's peak meter), `sendto` (the Send to shortcut), `inbox` (paths handed over by a second topsy), `clipboard` (the clipboard listener and the Ctrl+Alt+V hotkey), `paste` (putting an entry back on the clipboard and pasting it), `http` (one https GET through WinHTTP), `volume` (taking the volume keys and stepping the volume), `brightness` (WMI's brightness events), `battery` (power notifications) |
+| `src/win32/` | Win32 glue GPUI doesn't expose: `window` (overlay styles, acrylic fallback, geometry, fullscreen), `dialog` (the settings window's dark caption and raising it), `dragdrop` (the drop-target wrapper that reports refused drags, dragging files out), `hook` (`WH_MOUSE_LL` thread), `shell` (opening files, showing them in Explorer, a rename that never replaces a file), `share` (Windows' share sheet), `menu` (a popup menu on a thread of its own), `meter` (the output device's peak meter), `sendto` (the Send to shortcut), `inbox` (paths handed over by a second topsy), `clipboard` (the clipboard listener and the Ctrl+Alt+V hotkey), `paste` (putting an entry back on the clipboard and pasting it), `http` (one https GET through WinHTTP), `volume` (taking the volume keys and stepping the volume), `brightness` (WMI's brightness events), `battery` (power notifications) |
 | `src/chip.rs` | A chip: how it is drawn, opening it, dragging it out, and its right-click actions |
 | `src/archive.rs` | *Compress to ZIP file*: a chip's file or folder zipped beside it ([`zip`](https://crates.io/crates/zip), MIT) |
 | `src/icon.rs` | A chip's picture: the shell's thumbnail or icon for a file, as Explorer shows it; a PDF's first page, drawn by pdfium |
 | `src/icons.rs` | The interface's icons, built into the exe from `assets/icons` and drawn as SVG in any colour |
-| `src/state.rs` | The shelf's save file and the thread that writes it |
+| `src/state.rs` | The shelf's and the basket's save files and the threads that write them |
 | `src/tray.rs` | The notification-area icon and its menu, on their own thread |
 | `src/clipboard.rs` | Clipboard history on disk, owned by one thread; the history setting and how long it is kept |
 | `src/clipboard/strip.rs` | The clipboard strip: the window Ctrl+Alt+V opens, its search, tabs, keys and card menu |
@@ -80,7 +81,7 @@ trimmed, turned into a GIF or a PDF, stripped of metadata or cut out of their ba
 | `src/tray_view.rs` | The tray's layout: the player above the shelf's header and chips |
 | `src/look.rs` | The *Black notch* setting: one `HKCU\Software\topsy` value |
 | `src/frame.rs` | A glass window's shape: where it sits (the notch, or floating as the basket), its size, fill, ears and rim, kept in step with the spring |
-| `src/basket/` | The basket: its window, what it holds and does (`mod`), and how it draws (`view`) |
+| `src/basket/` | The basket: its window and what it holds (`mod`), its menus (`actions`), renaming a file (`rename`), and how it draws (`view`) |
 | `src/main.rs` | The island view: hidden, peeking or open as the tray with the shelf; file-drop target |
 | `build.rs` | Copies one import library the GNU toolchain's bundled MinGW lacks, and builds the exe's icon (see below) |
 | `rust-toolchain.toml` | Pins the GNU toolchain, `stable-x86_64-pc-windows-gnu` |
@@ -141,7 +142,7 @@ To build locally without installing the SDK, GPUI only needs `fxc.exe` (and the 
 - **Shelf.** Drop files on the notch and they are parked in the tray as chips (the file's thumbnail or icon as
   Explorer shows it, the name, and a cross to remove it from the shelf; the file itself is never touched). The chips are references, not copies.
   Drag a chip out and drop it on any window, as you would from Explorer; click a chip to open it; **Clear**
-  empties the shelf. Right-click a chip for *Show in folder* (Explorer opens with it selected), *Copy as path*
+  empties the shelf. Right-click a chip for *Share…* (Windows' share sheet), *Show in folder* (Explorer opens with it selected), *Copy as path*
   (quoted, as Explorer copies it), *Compress to ZIP file* and *Remove from shelf*. The zip is written beside the
   original, named as Explorer would (`report.zip` for `report.pdf`, a folder keeps its name and is zipped whole,
   `report (2).zip` if the name is taken, never overwriting), on a worker thread, and is parked on the shelf when
@@ -152,7 +153,7 @@ To build locally without installing the SDK, GPUI only needs `fxc.exe` (and the 
   `%LOCALAPPDATA%\topsy\shelf.txt` on every change and comes back on the next start. Startup never looks at the saved files (a dead share would
   stall launch): chips return as `…` and are settled off the UI thread, which drops entries whose files are gone.
 - **Tray icon.** A small topsy-turvy notch in the notification area (a glass notch hanging into a dark half, an ink one rising into a light half), the exe's own icon (drawn in code, no asset). Left click opens
-  or closes the shelf. Right click, or right-click the notch itself, opens the menu: *Show shelf*, *Clear shelf (N)*,
+  or closes the shelf. Right click, or right-click the notch itself, opens the menu: *Show shelf*, *Clear shelf (N)*, *Show basket (N)*,
   *Black notch*, *Start with Windows* and *Show in Send to* (each checked when on), *Settings…* and *Quit topsy*. The icon lives on its own thread with a hidden window,
   re-adds itself when Explorer restarts, and is removed on Quit. On Windows 11 a new icon starts in the overflow
   flyout; drag it out to keep it visible.
@@ -203,9 +204,25 @@ along the top between a close button and a hide button, then *Drop files here* w
   drop, or at once if the drag is refused (text, say), and further jiggles of that drag leave it closed.
 - **Take them out.** Drag the stack onto any window to hand over every file at once, as Explorer would; drag
   it to the notch to park them on the shelf. The pill opens the list, a tile per file: drag one out, click to
-  open it, right-click for the chip's actions (*Transform…*, *Show in folder*, *Copy as path*, *Compress to
-  ZIP file*, *Remove from basket*). Files that land somewhere leave the basket, and it closes when the last
-  one has gone.
+  open it, right-click for its actions (*Transform…*, *Share…*, *Rename*, *Show in folder*, *Copy as path*,
+  *Compress to ZIP file*, *Remove from basket*). Right-click the stack for the same on every file at once
+  (*Transform…*, *Share all…*, *Copy as paths*, *Clear basket*). Files that land somewhere leave the basket,
+  and it closes when the last one has gone. Menus open on the button's release, as the clipboard strip's do,
+  or their access keys never reach them.
+- **Share** is Droppy's AirDrop: Windows' share sheet, with Nearby Sharing, Phone Link, Mail and the other
+  share targets. The sheet only comes up over the foreground window and otherwise reports success and never
+  asks for the files, so *Share…* brings the basket (or the island) to the front first; the sheet keeps the
+  focus while it is up.
+- **Rename** puts a field where the pill is, with the name before the extension selected, as Explorer does:
+  type to replace it, arrows, Home and End (with Shift to select), Ctrl+A, Ctrl+C/X/V. Enter renames the file
+  on disk, never over another file (a change of case alone is allowed); Escape gives up; a click elsewhere
+  keeps the new name if it can be used. A name Windows won't take says why over the field. This is the one
+  time the basket takes the keyboard: it comes to the front for the field and hands the focus back to the app
+  that had it when the field goes. The shelf follows the renamed file, and a rename
+  made in Transform reaches the basket too.
+- **It is saved**, to `basket.txt` beside the shelf's file, on every change, and comes back hidden on the next
+  start: the next jiggle, or *Show basket* in the tray icon's (and the notch's) menu, brings it up. Files gone
+  meanwhile are dropped, off the UI thread, at startup and whenever it opens.
 - **Close** (✕) empties it; the files themselves are untouched. **Hide** (⌄) puts it away with its files, and
   the next jiggle brings them back. The handle moves it: the strip between the buttons is a caption, so
   Windows does the moving, and the basket floats from wherever it is put.
@@ -471,6 +488,11 @@ playing adds a row there.
   otherwise, so a drag is never released unless the basket is there to catch it. Then it checks the basket is
   still open seconds later, drags its stack onto a separate app (`drop-target.ps1`), and checks the file landed
   there and the emptied basket closed.
+- `e2e-basket.ps1` — seeds a saved basket with a file that no longer exists, checks it comes back without it,
+  brings it up with *Show basket* from the notch's menu without taking focus, opens the list from the pill,
+  renames a tile with real keystrokes (the field gets the keyboard, the file is renamed on disk, the focus goes
+  back, the new name is saved), opens the share sheet for it and checks it asked for the file, then restarts
+  the app and checks the renamed file came back.
 - `e2e-shelf.ps1` — seeds a shelf, clicks the peeking notch open, drags a chip onto a separate app (a fixture window,
   `drop-target.ps1`) and checks it received the file and the chip left, cancels a drag with Escape (the chip stays),
   removes a chip with its cross without opening it, opens a folder chip in Explorer, clears the shelf, and finally
@@ -565,10 +587,12 @@ hook, not the media thread). It is worth a profile, because an always-on app sho
   go to stderr. Quitting mid-zip leaves the partial zip behind.
 - A file dragged straight into a tray already opened by a click keeps the player on screen until it lands. The
   drop lands anywhere on the tray.
-- The basket isn't saved: what it holds is gone after a restart (the shelf is the place to keep files). A hidden
-  basket shows nothing on screen until the next jiggle. Droppy's basket has more than this one (its own quick
-  actions such as AirDrop, and settings); this is what Droppy's feature page and video show. No rename, as on
-  the shelf: the basket never takes focus.
+- Droppy's basket settings are not copied: what this one does is from Droppy's feature page and video, which
+  don't show them. A hidden basket shows nothing on screen until the next jiggle or *Show basket*. The rename
+  field draws no blinking caret (nothing repaints at idle), can't be clicked to place the caret, and shows the
+  end of a long name while typing there rather than scrolling. The shelf still has no rename: the island never
+  takes focus. After the share sheet closes, the basket or island it was opened over keeps the foreground
+  until you click elsewhere.
 - Now Playing's level bars read the default output device, so a player routed to another output (per-app output
   in Sound settings) shows resting bars.
 - Now Playing follows only the system's *current* session (the one Windows picks), with no way to switch between

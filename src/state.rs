@@ -1,7 +1,8 @@
-//! The shelf's state file: where it lives, and the writer that keeps it up to date.
+//! The state files, the shelf's and the basket's: where they live, and the writers that keep
+//! them up to date.
 //!
 //! The format (one absolute path per line) belongs to `shelf`; this module only owns
-//! the file. Writes go to a temp sibling renamed over the real file, and happen on a
+//! the files. Writes go to a temp sibling renamed over the real file, and happen on a
 //! thread of their own so a slow disk never stalls the UI thread.
 
 use std::ffi::OsStr;
@@ -9,20 +10,32 @@ use std::path::{Path, PathBuf};
 
 use crate::model::shelf::{self, Shelf};
 
-/// Everything persistence needs, ready at startup: the shelf as it was saved, and the
-/// writer that keeps the file in step. `writer` is `None` when persistence is off.
+/// One saved list, ready at startup: the files as they were saved, and the writer that keeps
+/// the file in step. `writer` is `None` when persistence is off.
 pub struct Persistence {
     pub shelf: Shelf,
     pub writer: Option<Writer>,
 }
 
-/// Resolve the state file, read the shelf back from it, and start its writer. `topsy_state`
-/// is the `TOPSY_STATE` switch: a path, or empty to turn saving off.
-pub fn start(topsy_state: Option<&OsStr>) -> Persistence {
-    let path = resolve(topsy_state, std::env::var_os("LOCALAPPDATA").as_deref());
-    Persistence {
+/// Resolve the state files, read the shelf and the basket back, and start their writers.
+/// `topsy_state` is the `TOPSY_STATE` switch: a path, or empty to turn saving off.
+pub fn start(topsy_state: Option<&OsStr>) -> (Persistence, Persistence) {
+    let shelf = resolve(topsy_state, std::env::var_os("LOCALAPPDATA").as_deref());
+    let basket = shelf.as_deref().map(basket_path);
+    let open = |path: Option<PathBuf>| Persistence {
         shelf: path.as_deref().map(load).unwrap_or_default(),
         writer: path.map(Writer::spawn),
+    };
+    (open(shelf), open(basket))
+}
+
+/// The basket's file, beside the shelf's: `basket.txt` next to the default `shelf.txt`, else
+/// the `TOPSY_STATE` file's name with a `.basket` extension.
+fn basket_path(shelf: &Path) -> PathBuf {
+    if shelf.file_name() == Some(OsStr::new("shelf.txt")) {
+        shelf.with_file_name("basket.txt")
+    } else {
+        shelf.with_extension("basket")
     }
 }
 
@@ -225,5 +238,17 @@ mod tests {
             Some(PathBuf::from(r"C:\Users\me\AppData\Local\topsy\shelf.txt"))
         );
         assert_eq!(resolve(None, None), None);
+    }
+
+    #[test]
+    fn the_basket_saves_beside_the_shelf() {
+        assert_eq!(
+            basket_path(Path::new(r"C:\Users\me\AppData\Local\topsy\shelf.txt")),
+            PathBuf::from(r"C:\Users\me\AppData\Local\topsy\basket.txt")
+        );
+        assert_eq!(
+            basket_path(Path::new(r"D:\scratch\shelf.state")),
+            PathBuf::from(r"D:\scratch\shelf.basket")
+        );
     }
 }
