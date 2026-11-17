@@ -8,6 +8,7 @@
 mod card;
 mod favicon;
 mod pictures;
+mod preview;
 pub mod strip;
 
 use std::path::{Path, PathBuf};

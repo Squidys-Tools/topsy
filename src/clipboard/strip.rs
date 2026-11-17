@@ -356,7 +356,7 @@ impl Strip {
 }
 
 impl Render for Strip {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let now = super::now();
         let search = div()
             .flex()
@@ -401,18 +401,24 @@ impl Render for Strip {
                     this.menu(at, window, cx);
                 }))
                 .into_any_element();
-            card(entry, self.kinds[i], selected, now, &self.pictures, more)
-                .id(("card", entry.id as usize))
-                .when(!selected, |card| {
-                    card.hover(|card| card.border_color(rgba(0xffffff59)))
-                })
-                .on_click(cx.listener(move |this, _, window, _| this.take(at, true, window)))
-                .on_mouse_up(
-                    MouseButton::Right,
-                    cx.listener(move |this, _: &MouseUpEvent, window, cx| {
-                        this.menu(at, window, cx)
-                    }),
-                )
+            card(
+                entry,
+                self.kinds[i],
+                selected,
+                now,
+                &self.pictures,
+                more,
+                window,
+            )
+            .id(("card", entry.id as usize))
+            .when(!selected, |card| {
+                card.hover(|card| card.border_color(rgba(0xffffff59)))
+            })
+            .on_click(cx.listener(move |this, _, window, _| this.take(at, true, window)))
+            .on_mouse_up(
+                MouseButton::Right,
+                cx.listener(move |this, _: &MouseUpEvent, window, cx| this.menu(at, window, cx)),
+            )
         });
         let row = if self.shown.is_empty() {
             let empty = if self.entries.is_empty() {
