@@ -1,10 +1,13 @@
 //! The tray's layout: Now Playing's player when the tray was opened to look, then the shelf's
 //! header and its chips (see `TrayCause::sections` for which show when).
 
-use gpui::{ClickEvent, Context, div, prelude::*, px, rgb, rgba};
+use gpui::{ClickEvent, Context, ScrollHandle, Window, div, prelude::*, px, rgb, rgba};
 
 use crate::model::tray_cause::Sections;
 use crate::{Island, Mode, now_playing};
+
+/// Between chips.
+const GAP: f32 = 8.0;
 
 impl Island {
     pub(crate) fn sections(&self) -> Sections {
@@ -40,7 +43,11 @@ impl Island {
     }
 
     /// The expanded tray: the player and the shelf, as its sections say.
-    pub(crate) fn tray_content(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+    pub(crate) fn tray_content(
+        &self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
         let sections = self.sections();
         // Fixed size and centred in the window, so it is revealed (not squashed) while the
         // pill springs open.
@@ -53,12 +60,16 @@ impl Island {
             .flex_col()
             .relative()
             .children(sections.media.then(|| self.player(cx)).flatten())
-            .children(sections.shelf.then(|| self.shelf_section(cx)))
+            .children(sections.shelf.then(|| self.shelf_section(window, cx)))
             .children(self.hud_over_tray())
     }
 
     /// The shelf's header and its chips, or the hint when it is empty.
-    fn shelf_section(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+    fn shelf_section(
+        &self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
         let count = self.shelf.len();
         let title = if count == 0 {
             "Shelf".to_string()
@@ -107,20 +118,36 @@ impl Island {
                 .child("Drop files to park them")
                 .into_any_element()
         } else {
-            let chips: Vec<_> = self
-                .shelf
-                .items()
-                .iter()
-                .enumerate()
-                .map(|(i, item)| self.chip(i, item, cx))
+            let scroll = (window.use_keyed_state("chips", cx, |_, _| ScrollHandle::new()))
+                .read(cx)
+                .clone();
+            // A chip cut by the row's edge fades with how much of it is out of sight, so a full
+            // shelf shows there is more past the edge. Scrolling re-renders the tray.
+            let (x, row) = (
+                f32::from(scroll.offset().x),
+                f32::from(scroll.bounds().size.width),
+            );
+            let chips: Vec<_> = (self.shelf.items().iter().enumerate())
+                .map(|(i, item)| {
+                    let left = i as f32 * (crate::chip::CHIP.0 + GAP) + x;
+                    let right = left + crate::chip::CHIP.0;
+                    let seen = (right.min(row) - left.max(0.0)).max(0.0) / crate::chip::CHIP.0;
+                    let opacity = if row <= 0.0 || seen >= 1.0 {
+                        1.0
+                    } else {
+                        0.15 + 0.5 * seen
+                    };
+                    div().opacity(opacity).child(self.chip(i, item, cx))
+                })
                 .collect();
             div()
                 .id("chips")
                 .w_full()
                 .flex()
                 .flex_row()
-                .gap(px(8.0))
+                .gap(px(GAP))
                 .overflow_x_scroll()
+                .track_scroll(&scroll)
                 .children(chips)
                 .into_any_element()
         };
