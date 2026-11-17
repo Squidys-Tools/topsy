@@ -5,6 +5,7 @@ mod app;
 mod archive;
 mod autostart;
 mod backdrop;
+mod basket;
 mod chip;
 mod clipboard;
 mod config;
@@ -30,11 +31,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    ClickEvent, Context, ExternalPaths, MouseButton, MouseDownEvent, Pixels, Point, RenderImage,
-    Window, div, prelude::*, rgb,
+    ClickEvent, Context, Entity, ExternalPaths, MouseButton, MouseDownEvent, Pixels, Point,
+    RenderImage, Window, div, prelude::*, rgb,
 };
 use windows::Win32::Foundation::HWND;
-use windows::Win32::System::Com::COINIT_MULTITHREADED;
 
 use crate::frame::{Frame, Glass, Mode, PEEK};
 use crate::model::shelf::{self, Shelf};
@@ -87,17 +87,11 @@ struct Island {
     icons: HashMap<PathBuf, Arc<RenderImage>>,
     media: now_playing::Media,
     hud: hud::State,
+    basket: Option<Entity<basket::Basket>>,
 }
 
 impl Island {
-    fn new(
-        hwnd: Option<HWND>,
-        scale: f32,
-        glass: Glass,
-        black: bool,
-        backdrop: Option<backdrop::Backdrop>,
-        persistence: state::Persistence,
-    ) -> Self {
+    fn new(hwnd: Option<HWND>, scale: f32, frame: Frame, persistence: state::Persistence) -> Self {
         let rest = config::get().rest;
         Self {
             mode: rest,
@@ -109,7 +103,7 @@ impl Island {
             shelf: persistence.shelf,
             hwnd,
             scale,
-            frame: Frame::new(hwnd, scale, glass, black, backdrop),
+            frame,
             tray_cause: TrayCause::Opened,
             held: HeldDrag::default(),
             collapse_generation: 0,
@@ -120,6 +114,7 @@ impl Island {
             icons: HashMap::new(),
             media: Default::default(),
             hud: Default::default(),
+            basket: None,
         }
     }
 
@@ -200,22 +195,10 @@ impl Island {
         count
     }
 
-    /// Learn whether each chip is a folder or a file, and fetch its picture, on a worker
-    /// thread of its own (the shell wants COM there). Each chip updates as its answer arrives.
+    /// Learn whether each chip is a folder or a file, and fetch its picture, off the UI thread.
+    /// Each chip updates as its answer arrives.
     fn resolve_kinds(&mut self, added: Vec<PathBuf>, cx: &mut Context<Self>) {
-        let size = (chip::ICON * self.scale).round() as i32;
-        let (tx, rx) = async_channel::unbounded();
-        std::thread::spawn(move || {
-            win32::with_com(COINIT_MULTITHREADED, || {
-                for path in added {
-                    let is_dir = path.is_dir();
-                    let icon = icon::load(&path, size);
-                    if tx.send_blocking((path, is_dir, icon)).is_err() {
-                        break;
-                    }
-                }
-            })
-        });
+        let rx = icon::resolve(added, (chip::ICON * self.scale).round() as i32);
         cx.spawn(async move |this, cx| {
             while let Ok((path, is_dir, icon)) = rx.recv().await {
                 let updated = this.update(cx, |this, cx| {
@@ -285,16 +268,15 @@ impl Island {
     fn on_hook(&mut self, event: HookEvent, cx: &mut Context<Self>) {
         log(&format!("hook {event:?} (mode {:?})", self.mode));
         match event {
-            HookEvent::Jiggle if !self.held.may_open_tray() || self.fullscreen() => {}
-            HookEvent::Jiggle => self.float_tray(cx),
+            // The basket's.
+            HookEvent::Jiggle => {}
             HookEvent::Edge { at_edge, pressed } => {
                 self.at_edge = at_edge;
-                let away = self.mode == Mode::Hidden || self.frame.floating();
-                if at_edge && away && !self.fullscreen() {
+                if at_edge && self.mode == Mode::Hidden && !self.fullscreen() {
                     if pressed {
                         // Something is being dragged up here: give it somewhere to land.
                         if self.held.may_open_tray() {
-                            self.open_notch_tray(TrayCause::Drag, cx);
+                            self.open_tray(TrayCause::Drag, cx);
                         }
                     } else if self.mode == Mode::Hidden {
                         self.schedule_reveal(cx);
@@ -327,7 +309,7 @@ impl Island {
     }
 
     /// The drop target refused a drag crossing the island. If the tray only opened
-    /// for that drag (a jiggle), its payload can never land: fold it away.
+    /// for that drag (one brought to the edge), its payload can never land: fold it away.
     fn on_drop_event(&mut self, event: DropEvent, cx: &mut Context<Self>) {
         log(&format!("drop-target {event:?} (mode {:?})", self.mode));
         if event == DropEvent::Refused {
@@ -387,10 +369,6 @@ impl Render for Island {
         let moving = self.width.step(dt) | self.height.step(dt);
         self.last_frame = moving.then_some(now);
         if moving {
-            window.request_animation_frame();
-        }
-
-        if !moving && self.settle_float() {
             window.request_animation_frame();
         }
         let (width, height) = (self.width.value, self.height.value);

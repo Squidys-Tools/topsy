@@ -1,16 +1,22 @@
-# Capture the top-center strip of the primary screen to a PNG.
-# usage: shot.ps1 <out.png> [delayMs] [count] [intervalMs]
+# Capture the top-center strip of the primary screen to a PNG, or the screen rectangle
+# -Rect left,top,width,height (the basket, say).
+# usage: shot.ps1 <out.png> [delayMs] [count] [intervalMs] [-Rect l,t,w,h]
 param(
     [Parameter(Mandatory)][string]$Out,
     [int]$DelayMs = 0,
     [int]$Count = 1,
-    [int]$IntervalMs = 0
+    [int]$IntervalMs = 0,
+    [int[]]$Rect
 )
 Add-Type -AssemblyName System.Drawing, System.Windows.Forms
 $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-$w = 520; $h = 170
-$x = $screen.X + [int](($screen.Width - $w) / 2)
-$y = $screen.Y
+if ($Rect) {
+    $x, $y, $w, $h = $Rect
+} else {
+    $w = 520; $h = 170
+    $x = $screen.X + [int](($screen.Width - $w) / 2)
+    $y = $screen.Y
+}
 if ($DelayMs -gt 0) { Start-Sleep -Milliseconds $DelayMs }
 for ($i = 0; $i -lt $Count; $i++) {
     $bmp = New-Object System.Drawing.Bitmap $w, $h

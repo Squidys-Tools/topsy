@@ -3,6 +3,7 @@
 //! holds this folder to that.
 
 pub mod archive;
+pub mod basket;
 pub mod clamp;
 pub mod clip_kind;
 pub mod clipboard;

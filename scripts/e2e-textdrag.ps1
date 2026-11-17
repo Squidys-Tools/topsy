@@ -1,9 +1,9 @@
 # End-to-end check of a drag that carries text, not files, on a live desktop:
-#   real OLE text drag -> synthetic jiggle -> the hook opens the floating tray under the pointer (it
-#   can't tell what is being dragged) -> the drop target refuses the drag -> the tray must fold at
-#   once, while the button is still down -> jiggle again: the same refused drag must not reopen it
-#   -> release: nothing lands on the shelf.
-# Moves the real cursor for ~4s. All input stays inside the fixture window and the island.
+#   real OLE text drag -> synthetic jiggle -> the hook opens the basket under the pointer (it
+#   can't tell what is being dragged) -> the drop target refuses the drag -> the empty basket must
+#   close at once, while the button is still down -> jiggle again: the same refused drag must not
+#   reopen it -> release: nothing lands in the basket or on the shelf.
+# Moves the real cursor for ~4s. All input stays inside the fixture window and the basket.
 # usage: e2e-textdrag.ps1 [-Exe target\release\topsy.exe]
 param([string]$Exe = "$PSScriptRoot\..\target\release\topsy.exe")
 $ErrorActionPreference = 'Stop'
@@ -23,9 +23,10 @@ public static class Native {
   [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr e);
   [DllImport("user32.dll")] public static extern uint GetDpiForSystem();
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
-  public static IntPtr VisibleWindowOf(uint pid) {
+  // The basket: the one of topsy's windows not hanging from the top edge, as the notch does.
+  public static IntPtr BasketOf(uint pid) {
     IntPtr found = IntPtr.Zero;
-    EnumWindows((h, l) => { uint p; GetWindowThreadProcessId(h, out p); if (p == pid && IsWindowVisible(h)) { found = h; return false; } return true; }, IntPtr.Zero);
+    EnumWindows((h, l) => { uint p; RECT r; GetWindowThreadProcessId(h, out p); if (p == pid && IsWindowVisible(h) && GetWindowRect(h, out r) && r.Top > 0) { found = h; return false; } return true; }, IntPtr.Zero);
     return found;
   }
 }
@@ -56,12 +57,12 @@ function Move-Cursor($x, $y) {
     $ny = [int]([math]::Round($y * 65535 / ($screen.Height - 1)))
     [Native]::mouse_event(0x8001, $nx, $ny, 0, [UIntPtr]::Zero)
 }
-function Island-Height {
-    $h = [Native]::VisibleWindowOf($app.Id)
-    if ($h -eq [IntPtr]::Zero) { throw 'the island has no visible window' }
+function Basket-Height {
+    $h = [Native]::BasketOf($app.Id)
+    if ($h -eq [IntPtr]::Zero) { throw 'the basket has no visible window' }
     $r = New-Object Native+RECT; [void][Native]::GetWindowRect($h, [ref]$r); $r.Bottom - $r.Top
 }
-function Is-Open { (Island-Height) -ge 100 * $scale }
+function Is-Open { (Basket-Height) -ge 100 * $scale }
 $srcX = 300; $srcY = 500
 
 $env:TOPSY_LOG = '1'
@@ -85,16 +86,16 @@ try {
         for ($i = 0; $i -lt 6; $i++) { $x += $dir * 14; Move-Cursor $x $py; Start-Sleep -Milliseconds 8 }
     }
     if (-not (Wait-Log $appLog 'hook Jiggle' 1500)) { throw 'jiggle was not detected by the hook' }
-    if (-not (Wait-Log $appLog 'floating tray at' 1500)) { throw 'the jiggle did not open the floating tray' }
+    if (-not (Wait-Log $appLog 'basket at' 1500)) { throw 'the jiggle did not open the basket' }
 
-    # The tray opened under the pointer, so the drag is already over it. The button is still down:
-    # the refusal alone must fold the tray, not the release.
-    if (-not (Wait-Log $appLog 'drop-target Refused \(mode Tray\)' 1500)) { throw 'the drop target never reported the text drag as refused' }
+    # The basket opened under the pointer, so the drag is already over it. The button is still
+    # down: the refusal alone must close the empty basket, not the release.
+    if (-not (Wait-Log $appLog 'basket drop-target Refused' 1500)) { throw 'the drop target never reported the text drag as refused' }
     $sw = [Diagnostics.Stopwatch]::StartNew()
-    while (Is-Open) { if ($sw.ElapsedMilliseconds -gt 1000) { throw 'the tray stayed open after the drag was refused' }; Start-Sleep -Milliseconds 30 }
-    if (Select-String -Path $appLog -Pattern 'hook ButtonUp' -Quiet) { throw 'the tray folded only after the button was released' }
+    while (Is-Open) { if ($sw.ElapsedMilliseconds -gt 1000) { throw 'the basket stayed open after the drag was refused' }; Start-Sleep -Milliseconds 30 }
+    if (Select-String -Path $appLog -Pattern 'hook ButtonUp' -Quiet) { throw 'the basket closed only after the button was released' }
 
-    # Jiggling the same refused drag again must not bring the tray back (it would flash each time).
+    # Jiggling the same refused drag again must not bring the basket back (it would flash each time).
     $jiggles = @(Select-String -Path $appLog -Pattern 'hook Jiggle').Count
     for ($stroke = 0; $stroke -lt 7; $stroke++) {
         $dir = if ($stroke % 2 -eq 0) { 1 } else { -1 }
@@ -105,14 +106,14 @@ try {
         if ($sw.ElapsedMilliseconds -gt 1500) { throw 'the second jiggle was not detected by the hook' }; Start-Sleep -Milliseconds 30
     }
     Start-Sleep -Milliseconds 300
-    if (@(Select-String -Path $appLog -Pattern 'floating tray at').Count -ne 1) { throw 'a jiggle of the refused drag reopened the tray' }
-    if (Is-Open) { throw 'the tray is open again after the second jiggle' }
+    if (@(Select-String -Path $appLog -Pattern 'basket at').Count -ne 1) { throw 'a jiggle of the refused drag reopened the basket' }
+    if (Is-Open) { throw 'the basket is open again after the second jiggle' }
     Start-Sleep -Milliseconds 300
     & "$PSScriptRoot\shot.ps1" -Out (Join-Path $shots 'textdrag-2-folded.png')
 
     [Native]::mouse_event($LEFTUP, 0, 0, 0, [UIntPtr]::Zero)
     Start-Sleep -Milliseconds 600
-    if (Select-String -Path $appLog -Pattern 'drop \[|shelf now' -Quiet) { throw 'the refused text drag put something on the shelf' }
+    if (Select-String -Path $appLog -Pattern 'drop \[|shelf now|basket \+' -Quiet) { throw 'the refused text drag put something in the basket or on the shelf' }
     Wait-Log $srcLog 'effect=' 2000 | Out-Null
 } catch {
     $failed = $_

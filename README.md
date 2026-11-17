@@ -12,7 +12,8 @@ It started as a **feasibility spike** for the riskiest parts of the design, and 
 On top of that it is now a usable v1: the island is a **notch** that stays out of sight until you reach for
 it (see [Notch](#notch)), the tray holds a **shelf** of files you can drag back out, there is a
 **tray icon** with a menu, **start with Windows**, a **Send to** entry in Explorer, and a **Quit** item. See
-[Shelf, tray icon and startup](#shelf-tray-icon-and-startup). It also shows what is playing, with its controls
+[Shelf, tray icon and startup](#shelf-tray-icon-and-startup). Jiggling a drag anywhere brings up the
+**basket**, Droppy's floating File Tray, which holds files wherever you are (see [Basket](#basket)). It also shows what is playing, with its controls
 (see [Now Playing](#now-playing)), and keeps a **clipboard history** you open with Ctrl+Alt+V (see
 [Clipboard history](#clipboard-history)). Volume, brightness and battery changes drop the notch down as a
 **HUD** (see [HUDs](#huds)). Files on the shelf can be **transformed**: compressed, converted, resized,
@@ -29,7 +30,8 @@ trimmed, turned into a GIF or a PDF, stripped of metadata or cut out of their ba
 | `src/model/spring.rs` | Damped spring (Framer-Motion-style `stiffness/damping/mass`), fixed sub-step, retargetable mid-flight |
 | `src/model/jiggle.rs` | Jiggle detector: direction reversals of a held-button drag inside a time window |
 | `src/model/notch.rs` | The notch's outline: body, ears and corner radius for a given size |
-| `src/model/float.rs` | Where the floating tray opens: centred under the pointer, kept whole on its monitor's work area |
+| `src/model/float.rs` | Where the basket opens: centred under the pointer, kept whole on its monitor's work area |
+| `src/model/basket.rs` | The basket's pill ("1 Image", "3 Items") and its stack |
 | `src/model/edge.rs` | Reaching for the hidden notch: the cursor arriving on the top row above it; what counts as fullscreen |
 | `src/model/shelf.rs` | The shelf: files parked on the island, and its save format |
 | `src/model/archive.rs` | Naming a chip's zip (`report.zip`, `report (2).zip`) and the entries inside it |
@@ -77,7 +79,8 @@ trimmed, turned into a GIF or a PDF, stripped of metadata or cut out of their ba
 | `src/now_playing.rs` | Now Playing's player (art, level bars, progress bar, buttons) and the peek's hint |
 | `src/tray_view.rs` | The tray's layout: the player above the shelf's header and chips |
 | `src/look.rs` | The *Black notch* setting: one `HKCU\Software\topsy` value |
-| `src/frame.rs` | The island's window and shape: where it sits (the notch, or the floating tray), its size, fill, ears and rim, kept in step with the spring |
+| `src/frame.rs` | A glass window's shape: where it sits (the notch, or floating as the basket), its size, fill, ears and rim, kept in step with the spring |
+| `src/basket/` | The basket: its window, what it holds and does (`mod`), and how it draws (`view`) |
 | `src/main.rs` | The island view: hidden, peeking or open as the tray with the shelf; file-drop target |
 | `build.rs` | Copies one import library the GNU toolchain's bundled MinGW lacks, and builds the exe's icon (see below) |
 | `rust-toolchain.toml` | Pins the GNU toolchain, `stable-x86_64-pc-windows-gnu` |
@@ -187,13 +190,41 @@ Two things about dragging out of a window that is itself a drop target, both fou
   *Show in folder* do the same: the menu is owned by a hidden window on its own thread, which is made
   foreground so the menu closes on a click elsewhere, and hands foreground back to the window that had it.
 
+## Basket
+
+Jiggle a drag anywhere on screen and the basket, Droppy's *floating File Tray*, flies in under the pointer
+to hold it. It is a card laid out after Droppy's (sizes and colours sampled from its own feature video): a handle
+along the top between a close button and a hide button, then *Drop files here* while it is empty.
+
+- **It keeps what you drop on it.** Let go over it and the files wait there as a stack, the newest in front
+  (photos and videos filling their card, other files showing their icon), over a pill that counts them:
+  *1 Image*, *3 Videos*, *2 Items* for a mix. It stays open, where it is, while you switch windows or use the
+  notch, until you take the files out. An empty basket closes once the drag that brought it ends without a
+  drop, or at once if the drag is refused (text, say), and further jiggles of that drag leave it closed.
+- **Take them out.** Drag the stack onto any window to hand over every file at once, as Explorer would; drag
+  it to the notch to park them on the shelf. The pill opens the list, a tile per file: drag one out, click to
+  open it, right-click for the chip's actions (*Transform…*, *Show in folder*, *Copy as path*, *Compress to
+  ZIP file*, *Remove from basket*). Files that land somewhere leave the basket, and it closes when the last
+  one has gone.
+- **Close** (✕) empties it; the files themselves are untouched. **Hide** (⌄) puts it away with its files, and
+  the next jiggle brings them back. The handle moves it: the strip between the buttons is a caption, so
+  Windows does the moving, and the basket floats from wherever it is put.
+- **Its own window.** The basket stays up while the notch opens, peeks and folds, so it can't be the
+  island's window moved under the pointer. It is a second window made at launch beside the
+  island's, with the same glass (`Frame`, floating, to a darker floor than the notch's, as Droppy's is), the
+  same drop-target wrapper and the same non-activating styles. Made later, on the first jiggle, its creation
+  would take the foreground from the app being dragged out of. Hidden, it is a 1 px window with an empty
+  region, like the island's.
+- It opens on the monitor under the pointer, at that monitor's scale, moved only as far as it takes to stay
+  whole inside the work area (`src/model/float.rs`); the list grows about its centre and is kept whole too.
+
 ## Now Playing
 
 A tray opened to look (a click on the notch, the tray icon) leads with a player for the system's current media
 session (the one the volume flyout shows: Spotify, a browser tab, the Media Player), laid out after Droppy's: the
 art, title and artist with level bars beside them; elapsed time, a progress bar and the time left; then previous, play/pause and next, greyed
 where the app doesn't take them. The shelf follows under it once it holds something. A tray opened for a drag
-(a jiggle, a drag up to the edge) or by a drop is about the shelf and leaves the player out (`TrayCause::sections`).
+(a drag up to the edge) or by a drop is about the shelf and leaves the player out (`TrayCause::sections`).
 While something is playing (not paused) the peek shows its art, title and level bars instead of the shelf count,
 with the count beside it. Stopped or no session shows nothing.
 
@@ -341,7 +372,7 @@ How it is built:
   Rust on the CPU, through gemm and rayon.
 - **The panel takes the focus,** like the settings window, since it is typed into; the island and the result
   cards never do. The panel's window is transparent outside its rounded corners, with a region a pixel looser
-  so they are click-through too (as the floating tray's); the cards' window has one per card, so the gaps between
+  so they are click-through too (as the basket's); the cards' window has one per card, so the gaps between
   them are too, unless the column overflows and scrolls. A card's picture is cropped to the card before it
   is drawn: GPUI rounds a covering image's overflowing bounds, not the box that clips it.
   The filmstrip's frames are decoded once, in parallel, when a clip is picked; an idle panel renders nothing.
@@ -355,24 +386,14 @@ nothing on screen, nothing to click.
 - **Reaching for it.** Resting the cursor on the screen's top row, above where the notch lives, for 150 ms brings
   it down as a 200x32 peek showing what is on the shelf; the delay keeps a sweep across the top from flashing it.
   The mouse hook watches for this (`src/model/edge.rs`), since nothing on screen could: it reports only arriving and
-  leaving, so there is still no polling. Dragging something up to that edge opens the tray straight away (and
-  brings a floating tray up to the notch). Click the peek to open the tray. It folds back 400 ms after the cursor leaves; the timer asks the
+  leaving, so there is still no polling. Dragging something up to that edge opens the tray straight away. Click the peek to open the tray. It folds back 400 ms after the cursor leaves; the timer asks the
   OS where the cursor is rather than waiting for a hover "leave", which a cursor flicked off the edge doesn't
   always deliver. Escape folds a tray opened this way (or from the tray icon) at once. The island has no focus to
   hear it, so a low-level keyboard hook (`src/win32/escape.rs`) is installed only while such a tray is open, and
   takes Escape from the app in front unless a mouse button is down (it cancels a drag), a menu is up, or a window
   of topsy's is in front (the Transform panel and the clipboard strip take Escape themselves).
-- **The floating tray.** Jiggling a drag anywhere opens the tray as a floating panel centred under the pointer, as
-  Droppy's *Floating File Tray* does, so letting go there parks the files. It is the same window, moved: rounded
-  all round, no ears, with the notch's dynamic glass (black at the top fading to glass) and its rim.
-  It opens on the monitor under the pointer, at that monitor's scale, moved only as far as it takes to stay whole
-  inside the work area (`src/model/float.rs`). It folds by the jiggle tray's rules (a release without a drop, a
-  refused payload such as text, the timer after a drop), shrinking where it is, and the window then goes back to
-  the notch. One window rather than two: a second would need its own glass, drop-target wrapper and
-  non-activating setup, and could still be on screen with the notch. The top edge and the tray icon open the
-  notch tray as before. A jiggle while the tray is already open leaves it where it is.
 - **Not over fullscreen apps.** While the foreground window fills the monitor under the cursor (a video, a game, a
-  slideshow), the top edge, a drag to it and the jiggle all do nothing, since games drag the mouse about freely.
+  slideshow), the top edge, a drag to it and the jiggle (the basket) all do nothing, since games drag the mouse about freely.
   It is checked when one of them happens rather than tracked, so it costs nothing in between. A maximized window
   doesn't count (with an auto-hidden taskbar it overhangs the monitor too), nor does the desktop. The tray icon
   still opens the tray.
@@ -445,9 +466,11 @@ exactly that). The checks that click inside the tray or measure it run with `TOP
 playing adds a row there.
 
 - `e2e-drag.ps1` — starts a genuine OLE file drag from a fixture window, jiggles it with injected input,
-  verifies the floating tray opens under the pointer, releases the drag on it, and checks the drop arrives with the
-  right file name. It checks that the window under the drop point is the island's first and aborts otherwise, so a
-  drag is never released unless the tray is there to catch it.
+  verifies the basket opens under the pointer without taking focus, releases the drag on it, and checks the drop
+  arrives with the right file name. It checks that the window under the drop point is topsy's first and aborts
+  otherwise, so a drag is never released unless the basket is there to catch it. Then it checks the basket is
+  still open seconds later, drags its stack onto a separate app (`drop-target.ps1`), and checks the file landed
+  there and the emptied basket closed.
 - `e2e-shelf.ps1` — seeds a shelf, clicks the peeking notch open, drags a chip onto a separate app (a fixture window,
   `drop-target.ps1`) and checks it received the file and the chip left, cancels a drag with Escape (the chip stays),
   removes a chip with its cross without opening it, opens a folder chip in Explorer, clears the shelf, and finally
@@ -465,7 +488,7 @@ playing adds a row there.
   and checks the edge no longer reveals. Run it on a release build (see above).
 - `check-glass.ps1` — the blur proof described under [Glass](#glass). Shows a stripe window (`stripes.ps1`)
   at the top of the screen for about 40 s.
-- `trace-width.ps1` / `shot.ps1` — sample or screenshot the notch to look at the animation as composited
+- `trace-width.ps1` / `shot.ps1` — sample or screenshot the notch (or, with `shot.ps1 -Rect`, any part of the screen, such as the basket) to look at the animation as composited
   (`trace-width.ps1` needs `TOPSY_GLASS=solid`).
 - `measure-idle.ps1` / `count-renders.ps1` — idle footprint and re-render count.
 
@@ -475,9 +498,8 @@ playing adds a row there.
   `on_drop::<ExternalPaths>` / `drag_over::<ExternalPaths>`, but a refused drag (anything without
   `CF_HDROP`, like a text selection) gets `DROPEFFECT_NONE` and *no* event, so the app can't hear it
   through GPUI. `win32::watch_drop_refusals` swaps the registered target for one that forwards to
-  GPUI's and reports a refusal over a channel: that is the signal a jiggle-opened tray uses to learn
-  that the drag it opened for — the hook can't tell text from files — can never land, and fold itself
-  away. The wrapper also re-answers `DragOver` as `DROPEFFECT_NONE` for a refused payload: GPUI says
+  GPUI's and reports a refusal over a channel: that is the signal a jiggle-opened basket uses to learn
+  that the drag it opened for — the hook can't tell text from files — can never land, and close itself. The wrapper also re-answers `DragOver` as `DROPEFFECT_NONE` for a refused payload: GPUI says
   `COPY` unconditionally, which would flash a copy cursor and let the drop through.
 - **`WindowOptions::focus` is ignored on Windows**; GPUI activates the window when it is created.
   `show: false` is *not* a workaround in gpui 0.2.2: it defers placement until `activate()` and the window is
@@ -515,11 +537,11 @@ hook, not the media thread). It is worth a profile, because an always-on app sho
 ## Not done / known gaps
 
 - Real jiggle thresholds are untuned (tested only with synthetic input). The shelf takes files only, by choice:
-  a jiggled text or link drag still opens the floating tray (the hook can't tell what is being dragged), the drop
-  target refuses the payload at once, the tray folds itself away, and further jiggles of that drag are ignored
+  a jiggled text or link drag still opens the basket (the hook can't tell what is being dragged), the drop
+  target refuses the payload at once, the basket closes itself, and further jiggles of that drag are ignored
   until the button is released.
 - Multi-monitor and non-100% DPI are handled in code (scale factor, the notch anchors to the monitor it opens on,
-  the floating tray opens on the pointer's monitor at its scale) but only tested on one 100% display. A floating
+  the basket opens on the pointer's monitor at its scale) but only tested on one 100% display. A basket
   tray on a monitor of another DPI relies on GPUI's DPI-change handling, then is put back to its own size and
   place; that hand-off is untested. The notch and its edge zone are placed at launch and don't follow a
   display or DPI change until restart.
@@ -541,8 +563,12 @@ hook, not the media thread). It is worth a profile, because an always-on app sho
   the same drive moves the file, as in Explorer; the chip then leaves the shelf.
 - *Compress to ZIP file* shows no progress, and a big folder can take a while before its chip appears. Errors only
   go to stderr. Quitting mid-zip leaves the partial zip behind.
-- A file dragged straight into a tray already opened by a click keeps the player on screen until it lands; a
-  jiggle on the way turns it into the shelf's drop zone. The drop lands anywhere on the tray either way.
+- A file dragged straight into a tray already opened by a click keeps the player on screen until it lands. The
+  drop lands anywhere on the tray.
+- The basket isn't saved: what it holds is gone after a restart (the shelf is the place to keep files). A hidden
+  basket shows nothing on screen until the next jiggle. Droppy's basket has more than this one (its own quick
+  actions such as AirDrop, and settings); this is what Droppy's feature page and video show. No rename, as on
+  the shelf: the basket never takes focus.
 - Now Playing's level bars read the default output device, so a player routed to another output (per-app output
   in Sound settings) shows resting bars.
 - Now Playing follows only the system's *current* session (the one Windows picks), with no way to switch between

@@ -6,18 +6,22 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gpui::{
-    App, Application, Bounds, Context, Entity, TitlebarOptions, WindowBackgroundAppearance,
-    WindowBounds, WindowKind, WindowOptions, point, prelude::*, px, size,
+    App, Application, Bounds, Context, Entity, Pixels, TitlebarOptions, Window,
+    WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions, point, prelude::*, px,
+    size,
 };
 use raw_window_handle::HasWindowHandle;
+use windows::Win32::Foundation::HWND;
 
-use crate::frame::{ACRYLIC_TINT, Glass, PEEK};
+use crate::basket::Basket;
+use crate::frame::{ACRYLIC_TINT, Frame, Glass, PEEK};
 use crate::model::edge::EdgeZone;
 use crate::model::jiggle::JiggleConfig;
 use crate::model::tray_cause::TrayCause;
 use crate::settings::Setting;
 use crate::settings_window::{self, OnChange};
 use crate::tray::{self, TrayEvent};
+use crate::win32::DropEvent;
 use crate::win32::sendto;
 use crate::{Island, Mode, autostart, backdrop, config, log, look, state, win32};
 
@@ -26,7 +30,7 @@ impl Island {
         log(&format!("tray {event:?} (mode {:?})", self.mode));
         match event {
             TrayEvent::Toggle if self.mode == Mode::Tray => self.fold(cx),
-            TrayEvent::Toggle | TrayEvent::Show => self.open_notch_tray(TrayCause::Opened, cx),
+            TrayEvent::Toggle | TrayEvent::Show => self.open_tray(TrayCause::Opened, cx),
             TrayEvent::Setting(setting, on) => {
                 self.on_setting(setting, on, cx);
                 settings_window::refresh(cx);
@@ -51,6 +55,9 @@ impl Island {
             Setting::Black => {
                 self.frame.set_black(on, cx);
                 cx.notify();
+                if let Some(basket) = self.basket.clone() {
+                    basket.update(cx, |basket, cx| basket.set_black(on, cx));
+                }
             }
             Setting::Autostart | Setting::SendTo | Setting::Clipboard | Setting::VolumeHud => {}
         }
@@ -61,17 +68,17 @@ impl Island {
     fn on_sent(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
         let added = self.add_paths(paths, cx);
         log(&format!("sent {added}"));
-        self.open_notch_tray(TrayCause::Dropped, cx);
+        self.open_tray(TrayCause::Dropped, cx);
     }
 }
 
-/// Hand each event from a thread's channel to the island, on the UI thread, until either
-/// side goes away.
-pub(crate) fn forward<E: 'static>(
+/// Hand each event from a thread's channel to a view (the island, the basket), on the UI
+/// thread, until either side goes away.
+pub(crate) fn forward<V: 'static, E: 'static>(
     cx: &mut App,
-    island: &Entity<Island>,
+    island: &Entity<V>,
     events: async_channel::Receiver<E>,
-    handle: fn(&mut Island, E, &mut Context<Island>),
+    handle: fn(&mut V, E, &mut Context<V>),
 ) {
     let island = island.clone();
     cx.spawn(async move |cx| {
@@ -120,68 +127,52 @@ pub fn run() {
         let bounds = Bounds::new(origin, size(px(PEEK.0), px(PEEK.1)));
 
         let previous_foreground = win32::foreground_window();
-        let mut glass = config.glass.unwrap_or(Glass::Blur);
+        let glass = config.glass.unwrap_or(Glass::Blur);
         // A forced glass (the live checks) wins over the setting.
         let black = config.glass.is_none() && look::is_black();
-        // Refused drags report here, so a jiggle that opened the tray for a payload
-        // the island can't take (the hook can't tell text from files) folds it away.
+        // Refused drags report here, so a tray or basket opened for a payload the island can't
+        // take (the hook can't tell text from files) folds it away.
         let (refuse_tx, refuse_rx) = async_channel::bounded(4);
-        let window = cx
-            .open_window(
-                WindowOptions {
-                    window_bounds: Some(WindowBounds::Windowed(bounds)),
-                    // `appears_transparent: false` stops GPUI insetting the client area by an
-                    // invisible resize frame; `apply_overlay_styles` then removes the caption
-                    // that Windows would otherwise add.
-                    titlebar: Some(TitlebarOptions {
-                        title: None,
-                        appears_transparent: false,
-                        traffic_light_position: None,
-                    }),
-                    window_min_size: Some(size(px(1.0), px(1.0))),
-                    focus: false,
-                    show: true,
-                    kind: WindowKind::PopUp,
-                    is_movable: false,
-                    is_resizable: false,
-                    is_minimizable: false,
-                    window_background: WindowBackgroundAppearance::Transparent,
-                    ..Default::default()
-                },
-                move |window, cx| {
-                    let hwnd = window
-                        .window_handle()
-                        .ok()
-                        .and_then(|h| win32::hwnd_from_raw(h.as_raw()));
-                    let mut backdrop = None;
-                    if let Some(hwnd) = hwnd {
-                        win32::apply_overlay_styles(hwnd);
-                        if glass == Glass::Blur {
-                            match backdrop::Backdrop::new(hwnd) {
-                                Ok(b) => backdrop = Some(b),
-                                Err(e) => {
-                                    log(&format!("compositor glass unavailable ({e}); acrylic"));
-                                    glass = Glass::Acrylic;
-                                }
-                            }
-                        }
-                        if glass == Glass::Acrylic {
-                            win32::round_corners(hwnd);
-                            // After GPUI has applied its own background appearance, so ours wins.
-                            if !black {
-                                win32::set_acrylic(hwnd, Some(ACRYLIC_TINT));
-                            }
-                        }
-                        win32::watch_drop_refusals(hwnd, refuse_tx);
-                        win32::restore_foreground(previous_foreground);
-                    }
-                    let scale = window.scale_factor();
-                    cx.new(move |_| Island::new(hwnd, scale, glass, black, backdrop, persistence))
-                },
-            )
-            .expect("open island window");
-
+        let window = open_glass(cx, bounds, glass, black, refuse_tx, previous_foreground, {
+            move |hwnd, glass, backdrop, window, cx| {
+                let scale = window.scale_factor();
+                let frame = Frame::new(hwnd, scale, glass, black, backdrop);
+                cx.new(move |_| Island::new(hwnd, scale, frame, persistence))
+            }
+        });
         let island = window.entity(cx).expect("island entity");
+
+        // The basket gets its window now, empty and click-through until a jiggle: made later,
+        // its creation would take the foreground from the app being dragged out of.
+        let (basket_refuse_tx, basket_refuse_rx) = async_channel::bounded(4);
+        let tiny = Bounds::new(display_bounds.origin, size(px(1.0), px(1.0)));
+        let weak = island.downgrade();
+        let basket = open_glass(
+            cx,
+            tiny,
+            glass,
+            black,
+            basket_refuse_tx,
+            previous_foreground,
+            {
+                move |hwnd, glass, backdrop, window, cx| {
+                    let scale = window.scale_factor();
+                    let frame = Frame::new(hwnd, scale, glass, black, backdrop).floating();
+                    cx.new(|cx| {
+                        // Moved by its handle: float from where it was put.
+                        cx.observe_window_bounds(window, |basket: &mut Basket, _, _| {
+                            basket.follow_window()
+                        })
+                        .detach();
+                        Basket::new(hwnd, scale, frame, weak)
+                    })
+                }
+            },
+        )
+        .entity(cx)
+        .expect("basket entity");
+        island.update(cx, |island, _| island.basket = Some(basket.clone()));
+        forward(cx, &basket, basket_refuse_rx, Basket::on_drop_event);
 
         // The restored count reaches the tray icon's menu before the first shelf change.
         island.update(cx, |island, cx| {
@@ -259,7 +250,18 @@ pub fn run() {
             });
             win32::spawn_mouse_hook(JiggleConfig::default(), zone)
         };
-        forward(cx, &island, events, Island::on_hook);
+        // Both hear the hook: the island the top edge, the basket the jiggle.
+        let (island_hook, basket_hook) = (island.clone(), basket.clone());
+        cx.spawn(async move |cx| {
+            while let Ok(event) = events.recv().await {
+                let heard = island_hook.update(cx, |island, cx| island.on_hook(event, cx));
+                let basket = basket_hook.update(cx, |basket, cx| basket.on_hook(event, cx));
+                if heard.is_err() || basket.is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
 
         if config.demo {
             let demo_island = island.clone();
@@ -296,4 +298,79 @@ pub fn run() {
             .detach();
         }
     });
+}
+
+/// Open one of topsy's glass windows: transparent, never activated, click-through until it is
+/// given a shape, with the compositor's blur behind it (or acrylic where that can't start), and
+/// a drop target that reports refused drags on `refusals`. `build` makes its view.
+fn open_glass<V: 'static + Render>(
+    cx: &mut App,
+    bounds: Bounds<Pixels>,
+    mut glass: Glass,
+    black: bool,
+    refusals: async_channel::Sender<DropEvent>,
+    previous_foreground: HWND,
+    build: impl FnOnce(
+        Option<HWND>,
+        Glass,
+        Option<backdrop::Backdrop>,
+        &mut Window,
+        &mut App,
+    ) -> Entity<V>
+    + 'static,
+) -> gpui::WindowHandle<V> {
+    cx.open_window(
+        WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(bounds)),
+            // `appears_transparent: false` stops GPUI insetting the client area by an
+            // invisible resize frame; `apply_overlay_styles` then removes the caption
+            // that Windows would otherwise add.
+            titlebar: Some(TitlebarOptions {
+                title: None,
+                appears_transparent: false,
+                traffic_light_position: None,
+            }),
+            window_min_size: Some(size(px(1.0), px(1.0))),
+            focus: false,
+            show: true,
+            kind: WindowKind::PopUp,
+            // Only lets a `WindowControlArea::Drag` element be a caption (the basket's handle);
+            // every other hit test is still Windows' own.
+            is_movable: true,
+            is_resizable: false,
+            is_minimizable: false,
+            window_background: WindowBackgroundAppearance::Transparent,
+            ..Default::default()
+        },
+        move |window, cx| {
+            let hwnd = window
+                .window_handle()
+                .ok()
+                .and_then(|h| win32::hwnd_from_raw(h.as_raw()));
+            let mut backdrop = None;
+            if let Some(hwnd) = hwnd {
+                win32::apply_overlay_styles(hwnd);
+                if glass == Glass::Blur {
+                    match backdrop::Backdrop::new(hwnd, cx) {
+                        Ok(b) => backdrop = Some(b),
+                        Err(e) => {
+                            log(&format!("compositor glass unavailable ({e}); acrylic"));
+                            glass = Glass::Acrylic;
+                        }
+                    }
+                }
+                if glass == Glass::Acrylic {
+                    win32::round_corners(hwnd);
+                    // After GPUI has applied its own background appearance, so ours wins.
+                    if !black {
+                        win32::set_acrylic(hwnd, Some(ACRYLIC_TINT));
+                    }
+                }
+                win32::watch_drop_refusals(hwnd, refusals);
+                win32::restore_foreground(previous_foreground);
+            }
+            build(hwnd, glass, backdrop, window, cx)
+        },
+    )
+    .expect("open a glass window")
 }

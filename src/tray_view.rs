@@ -17,8 +17,8 @@ impl Island {
 
     /// The notch body's size for `mode`; the tray's height is its sections'.
     pub(crate) fn size_for(&self, mode: Mode) -> (f32, f32) {
-        let (w, h) = self.frame.size(mode);
-        if mode == Mode::Peek && self.hud.is_shown() && !self.frame.floating() {
+        let (w, h) = mode.size();
+        if mode == Mode::Peek && self.hud.is_shown() {
             return crate::hud::SIZE;
         }
         if mode != Mode::Tray {
@@ -152,7 +152,7 @@ impl Island {
                 .into_any_element()
         };
 
-        let (_, h) = self.frame.size(Mode::Tray);
+        let (_, h) = Mode::Tray.size();
         div()
             .w_full()
             .h(px(h))

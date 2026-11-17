@@ -1,5 +1,5 @@
-//! The island's window and its shape: where it sits (hanging from the top edge as the notch, or
-//! floating under the pointer as the floating tray), how big it is, and what it is filled with.
+//! A glass window and its shape: where it sits (hanging from the top edge as the notch, or
+//! floating where a jiggle opened it, as the basket), how big it is, and what it is filled with.
 //! The OS window is always exactly the shape (README, Notch and Glass).
 
 use gpui::{
@@ -9,10 +9,7 @@ use gpui::{
 use windows::Win32::Foundation::HWND;
 
 use crate::backdrop::Backdrop;
-use crate::model::float::{self, MARGIN};
 use crate::model::notch::Notch;
-use crate::model::spring::{Spring, SpringConfig};
-use crate::model::tray_cause::TrayCause;
 use crate::{Island, log, win32};
 
 /// The notch's body when it peeks down from the top edge, and when it holds the tray.
@@ -21,16 +18,18 @@ pub const TRAY: (f32, f32) = (400.0, 118.0);
 
 /// DWM's fixed window corner, which clips the window-wide acrylic of [`Glass::Acrylic`].
 const DWM_RADIUS: f32 = 8.0;
-/// The floating tray's corners, rounded all round.
-const FLOAT_RADIUS: f32 = 16.0;
+/// The basket's corners, rounded all round.
+const FLOAT_RADIUS: f32 = 26.0;
 
 /// The acrylic fallback's own tint (0xRRGGBBAA).
 pub const ACRYLIC_TINT: u32 = 0x0c101c8c;
 /// Droppy's recipe, measured from its screenshots: solid black for the top 62% of the notch,
 /// then fading to about 62% black at the bottom edge, so the backdrop's own colour shows
-/// through, darkened but not greyed. The floating tray is filled the same way.
+/// through, darkened but not greyed. The basket is filled the same way, to a darker floor.
 const BLACK_UNTIL: f32 = 0.62;
 const GLASS_FLOOR: u32 = 0x0000009f;
+/// The basket's floor, sampled from Droppy's: about 88% black at the bottom edge.
+pub const BASKET_FLOOR: u32 = 0x000000e0;
 /// A light rim along the bottom edge, fading out up the sides where the notch turns black.
 const RIM: u32 = 0xffffff38;
 
@@ -84,7 +83,7 @@ impl Mode {
 pub enum Place {
     /// Hanging from the top edge of its monitor.
     Notch,
-    /// The floating tray, centred on `center` (physical screen pixels) on a monitor of `scale`.
+    /// The basket, centred on `center` (physical screen pixels) on a monitor of `scale`.
     Floating { center: (i32, i32), scale: f32 },
 }
 
@@ -108,6 +107,8 @@ pub struct Frame {
     drawn_scale: f32,
     /// Last requested from the OS, to skip redundant calls.
     applied: Option<Applied>,
+    /// How dark the glass is at the bottom edge (0xRRGGBBAA).
+    floor: u32,
 }
 
 impl Frame {
@@ -128,6 +129,54 @@ impl Frame {
             place: Place::Notch,
             drawn_scale: scale,
             applied: None,
+            floor: GLASS_FLOOR,
+        }
+    }
+
+    /// The same glass, floating: the basket's window, placed with [`Frame::float_at`].
+    pub fn floating(mut self) -> Self {
+        self.anchor = None;
+        self.place = Place::Floating {
+            center: (0, 0),
+            scale: self.scale,
+        };
+        self.floor = BASKET_FLOOR;
+        self
+    }
+
+    /// Centre the floating window on `center` (physical screen pixels), on a monitor of `scale`.
+    pub fn float_at(&mut self, center: (i32, i32), scale: f32) {
+        self.place = Place::Floating { center, scale };
+        self.applied = None;
+    }
+
+    /// Where the floating window is centred, in physical screen pixels.
+    pub fn center(&self) -> Option<(i32, i32)> {
+        match self.place {
+            Place::Floating { center, .. } => Some(center),
+            Place::Notch => None,
+        }
+    }
+
+    /// The window was moved by Windows (its handle dragged as a caption): float from where it is
+    /// now, rather than snapping back on the next frame. Only a move counts, at the size last
+    /// asked for: a resize still on its way would read as one.
+    pub fn follow_window(&mut self) {
+        let (Some(hwnd), Some((origin, size, false)), Place::Floating { scale, .. }) =
+            (self.hwnd, self.applied, self.place)
+        else {
+            return;
+        };
+        let Some(r) = win32::window_rect(hwnd) else {
+            return;
+        };
+        let (left, top) = (r.left, r.top);
+        if (r.right - left, r.bottom - top) == size && (left, top) != origin {
+            self.place = Place::Floating {
+                center: (left + size.0 / 2, top + size.1 / 2),
+                scale,
+            };
+            self.applied = Some(((left, top), size, false));
         }
     }
 
@@ -136,18 +185,8 @@ impl Frame {
         if self.black { Glass::Solid } else { self.glass }
     }
 
-    pub fn floating(&self) -> bool {
+    fn is_floating(&self) -> bool {
         matches!(self.place, Place::Floating { .. })
-    }
-
-    /// The body's size in `mode`. Away from the notch only the tray shows: anything else folds
-    /// the floating tray away where it is, and it returns to the notch once folded.
-    pub fn size(&self, mode: Mode) -> (f32, f32) {
-        if self.floating() && mode != Mode::Tray {
-            Mode::Hidden.size()
-        } else {
-            mode.size()
-        }
     }
 
     pub fn set_black(&mut self, black: bool, cx: &mut App) {
@@ -162,7 +201,7 @@ impl Frame {
 
     /// The outline that fills a window of `viewport`'s size.
     pub fn outline(&self, viewport: Size<Pixels>) -> Notch {
-        let ears = !self.floating() && self.look().has_ears();
+        let ears = !self.is_floating() && self.look().has_ears();
         Notch::fitting(viewport.width.into(), viewport.height.into(), ears)
     }
 
@@ -175,7 +214,7 @@ impl Frame {
     }
 
     /// Make the OS window exactly the shape for a body of `width` x `height` (logical pixels),
-    /// hanging from the anchor or centred on the floating tray's point.
+    /// hanging from the anchor or centred on the basket's point.
     ///
     /// The window is resized every frame as the spring moves, and its region and the glass's
     /// clip are reshaped with it. Hidden, it keeps a 1 px window (GPUI can't draw into an empty
@@ -281,7 +320,7 @@ impl Frame {
         };
 
         // Black at the top, giving way to glass near the bottom: Droppy's dynamic glass, on the
-        // floating tray as on the notch. The closed notch is black all the way down, like the
+        // basket as on the notch. The closed notch is black all the way down, like the
         // real one.
         let h = notch.height.max(1.0);
         let black_until = (h * BLACK_UNTIL).max(PEEK.1).min(h) / h;
@@ -293,12 +332,12 @@ impl Frame {
             )
         };
         let fill = match look {
-            Glass::Blur | Glass::Tint => edge_fill(GLASS_FLOOR),
+            Glass::Blur | Glass::Tint => edge_fill(self.floor),
             Glass::Acrylic => edge_fill(0x00000000),
             Glass::Solid => black.into(),
             Glass::Clear => rgba(0x00000000).into(),
         };
-        let (body, radius) = if self.floating() {
+        let (body, radius) = if self.is_floating() {
             let radius = self.float_radius(h);
             (body(fill).left_0().size_full().rounded(px(radius)), radius)
         } else {
@@ -376,60 +415,18 @@ impl Frame {
 }
 
 impl Island {
-    /// Move the window to `place`. It appears there afresh, springing out of nothing, rather
-    /// than carrying the size it had somewhere else.
-    fn go_to(&mut self, place: Place) {
-        if self.frame.place == place {
-            return;
-        }
-        self.frame.place = place;
-        let (w, h) = Mode::Hidden.size();
-        self.width = Spring::new(w, SpringConfig::ISLAND);
-        self.height = Spring::new(h, SpringConfig::ISLAND);
-    }
-
-    /// Open the tray hanging from the notch: the top edge, and the tray icon.
-    pub(crate) fn open_notch_tray(&mut self, cause: TrayCause, cx: &mut gpui::Context<Self>) {
-        self.go_to(Place::Notch);
-        self.open_tray(cause, cx);
-    }
-
-    /// A jiggle: open the tray as a floating panel under the pointer, on the pointer's monitor,
-    /// for the drag in progress. A tray already open stays where it is and waits for the drag.
-    pub(crate) fn float_tray(&mut self, cx: &mut gpui::Context<Self>) {
-        if self.mode != Mode::Tray
-            && let Some((cursor, work, scale)) = win32::cursor_monitor()
-        {
-            let px = |v: f32| (v * scale).round() as i32;
-            self.tray_cause = TrayCause::Drag;
-            let (w, h) = self.size_for(Mode::Tray);
-            let center = float::center_under(cursor, (px(w), px(h)), work, px(MARGIN));
-            log(&format!("floating tray at {center:?}"));
-            self.go_to(Place::Floating { center, scale });
-        }
-        self.open_tray(TrayCause::Drag, cx);
-    }
-
     /// A fullscreen video, game or slideshow has the screen: the hook's gestures stay out of its
     /// way. Read at the moment of the gesture rather than tracked, so nothing runs meanwhile.
     pub(crate) fn fullscreen(&self) -> bool {
-        let fullscreen = self.hwnd.is_some_and(win32::fullscreen_over);
-        if fullscreen {
-            log("fullscreen app in front: staying hidden");
-        }
-        fullscreen
+        fullscreen(self.hwnd)
     }
+}
 
-    /// Once the floating tray has folded away, the window goes back to the notch, in whatever
-    /// mode the island is in by then. True if the notch now has somewhere to spring to.
-    pub(crate) fn settle_float(&mut self) -> bool {
-        if !self.frame.floating() || self.mode == Mode::Tray {
-            return false;
-        }
-        self.frame.place = Place::Notch;
-        let (w, h) = self.size_for(self.mode);
-        self.width.set_target(w);
-        self.height.set_target(h);
-        self.mode != Mode::Hidden
+/// Whether a fullscreen app has the screen under the cursor; `own` is the asking window.
+pub(crate) fn fullscreen(own: Option<HWND>) -> bool {
+    let fullscreen = own.is_some_and(win32::fullscreen_over);
+    if fullscreen {
+        log("fullscreen app in front: staying hidden");
     }
+    fullscreen
 }
