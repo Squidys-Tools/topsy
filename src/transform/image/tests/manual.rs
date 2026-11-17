@@ -111,7 +111,7 @@ fn manual_run_on_real_photos() {
         eprintln!("  GPS after removing metadata: {gps}");
         let t = Instant::now();
         let pages = crate::transform::pdf::combine(
-            &[src.clone(), src.clone()],
+            &[src.clone(), src],
             crate::model::pdf::PageSize::A4,
             &o("combined.pdf"),
             &quiet,
