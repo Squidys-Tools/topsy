@@ -1,6 +1,9 @@
 //! Handing paths to the shell.
 
+use std::io;
 use std::path::Path;
+
+use windows::Win32::Storage::FileSystem::{MOVE_FILE_FLAGS, MoveFileExW};
 
 use windows::Win32::System::Com::COINIT_APARTMENTTHREADED;
 use windows::Win32::UI::Shell::{
@@ -47,4 +50,11 @@ pub fn show_in_folder(path: &Path) -> bool {
         ILFree(Some(item.cast_const()));
         shown
     })
+}
+
+/// Move a file to a name that must still be free: unlike `fs::rename`, never replaces a file
+/// that appeared there since the check.
+pub fn move_new(from: &Path, to: &Path) -> io::Result<()> {
+    let wide = |p: &Path| windows::core::HSTRING::from(p.as_os_str());
+    unsafe { MoveFileExW(&wide(from), &wide(to), MOVE_FILE_FLAGS(0)) }.map_err(io::Error::from)
 }

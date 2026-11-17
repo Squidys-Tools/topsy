@@ -12,7 +12,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use gpui::{AsyncApp, Context};
 use windows::Win32::Foundation::HWND;
-use windows::Win32::Storage::FileSystem::{MOVE_FILE_FLAGS, MoveFileExW};
 use windows::Win32::System::Com::COINIT_MULTITHREADED;
 
 use super::cards::{self, Cards};
@@ -243,29 +242,21 @@ impl Panel {
         cx.notify();
     }
 
-    /// Renamed files: the panel and the shelf follow them.
+    /// Renamed files: the panel, the shelf and the basket follow them.
     fn follow_renames(&mut self, renamed: &[(PathBuf, PathBuf)], cx: &mut Context<Self>) {
         for (from, to) in renamed {
             if let Some(file) = self.files.iter_mut().find(|f| &f.path == from) {
                 file.path = to.clone();
             }
         }
-        let renamed = renamed.to_vec();
         if let Some(island) = self.island.upgrade() {
-            island.update(cx, |island: &mut Island, cx| {
-                let mut moved = false;
-                for (from, to) in renamed {
-                    if island.shelf.rename(&from, to.clone()) {
-                        if let Some(icon) = island.icons.remove(&from) {
-                            island.icons.insert(to, icon);
-                        }
-                        moved = true;
-                    }
-                }
-                if moved {
-                    island.shelf_changed(cx);
-                }
+            let basket = island.update(cx, |island: &mut Island, cx| {
+                island.follow_renames(renamed, cx);
+                island.basket.clone()
             });
+            if let Some(basket) = basket {
+                basket.update(cx, |basket, cx| basket.follow_renames(renamed, cx));
+            }
         }
     }
 }
@@ -414,23 +405,16 @@ fn rename(inputs: &[Input], names: &[String]) -> io::Result<Vec<(PathBuf, PathBu
     }
     let mut done: Vec<(PathBuf, PathBuf)> = Vec::new();
     for (from, to) in moves {
-        if let Err(err) = move_new(&from, &to) {
+        if let Err(err) = win32::move_new(&from, &to) {
             // Put back what already moved, so a half-done rename doesn't scatter names.
             for (from, to) in done.iter().rev() {
-                let _ = move_new(to, from);
+                let _ = win32::move_new(to, from);
             }
             return Err(err);
         }
         done.push((from, to));
     }
     Ok(done)
-}
-
-/// Move a file to a name that must still be free: unlike `fs::rename`, never replaces a file
-/// that appeared there since the check.
-fn move_new(from: &Path, to: &Path) -> io::Result<()> {
-    let wide = |p: &Path| windows::core::HSTRING::from(p.as_os_str());
-    unsafe { MoveFileExW(&wide(from), &wide(to), MOVE_FILE_FLAGS(0)) }.map_err(io::Error::from)
 }
 
 #[cfg(test)]
@@ -472,7 +456,7 @@ mod tests {
         );
 
         // A file that appears after the check is never replaced either.
-        assert!(move_new(&dir.join("a.png"), &dir.join("Trip 02.png")).is_err());
+        assert!(win32::move_new(&dir.join("a.png"), &dir.join("Trip 02.png")).is_err());
         assert_eq!(
             fs::read_to_string(dir.join("Trip 02.png")).unwrap(),
             "theirs"

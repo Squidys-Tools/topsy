@@ -33,7 +33,7 @@ pub struct Config {
     pub transform: Option<Vec<PathBuf>>,
     /// `TOPSY_EXIT_AFTER_MS`: quit after this long.
     pub exit_after: Option<Duration>,
-    /// `TOPSY_STATE`: where the shelf is saved; empty turns saving off.
+    /// `TOPSY_STATE`: where the shelf is saved (the basket goes beside it); empty turns saving off.
     pub state: Option<OsString>,
     /// Where clipboard history is kept: `TOPSY_CLIPBOARD` (empty: nowhere), else
     /// `%LOCALAPPDATA%\topsy\clipboard`. A run with `TOPSY_STATE` set is scripted and keeps

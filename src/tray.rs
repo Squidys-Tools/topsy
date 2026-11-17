@@ -36,6 +36,8 @@ pub enum TrayEvent {
     /// "Show shelf" in the menu.
     Show,
     ClearShelf,
+    /// "Show basket": bring the basket up with what it holds, as a jiggle would.
+    ShowBasket,
     /// A setting was switched to this value; it is saved already.
     Setting(Setting, bool),
     /// "Settings…": open the settings window, or bring it to the front. Carries the window that
@@ -56,6 +58,7 @@ const ID_SHOW: usize = 1;
 const ID_CLEAR: usize = 2;
 const ID_QUIT: usize = 3;
 const ID_SETTINGS: usize = 4;
+const ID_BASKET: usize = 5;
 /// `Setting::ALL[i]` is item `ID_SETTING + i`.
 const ID_SETTING: usize = 100;
 
@@ -66,6 +69,7 @@ static ICON: AtomicIsize = AtomicIsize::new(0);
 /// The "TaskbarCreated" broadcast Explorer sends when it (re)starts.
 static TASKBAR_CREATED: AtomicU32 = AtomicU32::new(0);
 static SHELF_COUNT: AtomicUsize = AtomicUsize::new(0);
+static BASKET_COUNT: AtomicUsize = AtomicUsize::new(0);
 static EVENTS: OnceLock<async_channel::Sender<TrayEvent>> = OnceLock::new();
 
 fn send(event: TrayEvent) {
@@ -82,6 +86,11 @@ fn window() -> Option<HWND> {
 /// Tell the menu how many files are on the shelf (it greys out "Clear shelf" at zero).
 pub fn set_shelf_count(count: usize) {
     SHELF_COUNT.store(count, Ordering::Relaxed);
+}
+
+/// Tell the menu how many files are in the basket (it greys out "Show basket" at zero).
+pub fn set_basket_count(count: usize) {
+    BASKET_COUNT.store(count, Ordering::Relaxed);
 }
 
 /// Pop the menu up at the cursor, as if the icon had been right-clicked. For the pill.
@@ -253,6 +262,14 @@ unsafe fn open_menu(hwnd: HWND, at: POINT) {
         };
         let _ = AppendMenuW(menu, MF_STRING, ID_SHOW, w!("&Show shelf"));
         let _ = AppendMenuW(menu, clear_flags, ID_CLEAR, PCWSTR(clear.as_ptr()));
+        let held = BASKET_COUNT.load(Ordering::Relaxed);
+        let basket = wide(format!("Show bas&ket ({held})"));
+        let basket_flags = if held > 0 {
+            MF_STRING
+        } else {
+            MF_STRING | MF_GRAYED
+        };
+        let _ = AppendMenuW(menu, basket_flags, ID_BASKET, PCWSTR(basket.as_ptr()));
         let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
         for (i, setting) in Setting::ALL.into_iter().enumerate() {
             let flags = if setting.is_on() {
@@ -292,6 +309,7 @@ unsafe fn open_menu(hwnd: HWND, at: POINT) {
         match choice.0 as usize {
             ID_SHOW => send(TrayEvent::Show),
             ID_CLEAR => send(TrayEvent::ClearShelf),
+            ID_BASKET => send(TrayEvent::ShowBasket),
             ID_QUIT => send(TrayEvent::Quit),
             ID_SETTINGS => send(TrayEvent::OpenSettings(previous.0 as usize)),
             id => {

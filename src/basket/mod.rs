@@ -1,7 +1,10 @@
 //! The basket: Droppy's floating File Tray. Jiggling a held drag brings it up under the pointer,
 //! in a glass window of its own, and it keeps what is dropped on it, wherever it is, until those
-//! files are dragged out or it is closed. The notch and its shelf carry on beside it.
+//! files are dragged out or it is closed, across restarts too. The notch and its shelf carry
+//! on beside it.
 
+mod actions;
+mod rename;
 mod view;
 
 use std::collections::HashMap;
@@ -9,17 +12,17 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use gpui::{Context, Pixels, Point, RenderImage, WeakEntity};
+use gpui::{Context, FocusHandle, Pixels, Point, RenderImage, WeakEntity};
 use windows::Win32::Foundation::HWND;
 
-use crate::chip::{self, ACTIONS, Action};
 use crate::frame::{self, Frame};
 use crate::model::float::{self, MARGIN};
-use crate::model::shelf::{Item, Kind, Shelf};
+use crate::model::shelf::{self, Shelf};
 use crate::model::spring::{Spring, SpringConfig};
 use crate::model::tray_cause::HeldDrag;
-use crate::win32::{self, DragOutcome, DropEvent, HookEvent, MenuEntry};
-use crate::{Island, log};
+use crate::state::{Persistence, Writer};
+use crate::win32::{self, DragOutcome, DropEvent, HookEvent};
+use crate::{Island, log, tray};
 
 /// The closed basket, measured from Droppy's: the card with its handle, buttons, stack and pill.
 pub const CARD: (f32, f32) = (208.0, 228.0);
@@ -31,15 +34,6 @@ pub const THUMB: f32 = 88.0;
 const FOLD_EMPTY_AFTER: Duration = Duration::from_millis(1200);
 /// Where it springs out from, as a share of its size.
 const FLY_IN_FROM: f32 = 0.82;
-
-const MENU: [MenuEntry; 6] = [
-    MenuEntry::Item(Action::Transform as usize, "&Transform…"),
-    MenuEntry::Item(Action::ShowInFolder as usize, "Show in &folder"),
-    MenuEntry::Item(Action::CopyPath as usize, "Copy as &path"),
-    MenuEntry::Item(Action::Compress as usize, "Compress to &ZIP file"),
-    MenuEntry::Separator,
-    MenuEntry::Item(Action::Remove as usize, "&Remove from basket"),
-];
 
 /// What a press in the basket is on: the whole stack, or one tile of the list.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -67,18 +61,30 @@ pub struct Basket {
     press: Option<(Grip, Point<Pixels>)>,
     drag_out: bool,
     menu: bool,
+    /// A file's new name being typed, in place of the pill.
+    rename: Option<rename::Rename>,
+    focus: FocusHandle,
+    writer: Option<Writer>,
     island: WeakEntity<Island>,
 }
 
 impl Basket {
-    pub fn new(hwnd: Option<HWND>, scale: f32, frame: Frame, island: WeakEntity<Island>) -> Self {
+    pub fn new(
+        hwnd: Option<HWND>,
+        scale: f32,
+        frame: Frame,
+        island: WeakEntity<Island>,
+        saved: Persistence,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        tray::set_basket_count(saved.shelf.len());
         Self {
             hwnd,
             frame,
             width: Spring::new(CARD.0, SpringConfig::ISLAND),
             height: Spring::new(0.0, SpringConfig::ISLAND),
             last_frame: None,
-            files: Shelf::default(),
+            files: saved.shelf,
             icons: HashMap::new(),
             scale,
             open: false,
@@ -88,7 +94,25 @@ impl Basket {
             press: None,
             drag_out: false,
             menu: false,
+            rename: None,
+            focus: cx.focus_handle(),
+            writer: saved.writer,
             island,
+        }
+    }
+
+    /// Back from the last run without looking at the disk: learn the files' kinds and pictures
+    /// and drop the ones that went away meanwhile, off the UI thread.
+    pub fn settle_restored(&mut self, cx: &mut Context<Self>) {
+        let paths: Vec<_> = self.files.items().iter().map(|i| i.path.clone()).collect();
+        self.resolve(paths, cx);
+        self.prune_missing(cx);
+    }
+
+    /// Land the queued save before the app goes.
+    pub fn drain_writer(&mut self) {
+        if let Some(writer) = self.writer.take() {
+            writer.drain();
         }
     }
 
@@ -122,10 +146,16 @@ impl Basket {
         }
     }
 
+    fn summon(&mut self, cx: &mut Context<Self>) {
+        if self.held.may_open_tray() {
+            self.show(cx);
+        }
+    }
+
     /// Open under the pointer, on the pointer's monitor, kept whole on it. One already open
     /// stays where it is.
-    fn summon(&mut self, cx: &mut Context<Self>) {
-        if self.open || !self.held.may_open_tray() || frame::fullscreen(self.hwnd) {
+    pub fn show(&mut self, cx: &mut Context<Self>) {
+        if self.open || frame::fullscreen(self.hwnd) {
             return;
         }
         let Some((cursor, work, scale)) = win32::cursor_monitor() else {
@@ -144,11 +174,13 @@ impl Basket {
         self.width = Spring::new(CARD.0 * FLY_IN_FROM, SpringConfig::ISLAND);
         self.height = Spring::new(CARD.1 * FLY_IN_FROM, SpringConfig::ISLAND);
         self.spring_to_size(cx);
+        self.prune_missing(cx);
     }
 
     /// Put the basket away. Its files stay in it, and the next jiggle brings them back.
     pub(crate) fn close(&mut self, cx: &mut Context<Self>) {
         log("basket closed");
+        self.end_rename(cx);
         self.open = false;
         self.list = false;
         self.generation += 1;
@@ -190,7 +222,15 @@ impl Basket {
         let added = self.files.add(paths);
         log(&format!("basket +{} = {}", added.len(), self.files.len()));
         self.files_changed(cx);
-        let rx = crate::icon::resolve(added, (THUMB * self.scale).round() as i32);
+        self.resolve(added, cx);
+    }
+
+    /// Whether each file is a folder, and its picture, off the UI thread.
+    fn resolve(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+        if paths.is_empty() {
+            return;
+        }
+        let rx = crate::icon::resolve(paths, (THUMB * self.scale).round() as i32);
         cx.spawn(async move |this, cx| {
             while let Ok((path, is_dir, icon)) = rx.recv().await {
                 let updated = this.update(cx, |this, cx| {
@@ -212,9 +252,54 @@ impl Basket {
         .detach();
     }
 
-    /// The files changed: let go of pictures no file needs, and close once the last file has
-    /// gone (dragged out or removed), unless a drag is on its way in.
+    /// Files can move or vanish while the basket holds them, or while the app is off. Looking
+    /// can stall on a dead share, so it happens off the UI thread.
+    fn prune_missing(&mut self, cx: &mut Context<Self>) {
+        let paths: Vec<PathBuf> = self.files.items().iter().map(|i| i.path.clone()).collect();
+        if paths.is_empty() {
+            return;
+        }
+        cx.spawn(async move |this, cx| {
+            let gone: Vec<PathBuf> = cx
+                .background_executor()
+                .spawn(async move { paths.into_iter().filter(|p| !p.exists()).collect() })
+                .await;
+            if gone.is_empty() {
+                return;
+            }
+            this.update(cx, |this, cx| {
+                if this.files.prune(|p| !gone.iter().any(|g| g == p)) > 0 {
+                    log(&format!("basket pruned, {} left", this.files.len()));
+                    this.files_changed(cx);
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// Files renamed on disk (by Transform, or here): they keep their place and picture.
+    pub fn follow_renames(&mut self, renamed: &[(PathBuf, PathBuf)], cx: &mut Context<Self>) {
+        let mut moved = false;
+        for (from, to) in renamed {
+            if self.files.rename(from, to.clone()) {
+                if let Some(icon) = self.icons.remove(from) {
+                    self.icons.insert(to.clone(), icon);
+                }
+                moved = true;
+            }
+        }
+        if moved {
+            self.files_changed(cx);
+        }
+    }
+
+    /// The files changed: save them, and let go of pictures no file needs.
     fn files_changed(&mut self, cx: &mut Context<Self>) {
+        if let Some(writer) = &self.writer {
+            writer.send(shelf::serialize(self.files.items()));
+        }
+        tray::set_basket_count(self.files.len());
         let gone: Vec<PathBuf> = (self.icons.keys())
             .filter(|path| !self.files.items().iter().any(|item| &item.path == *path))
             .cloned()
@@ -290,62 +375,6 @@ impl Basket {
             .ok();
         })
         .detach();
-    }
-
-    /// A tile's menu, the shelf's chip menu: on a thread of its own, as it pumps messages.
-    fn tile_menu(&mut self, index: usize, cx: &mut Context<Self>) {
-        let Some(item) = self.files.items().get(index).cloned() else {
-            return;
-        };
-        if self.menu || self.drag_out {
-            return;
-        }
-        let (tx, rx) = async_channel::bounded(1);
-        // Transform, first, takes files only.
-        let from = usize::from(item.kind != Kind::File);
-        if !chip::on_thread("topsy-basket-menu", move || {
-            let _ = tx.send_blocking(win32::popup_menu(&MENU[from..]));
-        }) {
-            return;
-        }
-        self.menu = true;
-        cx.spawn(async move |this, cx| {
-            let choice = rx.recv().await.ok().flatten();
-            let action = ACTIONS.into_iter().find(|a| Some(*a as usize) == choice);
-            this.update(cx, |this, cx| {
-                this.menu = false;
-                if let Some(action) = action {
-                    this.act(action, item, cx);
-                }
-            })
-            .ok();
-        })
-        .detach();
-    }
-
-    /// Acts on the file's path, not its index: the basket may have changed while the menu was up.
-    fn act(&mut self, action: Action, item: Item, cx: &mut Context<Self>) {
-        log(&format!("basket {action:?} {}", item.name()));
-        match action {
-            Action::ShowInFolder => chip::show_in_folder(item.path),
-            Action::CopyPath => chip::copy_as_path(&item.path, cx),
-            Action::Compress => chip::zip(item, cx, |this: &mut Self, zip, cx| {
-                this.add(vec![zip], cx);
-            }),
-            Action::Transform => {
-                if let Some(island) = self.island.upgrade() {
-                    crate::transform::open(cx, &island, vec![item.path]);
-                }
-            }
-            Action::Remove => {
-                if self.files.remove_path(&item.path) {
-                    self.files_changed(cx);
-                    if self.files.is_empty() {
-                        self.close(cx);
-                    }
-                }
-            }
-        }
     }
 
     pub fn follow_window(&mut self) {

@@ -10,6 +10,8 @@ use gpui::{
 
 use crate::icons::{Icon, icon};
 use crate::model::shelf::{Item, Kind};
+use windows::Win32::Foundation::HWND;
+
 use crate::win32::{self, DragOutcome, MenuEntry};
 use crate::{COLLAPSE_AFTER_LEAVE, COLLAPSE_AFTER_RELEASE, Island, archive, log};
 
@@ -28,18 +30,24 @@ pub(crate) enum Action {
     Compress,
     Remove,
     Transform,
+    Share,
+    /// The basket's only: renaming types into the window, and the island never takes the keys.
+    Rename,
 }
 
-pub(crate) const ACTIONS: [Action; 5] = [
+pub(crate) const ACTIONS: [Action; 7] = [
     Action::ShowInFolder,
     Action::CopyPath,
     Action::Compress,
     Action::Remove,
     Action::Transform,
+    Action::Share,
+    Action::Rename,
 ];
 
-const MENU: [MenuEntry; 6] = [
+const MENU: [MenuEntry; 7] = [
     MenuEntry::Item(Action::Transform as usize, "&Transform…"),
+    MenuEntry::Item(Action::Share as usize, "&Share…"),
     MenuEntry::Item(Action::ShowInFolder as usize, "Show in &folder"),
     MenuEntry::Item(Action::CopyPath as usize, "Copy as &path"),
     MenuEntry::Item(Action::Compress as usize, "Compress to &ZIP file"),
@@ -284,11 +292,13 @@ impl Island {
                 let island = cx.entity();
                 crate::transform::open(cx, &island, vec![item.path]);
             }
+            Action::Share => share(self.hwnd, vec![item.path], cx),
             Action::Remove => {
                 if self.shelf.remove_path(&item.path) {
                     self.shelf_changed(cx);
                 }
             }
+            Action::Rename => {}
         }
     }
 }
@@ -320,6 +330,30 @@ pub(crate) fn show_in_folder(path: PathBuf) {
             eprintln!("topsy: could not show {} in its folder", path.display());
         }
     });
+}
+
+/// Windows' share sheet for `paths`, over `hwnd`. From a task: the sheet may call back into
+/// the window's thread before it returns (see [`win32::share::share`]).
+pub(crate) fn share<T: 'static>(hwnd: Option<HWND>, paths: Vec<PathBuf>, cx: &mut Context<T>) {
+    let Some(hwnd) = hwnd.filter(|_| !paths.is_empty()) else {
+        return;
+    };
+    let title = match paths.as_slice() {
+        [one] => one
+            .file_name()
+            .unwrap_or(one.as_os_str())
+            .to_string_lossy()
+            .into_owned(),
+        many => format!("{} items", many.len()),
+    };
+    let raw = hwnd.0 as usize;
+    cx.spawn(async move |_, _| {
+        log(&format!("share {title}"));
+        if let Err(err) = win32::share::share(HWND(raw as *mut _), title, paths) {
+            eprintln!("topsy: could not open the share sheet: {err}");
+        }
+    })
+    .detach();
 }
 
 /// The path on the clipboard, quoted, as Explorer's "Copy as path" does.
