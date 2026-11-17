@@ -5,14 +5,14 @@
 //! for trouble), copy just the missing import libraries from a system MinGW-w64 into the build
 //! output directory and add that to the link search path.
 //!
-//! It also gives the exe its icon: the pill from `src/model/pill.rs`, written as a binary `.res`
+//! It also gives the exe its icon, drawn by `src/model/app_icon.rs`, written as a binary `.res`
 //! and turned into an object by the same MinGW's `windres`. No `.rc` script, so no preprocessor.
 
 use std::path::PathBuf;
 use std::process::Command;
 
-#[path = "src/model/pill.rs"]
-mod pill;
+#[path = "src/model/app_icon.rs"]
+mod app_icon;
 
 /// Import libraries GPUI's dependency tree needs that rustc's bundled MinGW doesn't have.
 const MISSING_IMPORT_LIBS: &[&str] = &["libktmw32.a"];
@@ -23,7 +23,7 @@ const ICON_SIZES: &[usize] = &[16, 20, 24, 32, 40, 48, 64, 256];
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-changed=src/model/pill.rs");
+    println!("cargo:rerun-if-changed=src/model/app_icon.rs");
 
     let windows = std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows");
     let env = std::env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
@@ -122,7 +122,7 @@ fn resource(out: &mut Vec<u8>, kind: u16, name: u16, data: &[u8]) {
 /// An icon image as a DIB: a header with doubled height, the colour rows bottom-up, then an
 /// all-clear AND mask (ignored when the colour has alpha, but its space is expected).
 fn dib(size: usize) -> Vec<u8> {
-    let pixels = pill::pill(size);
+    let pixels = app_icon::app_icon(size);
     let mask_row = size.div_ceil(32) * 4;
     let mut out = Vec::new();
     for word in [40u32, size as u32, 2 * size as u32] {
