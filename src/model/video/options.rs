@@ -10,14 +10,7 @@ pub enum CompressBy {
     FileSize(u64),
 }
 
-impl CompressBy {
-    pub fn label(&self) -> &'static str {
-        match self {
-            CompressBy::Quality(_) => "Quality",
-            CompressBy::FileSize(_) => "File size",
-        }
-    }
-}
+impl CompressBy {}
 
 impl Default for CompressBy {
     fn default() -> Self {
@@ -39,12 +32,9 @@ impl Quality {
         Quality(percent.min(100))
     }
 
+    #[cfg(test)]
     pub fn percent(self) -> u8 {
         self.0
-    }
-
-    pub fn label(self) -> String {
-        format!("{}%", self.0)
     }
 
     /// x264's constant rate factor: 38 (small, soft) at 0% to 18 (visually lossless) at 100%,
@@ -89,17 +79,6 @@ impl MaxResolution {
         MaxResolution::P480,
     ];
 
-    pub fn label(self) -> &'static str {
-        match self {
-            MaxResolution::Original => "Original",
-            MaxResolution::P2160 => "4K",
-            MaxResolution::P1440 => "1440p",
-            MaxResolution::P1080 => "1080p",
-            MaxResolution::P720 => "720p",
-            MaxResolution::P480 => "480p",
-        }
-    }
-
     pub fn short_side(self) -> Option<u32> {
         match self {
             MaxResolution::Original => None,
@@ -140,6 +119,7 @@ impl VideoFormat {
         VideoFormat::Mkv,
     ];
 
+    #[cfg(test)]
     pub fn label(self) -> &'static str {
         match self {
             VideoFormat::Mp4H264 => "MP4 (H.264)",
@@ -210,6 +190,7 @@ impl AudioFormat {
         AudioFormat::Flac,
     ];
 
+    #[cfg(test)]
     pub fn label(self) -> &'static str {
         match self {
             AudioFormat::M4a => "M4A (AAC)",
@@ -288,13 +269,6 @@ pub enum ConvertTarget {
 }
 
 impl ConvertTarget {
-    pub fn label(self) -> &'static str {
-        match self {
-            ConvertTarget::Video(f) => f.label(),
-            ConvertTarget::Audio(f) => f.label(),
-        }
-    }
-
     pub fn extension(self) -> &'static str {
         match self {
             ConvertTarget::Video(f) => f.extension(),
@@ -313,6 +287,7 @@ pub enum TrimMode {
 }
 
 impl TrimMode {
+    #[cfg(test)]
     pub fn label(self) -> &'static str {
         match self {
             TrimMode::Exact => "Exact",
@@ -339,14 +314,6 @@ impl GifFps {
             GifFps::TwentyFour => 24,
         }
     }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            GifFps::Ten => "10 fps",
-            GifFps::Fifteen => "15 fps",
-            GifFps::TwentyFour => "24 fps",
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -359,28 +326,12 @@ pub enum GifWidth {
 }
 
 impl GifWidth {
-    pub const ALL: [GifWidth; 4] = [
-        GifWidth::Original,
-        GifWidth::W640,
-        GifWidth::W480,
-        GifWidth::W320,
-    ];
-
     pub fn pixels(self) -> Option<u32> {
         match self {
             GifWidth::Original => None,
             GifWidth::W640 => Some(640),
             GifWidth::W480 => Some(480),
             GifWidth::W320 => Some(320),
-        }
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            GifWidth::Original => "Original",
-            GifWidth::W640 => "640 px",
-            GifWidth::W480 => "480 px",
-            GifWidth::W320 => "320 px",
         }
     }
 }
@@ -410,6 +361,7 @@ impl Rotate {
         Rotate::FlipVertical,
     ];
 
+    #[cfg(test)]
     pub fn label(self) -> &'static str {
         match self {
             Rotate::Left => "Rotate left",

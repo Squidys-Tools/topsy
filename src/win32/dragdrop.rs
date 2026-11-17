@@ -101,7 +101,6 @@ struct WatchingDropTarget {
     accepted: AtomicBool,
 }
 
-#[allow(non_snake_case)]
 impl IDropTarget_Impl for WatchingDropTarget_Impl {
     fn DragEnter(
         &self,

@@ -2,8 +2,6 @@
 //! as a process without a window. The command lines and the rules behind them are in
 //! `crate::model::video`; this is the glue that runs them.
 
-#![allow(dead_code, unused_imports)] // Called once the panel wires the engine in.
-
 use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io;
@@ -18,10 +16,6 @@ use super::tools::{self, Tool};
 use crate::model::video::{
     self as rules, CompressBy, CompressVideo, ConvertTarget, GifOptions, Probe, Progress, Rate,
     Rotate, TrimMode, TrimRange, megabytes, retry_bitrate,
-};
-
-pub use crate::model::video::{
-    AudioFormat, GifFps, GifWidth, MaxResolution, Quality, VideoFormat, edited_extension,
 };
 
 /// Gyan Doshi's "essentials" build of the FFmpeg 9.0.2 release, GPL v3, statically linked:

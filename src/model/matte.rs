@@ -2,8 +2,6 @@
 //! low-resolution mask into a clean full-size matte with colours that don't carry the old
 //! background at the edges.
 
-#![allow(dead_code)]
-
 use rayon::prelude::*;
 
 const MEAN: [f32; 3] = [0.485, 0.456, 0.406];

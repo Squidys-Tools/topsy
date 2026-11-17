@@ -62,7 +62,10 @@ impl<'a> Mat<'a> {
 }
 
 /// `dst[m × n] (+)= a[m × k] · b[k × n]`, with `dst` row-major at row stride `dst_rs`.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "gemm's own shape; a struct would only rename the arguments"
+)]
 pub fn matmul(
     m: usize,
     n: usize,

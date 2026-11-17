@@ -4,6 +4,7 @@
 
 const ORIENTATION: u16 = 0x0112;
 const EXIF_IFD: u16 = 0x8769;
+#[cfg(test)]
 const GPS_IFD: u16 = 0x8825;
 const PIXEL_X: u16 = 0xA002;
 const PIXEL_Y: u16 = 0xA003;
@@ -130,6 +131,7 @@ pub fn orientation_only(orientation: u16) -> Vec<u8> {
     b
 }
 
+#[cfg(test)]
 pub fn has_gps(exif: &[u8]) -> bool {
     Tiff::new(exif).is_some_and(|t| {
         t.sub_ifd(exif, GPS_IFD)

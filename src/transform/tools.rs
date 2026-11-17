@@ -2,8 +2,6 @@
 //! each is a pinned release archive, downloaded on first use (see `fetch`), unpacked under
 //! `%LOCALAPPDATA%\topsy\tools`, and run as a process of its own, without a window.
 
-#![allow(dead_code)] // Used once the engines that run tools are wired in.
-
 use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader, Read};
 use std::os::windows::process::CommandExt;

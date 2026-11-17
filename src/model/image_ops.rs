@@ -57,6 +57,7 @@ impl Kind {
         })
     }
 
+    #[cfg(test)]
     pub fn label(self) -> &'static str {
         match self {
             Kind::Jpeg => "JPEG",
@@ -102,6 +103,7 @@ impl Format {
         Format::Pdf,
     ];
 
+    #[cfg(test)]
     pub fn label(self) -> &'static str {
         match self {
             Format::Jpeg => "JPEG",
@@ -175,14 +177,7 @@ pub enum CompressBy {
     FileSize,
 }
 
-impl CompressBy {
-    pub fn label(self) -> &'static str {
-        match self {
-            CompressBy::Quality => "Quality",
-            CompressBy::FileSize => "File size",
-        }
-    }
-}
+impl CompressBy {}
 
 /// Compress's "Image format".
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -207,18 +202,6 @@ impl CompressFormat {
         CompressFormat::Webp,
         CompressFormat::Avif,
     ];
-
-    pub fn label(self) -> &'static str {
-        match self {
-            CompressFormat::MostCompatible => "Most compatible",
-            CompressFormat::SameAsOriginal => "Same as original",
-            CompressFormat::Jpeg => "JPEG",
-            CompressFormat::Png => "PNG",
-            CompressFormat::Heic => "HEIC",
-            CompressFormat::Webp => "WebP",
-            CompressFormat::Avif => "AVIF",
-        }
-    }
 
     /// The format to write for a source of `kind`, `has_alpha` when it has real transparency.
     pub fn resolve(self, kind: Kind, has_alpha: bool) -> Format {

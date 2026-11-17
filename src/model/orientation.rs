@@ -80,6 +80,7 @@ impl Orientation {
     }
 
     /// Where pixel (x, y) of a `w` x `h` source lands.
+    #[cfg(test)]
     pub fn map(self, x: u32, y: u32, w: u32, h: u32) -> (u32, u32) {
         let (t, fh, fv) = self.parts();
         let (mut nx, mut ny, nw, nh) = if t { (y, x, h, w) } else { (x, y, w, h) };

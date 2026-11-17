@@ -2,8 +2,6 @@
 //! model has been fetched. `model_status` and `download` drive the panel's "Get"; `remove` cuts
 //! the subject out to a transparent PNG and `mask` gives the matte alone for a preview.
 
-#![allow(dead_code)]
-
 mod birefnet;
 mod deform;
 mod ops;
@@ -19,7 +17,7 @@ use std::sync::atomic::AtomicBool;
 
 use image::codecs::png::{CompressionType, FilterType, PngEncoder};
 use image::imageops::{self, FilterType as Resample};
-use image::{DynamicImage, GrayImage, ImageDecoder, ImageReader, RgbaImage};
+use image::{DynamicImage, ImageDecoder, ImageReader, RgbaImage};
 
 pub use crate::model::download::ModelStatus;
 use crate::model::matte;
@@ -72,15 +70,6 @@ pub fn remove(
         .map_err(io::Error::other)?;
     progress(1.0);
     Ok(())
-}
-
-/// The matte of `src` at its full size: 255 is the subject, 0 the background.
-pub fn mask(src: &Path, progress: &dyn Fn(f32), cancel: &AtomicBool) -> io::Result<GrayImage> {
-    let image = decode(src)?;
-    let (w, h) = (image.width(), image.height());
-    let alpha = matte(&image, progress, cancel)?;
-    let bytes = alpha.iter().map(|a| (a * 255.0).round() as u8).collect();
-    Ok(GrayImage::from_raw(w, h, bytes).expect("one byte per pixel"))
 }
 
 fn unsupported(err: image::ImageError) -> io::Error {

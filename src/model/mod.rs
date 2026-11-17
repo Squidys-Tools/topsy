@@ -15,36 +15,28 @@ pub mod clipboard;
 pub mod dib;
 pub mod download;
 pub mod edge;
-#[allow(dead_code)] // Transform, until the panel calls it.
 pub mod exif;
 pub mod favicon;
 pub mod float;
 pub mod heif;
 pub mod highlight;
 pub mod hud;
-#[allow(dead_code)]
 pub mod image_geometry;
-#[allow(dead_code)]
 pub mod image_ops;
 pub mod jiggle;
-#[allow(dead_code)]
 pub mod jpeg;
 pub mod levels;
-#[allow(dead_code)]
 pub mod magick;
 pub mod marquee;
 pub mod matte;
 pub mod media;
 pub mod name_field;
 pub mod notch;
-#[allow(dead_code)]
 pub mod orientation;
-#[allow(dead_code)]
 pub mod pdf;
 pub mod pdf_image;
 pub mod pdf_place;
 pub mod shelf;
-#[allow(dead_code)]
 pub mod size_search;
 pub mod spring;
 pub mod transform;
