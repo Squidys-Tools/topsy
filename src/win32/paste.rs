@@ -30,12 +30,21 @@ pub enum Data {
 
 /// Put `data` on the clipboard, in place of what is there.
 pub fn put(data: &Data) -> bool {
+    put_owned(data, HWND::default())
+}
+
+/// As [`put`], with `fallback` owning the clipboard when there is no history window to (history
+/// off): the clipboard takes data only from an owner window.
+pub fn put_owned(data: &Data, fallback: HWND) -> bool {
     let (format, bytes) = match data {
         Data::Text(text) => (CF_UNICODETEXT, wide_bytes(text.encode_utf16())),
         Data::Files(files) => (CF_HDROP, drop_files(files)),
         Data::Dib(dib) => (CF_DIB, dib.clone()),
     };
-    let owner = HWND(WINDOW.load(Ordering::Relaxed) as *mut _);
+    let mut owner = HWND(WINDOW.load(Ordering::Relaxed) as *mut _);
+    if owner.0.is_null() {
+        owner = fallback;
+    }
     if owner.0.is_null() {
         return false;
     }

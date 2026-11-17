@@ -27,6 +27,21 @@ pub enum Headline {
     Text(String),
 }
 
+impl Headline {
+    /// Its font size: `max`, or smaller so that it fits `width` with `gap` between the sizes and
+    /// the arrow. It is set in a monospace font; Consolas advances 0.55 em, and 0.6 leaves room.
+    pub fn font_size(&self, width: f32, gap: f32, max: f32) -> f32 {
+        let (chars, gaps) = match self {
+            Headline::Sizes(before, after) => (
+                before.chars().count() + 1 + after.chars().count(),
+                2.0 * gap,
+            ),
+            Headline::Text(text) => (text.chars().count(), 0.0),
+        };
+        ((width - gaps) / (chars.max(1) as f32 * 0.6)).min(max)
+    }
+}
+
 impl Made {
     pub fn headline(&self) -> Headline {
         match self.bytes {
@@ -58,6 +73,17 @@ mod tests {
             name: "IMG_2041 (compressed).jpg".into(),
             renamed: 0,
         }
+    }
+
+    #[test]
+    fn a_long_headline_shrinks_to_fit_and_a_short_one_keeps_its_size() {
+        let short = Headline::Sizes("22 MB".into(), "12 MB".into());
+        assert_eq!(short.font_size(180.0, 7.0, 18.0), 18.0);
+        // What ran off the card: 463 bytes → 310 bytes at 18 px.
+        let long = Headline::Sizes("999 bytes".into(), "999 bytes".into());
+        let px = long.font_size(180.0, 7.0, 18.0);
+        assert!(px < 18.0);
+        assert!(19.0 * 0.55 * px + 14.0 < 180.0 * 0.95, "leaves headroom");
     }
 
     #[test]

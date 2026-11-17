@@ -37,7 +37,7 @@ impl Cards {
                     |this, _: &ClickEvent, _, _| this.cancel.store(true, Ordering::Relaxed),
                 ))
             };
-        let right = circle(
+        let open = circle(
             ("open", index),
             icon(Icon::Open, 16.0, rgb(0x1c1c1e)).into_any_element(),
         )
@@ -45,6 +45,15 @@ impl Cards {
             let path = opened.clone();
             std::thread::spawn(move || win32::open_path(&path));
         });
+        let copy = done.then(|| {
+            let glyph = if card.copied { Icon::Tick } else { Icon::Copy };
+            circle(
+                ("copy", index),
+                icon(glyph, 15.0, rgb(0x1c1c1e)).into_any_element(),
+            )
+            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.copy(index, cx)))
+        });
+        let right = div().flex().gap(px(6.0)).children(copy).child(open);
         div()
             .id(index)
             .relative()
@@ -53,6 +62,8 @@ impl Cards {
             .h(px(CARD_H))
             .rounded(px(RADIUS))
             .bg(rgb(0x1c1c1e))
+            // GPUI's `start_window_move` does nothing on Windows; a caption area lets Windows move it.
+            .window_control_area(gpui::WindowControlArea::Drag)
             .child(picture)
             .when(!done, |s| {
                 s.child(
@@ -117,7 +128,9 @@ impl Cards {
                 *progress,
             ),
             Status::Done { made, .. } => {
-                let headline = match made.headline() {
+                let headline = made.headline();
+                let font = headline.font_size(CARD_W - 28.0, 7.0, 18.0);
+                let headline = match headline {
                     Headline::Sizes(before, after) => div()
                         .flex()
                         .gap(px(7.0))
@@ -132,7 +145,7 @@ impl Cards {
                     .gap(px(2.0))
                     .font_family(MONO)
                     .font_weight(FontWeight::BOLD)
-                    .child(headline.text_size(px(18.0)).line_height(px(22.0)))
+                    .child(headline.text_size(px(font)).line_height(px(22.0)))
                     .child(
                         div()
                             .text_size(px(12.0))
@@ -154,6 +167,8 @@ fn circle(id: impl Into<gpui::ElementId>, content: AnyElement) -> Stateful<gpui:
         .flex()
         .items_center()
         .justify_center()
+        // In front of the card's drag area, which would otherwise take its clicks.
+        .occlude()
         .rounded_full()
         .bg(rgba(0xf5f5f7eb))
         .text_color(rgb(0x1c1c1e))
