@@ -134,7 +134,10 @@ impl Island {
                             .whitespace_nowrap()
                             .overflow_x_scroll()
                             .track_scroll(&self.media.title)
-                            .child(title.to_owned()),
+                            // GPUI scrolls as far as its children's boxes reach, and a block
+                            // child is only as wide as the line: this one keeps the text's width.
+                            .flex()
+                            .child(div().flex_none().child(title.to_owned())),
                     )
                     .children(artist.map(|a| {
                         div()
