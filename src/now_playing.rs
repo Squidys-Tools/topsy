@@ -231,6 +231,9 @@ impl Island {
         if let Some(hud) = self.hud_peek() {
             return hud;
         }
+        if let Some(activities) = self.activity_peek() {
+            return activities;
+        }
         let count = self.shelf.len();
         let Some(title) = self.media.now.hint() else {
             let label = match count {

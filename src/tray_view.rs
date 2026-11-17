@@ -21,6 +21,11 @@ impl Island {
         if mode == Mode::Peek && self.hud.is_shown() {
             return crate::hud::SIZE;
         }
+        if mode == Mode::Peek
+            && let Some(size) = self.activity_size()
+        {
+            return size;
+        }
         if mode != Mode::Tray {
             return (w, h);
         }

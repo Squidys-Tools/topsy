@@ -67,6 +67,18 @@ pub(crate) fn on_thread(name: &str, work: impl FnOnce() + Send + 'static) -> boo
 }
 
 impl Island {
+    pub(crate) fn clear_shelf(&mut self, cx: &mut Context<Self>) {
+        self.shelf.clear();
+        self.shelf_changed(cx);
+    }
+
+    pub(crate) fn remove_item(&mut self, index: usize, cx: &mut Context<Self>) {
+        if let Some(item) = self.shelf.remove(index) {
+            log(&format!("removed {}", item.name()));
+            self.shelf_changed(cx);
+        }
+    }
+
     /// One file on the shelf: its thumbnail or icon (a coloured type badge until that arrives,
     /// or if the shell has none) and the name. Press and drag to take it out, click to open it,
     /// right-click for its actions, the corner cross to remove it from the shelf (not from disk).
