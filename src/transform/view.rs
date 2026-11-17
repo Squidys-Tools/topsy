@@ -67,9 +67,10 @@ impl Panel {
             .flex()
             .items_center()
             .gap(px(10.0))
-            .on_mouse_down(gpui::MouseButton::Left, |_, window, _| {
-                window.start_window_move()
-            })
+            // GPUI's `start_window_move` does nothing on Windows; a caption area lets Windows move it.
+            // Occluded, or the panel's focus-on-click marks the press handled and no move starts.
+            .window_control_area(gpui::WindowControlArea::Drag)
+            .occlude()
             .child(badge())
             .child(
                 div()
@@ -92,6 +93,7 @@ impl Panel {
             .child(
                 div()
                     .id("close")
+                    .occlude()
                     .flex_none()
                     .size(px(32.0))
                     .flex()

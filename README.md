@@ -272,11 +272,13 @@ it falls below 20% and 10% (or is unplugged below 20%), and when it is full on t
 
 *Transform* on a chip's menu, or in the shelf's header, opens a panel laid out after Droppy's: the files at the
 top, a tile for each action that suits them, the chosen action's options, and one button. It opens in the
-bottom-right corner of the screen the pointer is on, as Droppy's results do, and grows upwards. Results are saved
+bottom-right corner of the screen the pointer is on, as Droppy's results do, and grows upwards; drag its header to
+move it. Results are saved
 beside the originals (`photo (compressed).jpg`, `report (page 2).png`, `Combined.pdf`), numbered rather than
 overwriting, and parked on the shelf. While it works, the panel steps aside for a column of result cards where
 it stood, stacked up from its bottom, as Droppy's does: one per file (one for a zip, a PDF or a rename), blurred with a progress bar while
-waiting or working, then sharp with the size before and after and the picture's sides. A card opens its result;
+waiting or working, then sharp with the size before and after and the picture's sides. A card opens its result
+or copies it (as a file, to paste into a mail or a chat), and dragging a card moves the column;
 the panel closes once the run is done, and the cards go by themselves six seconds later, unless the cursor is
 on them. Only Rename touches the originals; a card's stop button, or a file that fails, stops the work,
 deletes what it had made and brings the panel back.

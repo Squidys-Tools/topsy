@@ -2,7 +2,8 @@
 //! cards where it stood, one per file (one for a zip, a PDF or a rename). A card shows its file
 //! blurred while it waits or works, with a stop button and its progress, then sharp, with the
 //! size before and after. They go by themselves a few seconds after the last is done, unless
-//! the cursor is on them. Like the island, they never take the focus.
+//! the cursor is on them. A finished card copies its file, to paste in a mail or a chat. They
+//! can be dragged anywhere by the card. Like the island, they never take the focus.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -53,6 +54,8 @@ struct Card {
     sharp: Option<Arc<RenderImage>>,
     soft: Option<Arc<RenderImage>>,
     gone: bool,
+    /// Its file is on the clipboard.
+    copied: bool,
 }
 
 pub struct Cards {
@@ -103,7 +106,7 @@ pub fn open(
         focus: false,
         show: true,
         kind: WindowKind::PopUp,
-        is_movable: false,
+        is_movable: true,
         is_resizable: false,
         is_minimizable: false,
         window_background: WindowBackgroundAppearance::Transparent,
@@ -182,6 +185,7 @@ impl Cards {
                 sharp: None,
                 soft: None,
                 gone: false,
+                copied: false,
             })
             .collect();
         let big = (CARD_W * self.scale).round() as i32;
@@ -294,6 +298,28 @@ impl Cards {
                     .ok();
             });
         }
+    }
+
+    /// Put a finished card's file on the clipboard, off the UI thread: opening the clipboard
+    /// waits on whoever has it.
+    fn copy(&mut self, index: usize, cx: &mut Context<Self>) {
+        let Some(Status::Done { output, .. }) = self.cards.get(index).map(|c| &c.status) else {
+            return;
+        };
+        let (data, owner) = (win32::paste::Data::Files(vec![output.clone()]), self.hwnd);
+        cx.spawn(async move |this, cx: &mut AsyncApp| {
+            let put = (cx.background_executor())
+                .spawn(async move { win32::paste::put_owned(&data, HWND(owner as *mut _)) })
+                .await;
+            this.update(cx, |this, cx| {
+                if let Some(card) = this.cards.get_mut(index) {
+                    card.copied = put;
+                    cx.notify();
+                }
+            })
+            .ok();
+        })
+        .detach();
     }
 
     fn dismiss(&mut self, index: usize, cx: &mut Context<Self>) {
