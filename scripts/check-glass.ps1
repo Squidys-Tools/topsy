@@ -127,18 +127,19 @@ try {
     $tint = Measure-Mode 'tint' | Select-Object -Last 1
     $blur = Measure-Mode 'blur' | Select-Object -Last 1
     $acrylic = Measure-Mode 'acrylic' | Select-Object -Last 1
-    "tint-only ratio {0:N2}; blurred ratio {1:N2} = {2:N0}% of it, acrylic fallback {3:N2} (limit {4:P0})" -f $tint, $blur, (100 * $blur / $tint), $acrylic, $MaxBlurShare
+    Write-Host ("tint-only ratio {0:N2}; blurred ratio {1:N2} = {2:N0}% of it, acrylic fallback {3:N2} (limit {4:P0})" -f $tint, $blur, (100 * $blur / $tint), $acrylic, $MaxBlurShare)
 
     if ($clear -lt 0.8) {
-        "FAIL: control (clear) lost stripe contrast ($clear); the measurement is not trustworthy"; $code = 1
+        Write-Host "FAIL: control (clear) lost stripe contrast ($clear); the measurement is not trustworthy"; $code = 1
     } elseif ($blur -gt $tint * $MaxBlurShare -or $acrylic -gt $tint * $MaxBlurShare) {
-        "FAIL: a blurred pill keeps too much of the stripe contrast the tint alone leaves: no (strong enough) blur"; $code = 1
+        Write-Host "FAIL: a blurred pill keeps too much of the stripe contrast the tint alone leaves: no (strong enough) blur"; $code = 1
     } else {
-        "PASS (blurred)"
+        Write-Host "PASS (blurred)"
     }
 } catch {
-    "FAIL: $_"; $code = 1
+    Write-Host "FAIL: $_"; $code = 1
 } finally {
     Stop-Process -Id $bd.Id -Force -ErrorAction SilentlyContinue
 }
+# Environment.Exit drops output still buffered for a pipe, hence Write-Host for the verdict.
 [Environment]::Exit($code)
