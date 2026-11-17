@@ -43,6 +43,8 @@ pub use steps::Steps;
 
 /// The panel's width; its height follows what it shows.
 const WIDTH: f32 = 384.0;
+/// From the work area's edges.
+const MARGIN: f32 = 16.0;
 /// The files' thumbnails' height.
 const THUMB: f32 = 44.0;
 /// The files' tiles' width.
@@ -138,8 +140,10 @@ pub fn open(cx: &mut App, island: &Entity<Island>, paths: Vec<PathBuf>) {
     };
     let w = (WIDTH * scale).round() as i32;
     let h = (240.0 * scale).round() as i32;
-    let x = work.left + (work.right - work.left - w) / 2;
-    let y = work.top + (96.0 * scale).round() as i32;
+    // The bottom-right corner, as Droppy's; the panel grows upwards from there (`fit_height`).
+    let margin = (MARGIN * scale).round() as i32;
+    let x = work.right - margin - w;
+    let y = work.bottom - margin - h;
     let logical = |v: i32| px(v as f32 / scale);
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(Bounds::new(
@@ -450,8 +454,12 @@ impl Panel {
         );
         let raw = hwnd.0 as usize;
         cx.spawn(async move |_, _: &mut AsyncApp| {
-            win32::resize_window(HWND(raw as *mut _), w, h);
-            win32::set_clip(HWND(raw as *mut _), rounded(w, h, scale));
+            let hwnd = HWND(raw as *mut _);
+            let Some(r) = win32::window_rect(hwnd) else {
+                return;
+            };
+            win32::move_window(hwnd, r.left, r.bottom - h, w, h, false);
+            win32::set_clip(hwnd, rounded(w, h, scale));
         })
         .detach();
     }
