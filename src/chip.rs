@@ -1,9 +1,11 @@
 //! A chip: one file on the shelf as the tray draws it, and what can be done with it (open it,
 //! drag it out, the actions in its right-click menu).
 
+use std::path::PathBuf;
+
 use gpui::{
-    ClickEvent, ClipboardItem, Context, FontWeight, MouseButton, MouseDownEvent, MouseMoveEvent,
-    ObjectFit, div, hsla, img, prelude::*, px, rgba,
+    App, ClickEvent, ClipboardItem, Context, FontWeight, MouseButton, MouseDownEvent,
+    MouseMoveEvent, ObjectFit, div, hsla, img, prelude::*, px, rgba,
 };
 
 use crate::icons::{Icon, icon};
@@ -12,7 +14,7 @@ use crate::win32::{self, DragOutcome, MenuEntry};
 use crate::{COLLAPSE_AFTER_LEAVE, COLLAPSE_AFTER_RELEASE, Island, archive, log};
 
 /// How far (logical pixels) a pressed chip must be dragged before it becomes a drag out.
-const DRAG_OUT_THRESHOLD: f32 = 6.0;
+pub(crate) const DRAG_OUT_THRESHOLD: f32 = 6.0;
 
 pub(crate) const CHIP: (f32, f32) = (72.0, 70.0);
 /// The picture at the top of a chip, square.
@@ -20,7 +22,7 @@ pub const ICON: f32 = 38.0;
 
 /// What a chip's right-click menu offers; each is its own menu id.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Action {
+pub(crate) enum Action {
     ShowInFolder = 1,
     CopyPath,
     Compress,
@@ -28,7 +30,7 @@ enum Action {
     Transform,
 }
 
-const ACTIONS: [Action; 5] = [
+pub(crate) const ACTIONS: [Action; 5] = [
     Action::ShowInFolder,
     Action::CopyPath,
     Action::Compress,
@@ -46,7 +48,7 @@ const MENU: [MenuEntry; 6] = [
 ];
 
 /// Run `work` on a thread of its own, for shell calls that pump messages or take a while.
-fn on_thread(name: &str, work: impl FnOnce() + Send + 'static) -> bool {
+pub(crate) fn on_thread(name: &str, work: impl FnOnce() + Send + 'static) -> bool {
     match std::thread::Builder::new().name(name.into()).spawn(work) {
         Ok(_) => true,
         Err(err) => {
@@ -178,27 +180,10 @@ impl Island {
             .child(remove)
     }
 
-    /// Open a chip's file or folder with its default handler.
-    ///
-    /// On a thread of its own: `ShellExecute` can wait on the handler for a while and pumps
-    /// messages meanwhile. Inline, that freezes the island, and a message for this window
-    /// reaching GPUI from inside the click handler that got us here finds the app already
-    /// borrowed and aborts the process.
     fn open_item(&self, index: usize) {
-        let Some(item) = self.shelf.items().get(index).cloned() else {
-            return;
-        };
-        on_thread("topsy-open", move || {
-            let opened = win32::open_path(&item.path);
-            log(&format!(
-                "open {} ({})",
-                item.name(),
-                if opened { "ok" } else { "failed" }
-            ));
-            if !opened {
-                eprintln!("topsy: could not open {}", item.path.display());
-            }
-        });
+        if let Some(item) = self.shelf.items().get(index) {
+            open(item.clone());
+        }
     }
 
     /// Hand a chip's file to the system's drag loop, so it can be dropped on any window.
@@ -290,22 +275,11 @@ impl Island {
     fn chip_action(&mut self, action: Action, item: Item, cx: &mut Context<Self>) {
         log(&format!("chip {action:?} {}", item.name()));
         match action {
-            Action::ShowInFolder => {
-                on_thread("topsy-reveal", move || {
-                    if !win32::show_in_folder(&item.path) {
-                        eprintln!(
-                            "topsy: could not show {} in its folder",
-                            item.path.display()
-                        );
-                    }
-                });
-            }
-            Action::CopyPath => {
-                // Quoted, as Explorer's "Copy as path" does.
-                let quoted = format!("\"{}\"", item.path.display());
-                cx.write_to_clipboard(ClipboardItem::new_string(quoted));
-            }
-            Action::Compress => self.compress(item, cx),
+            Action::ShowInFolder => show_in_folder(item.path),
+            Action::CopyPath => copy_as_path(&item.path, cx),
+            Action::Compress => zip(item, cx, |this: &mut Self, zip, cx| {
+                this.add_paths(vec![zip], cx);
+            }),
             Action::Transform => {
                 let island = cx.entity();
                 crate::transform::open(cx, &island, vec![item.path]);
@@ -317,33 +291,72 @@ impl Island {
             }
         }
     }
+}
 
-    /// Zip a chip's file or folder beside it on a worker thread, and park the zip on the shelf
-    /// when it is done. A failed zip leaves nothing on disk and no chip.
-    fn compress(&mut self, item: Item, cx: &mut Context<Self>) {
-        let (tx, rx) = async_channel::bounded(1);
-        let source = item.path.clone();
-        if !on_thread("topsy-zip", move || {
-            let _ = tx.send_blocking(archive::compress(&source));
-        }) {
-            return;
+/// Open a file or folder with its default handler.
+///
+/// On a thread of its own: `ShellExecute` can wait on the handler for a while and pumps
+/// messages meanwhile. Inline, that freezes the island, and a message for this window
+/// reaching GPUI from inside the click handler that got us here finds the app already
+/// borrowed and aborts the process.
+pub(crate) fn open(item: Item) {
+    on_thread("topsy-open", move || {
+        let opened = win32::open_path(&item.path);
+        log(&format!(
+            "open {} ({})",
+            item.name(),
+            if opened { "ok" } else { "failed" }
+        ));
+        if !opened {
+            eprintln!("topsy: could not open {}", item.path.display());
         }
-        cx.spawn(async move |this, cx| {
-            let Ok(zipped) = rx.recv().await else {
-                return;
-            };
-            this.update(cx, |this, cx| match zipped {
-                Ok(zip) => {
-                    log(&format!("zipped {} to {}", item.name(), zip.display()));
-                    this.add_paths(vec![zip], cx);
-                }
-                Err(err) => {
-                    log(&format!("zip failed {}", item.name()));
-                    eprintln!("topsy: could not zip {}: {err}", item.path.display());
-                }
-            })
-            .ok();
-        })
-        .detach();
+    });
+}
+
+/// Explorer, opened on the file's folder with it selected.
+pub(crate) fn show_in_folder(path: PathBuf) {
+    on_thread("topsy-reveal", move || {
+        if !win32::show_in_folder(&path) {
+            eprintln!("topsy: could not show {} in its folder", path.display());
+        }
+    });
+}
+
+/// The path on the clipboard, quoted, as Explorer's "Copy as path" does.
+pub(crate) fn copy_as_path(path: &std::path::Path, cx: &mut App) {
+    let quoted = format!("\"{}\"", path.display());
+    cx.write_to_clipboard(ClipboardItem::new_string(quoted));
+}
+
+/// Zip a file or folder beside it on a worker thread, and hand the zip to `park` when it is
+/// done. A failed zip leaves nothing on disk and nothing to park.
+pub(crate) fn zip<T: 'static>(
+    item: Item,
+    cx: &mut Context<T>,
+    park: fn(&mut T, PathBuf, &mut Context<T>),
+) {
+    let (tx, rx) = async_channel::bounded(1);
+    let source = item.path.clone();
+    if !on_thread("topsy-zip", move || {
+        let _ = tx.send_blocking(archive::compress(&source));
+    }) {
+        return;
     }
+    cx.spawn(async move |this, cx| {
+        let Ok(zipped) = rx.recv().await else {
+            return;
+        };
+        this.update(cx, |this, cx| match zipped {
+            Ok(zip) => {
+                log(&format!("zipped {} to {}", item.name(), zip.display()));
+                park(this, zip, cx);
+            }
+            Err(err) => {
+                log(&format!("zip failed {}", item.name()));
+                eprintln!("topsy: could not zip {}: {err}", item.path.display());
+            }
+        })
+        .ok();
+    })
+    .detach();
 }

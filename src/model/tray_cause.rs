@@ -8,7 +8,7 @@ use std::time::Duration;
 /// What the tray was opened for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TrayCause {
-    /// A jiggle or a drag up to the edge: a drag is in progress and the tray is its drop
+    /// A drag up to the edge: a drag is in progress and the tray is its drop
     /// target. It folds when the drag ends, or sooner if the payload proves undroppable.
     Drag,
     /// A drop landed: open so the file is seen to land.
@@ -54,9 +54,9 @@ pub struct Sections {
     pub shelf: bool,
 }
 
-/// The held drag, as far as the tray is concerned. Once the drop target has refused it, its
-/// payload can never land, so nothing reopens the tray for it until the button comes up: the
-/// floating tray opens under the pointer, and would otherwise flash on every jiggle.
+/// The held drag, as far as the tray or the basket is concerned. Once the drop target has refused
+/// it, its payload can never land, so nothing reopens them for it until the button comes up: the
+/// basket opens under the pointer, and would otherwise flash on every jiggle.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct HeldDrag {
     refused: bool,
@@ -82,7 +82,7 @@ mod tests {
 
     #[test]
     fn a_drag_opened_tray_folds_when_the_drag_is_refused() {
-        // The hook can't tell what a jiggle is dragging; when the drop target
+        // The hook can't tell what a drag carries; when the drop target
         // refuses the payload, the tray that opened to catch it has nothing to
         // wait for.
         assert!(TrayCause::Drag.closed_by_refusal());

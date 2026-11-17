@@ -20,11 +20,34 @@ use windows::Win32::System::WinRT::{
 use windows::core::{BOOL, Interface};
 use windows_numerics::Vector2;
 
+/// The UI thread's compositor and the dispatcher queue it needs. A thread can have one queue, so
+/// the island's glass and the basket's share them, for the life of the app.
+struct Shared(#[allow(dead_code)] DispatcherQueueController, Compositor);
+
+impl gpui::Global for Shared {}
+
+/// The UI thread's compositor, made with its dispatcher queue the first time it is asked for.
+fn compositor(cx: &mut gpui::App) -> windows::core::Result<Compositor> {
+    if let Some(Shared(_, compositor)) = cx.try_global::<Shared>() {
+        return Ok(compositor.clone());
+    }
+    // GPUI's thread already runs COM (OLE) and its own message loop; the queue only
+    // needs to exist for the compositor to be created on this thread.
+    let queue = unsafe {
+        CreateDispatcherQueueController(DispatcherQueueOptions {
+            dwSize: std::mem::size_of::<DispatcherQueueOptions>() as u32,
+            threadType: DQTYPE_THREAD_CURRENT,
+            apartmentType: DQTAT_COM_NONE,
+        })?
+    };
+    let compositor = Compositor::new()?;
+    cx.set_global(Shared(queue, compositor.clone()));
+    Ok(compositor)
+}
+
 /// The compositor glass of one window. Lives on the UI thread, which owns the dispatcher
 /// queue Windows.UI.Composition needs.
 pub struct Backdrop {
-    _queue: DispatcherQueueController,
-    _compositor: Compositor,
     _target: DesktopWindowTarget,
     shape: CompositionRoundedRectangleGeometry,
 }
@@ -32,15 +55,9 @@ pub struct Backdrop {
 impl Backdrop {
     /// Put the blurred backdrop behind `hwnd`'s content. Fails on systems without host backdrop
     /// support (before Windows 11), where the caller falls back to window-wide acrylic.
-    pub fn new(hwnd: HWND) -> windows::core::Result<Self> {
+    pub fn new(hwnd: HWND, cx: &mut gpui::App) -> windows::core::Result<Self> {
         unsafe {
-            // GPUI's thread already runs COM (OLE) and its own message loop; the queue only
-            // needs to exist for the compositor to be created on this thread.
-            let queue = CreateDispatcherQueueController(DispatcherQueueOptions {
-                dwSize: std::mem::size_of::<DispatcherQueueOptions>() as u32,
-                threadType: DQTYPE_THREAD_CURRENT,
-                apartmentType: DQTAT_COM_NONE,
-            })?;
+            let compositor = compositor(cx)?;
             let enable = BOOL::from(true);
             DwmSetWindowAttribute(
                 hwnd,
@@ -49,7 +66,6 @@ impl Backdrop {
                 std::mem::size_of_val(&enable) as u32,
             )?;
 
-            let compositor = Compositor::new()?;
             let target = compositor
                 .cast::<ICompositorDesktopInterop>()?
                 .CreateDesktopWindowTarget(hwnd, false)?;
@@ -62,8 +78,6 @@ impl Backdrop {
             target.SetRoot(&glass)?;
 
             Ok(Self {
-                _queue: queue,
-                _compositor: compositor,
                 _target: target,
                 shape,
             })

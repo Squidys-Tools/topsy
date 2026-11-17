@@ -156,8 +156,8 @@ impl IDropTarget_Impl for WatchingDropTarget_Impl {
     }
 }
 
-/// Swap the island's registered drop target for a [`WatchingDropTarget`], so a refused
-/// drag — the payload a jiggle opened the tray for turning out to be undroppable —
+/// Swap a window's registered drop target for a [`WatchingDropTarget`], so a refused
+/// drag — the payload a jiggle opened the basket for turning out to be undroppable —
 /// reaches the app on `tx`. Call once, on the thread the window belongs to, after GPUI
 /// has registered its own target. Without one to wrap, the window is left as it was.
 pub fn watch_drop_refusals(hwnd: HWND, tx: async_channel::Sender<DropEvent>) {

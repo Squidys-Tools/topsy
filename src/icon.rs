@@ -5,7 +5,7 @@
 //! cold network path, so call it from a worker thread, never the UI thread.
 
 use std::ffi::c_void;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use gpui::{App, RenderImage};
@@ -15,12 +15,34 @@ use windows::Win32::Graphics::Gdi::{
     BI_RGB, BITMAP, BITMAPINFO, BITMAPINFOHEADER, CreateCompatibleDC, DIB_RGB_COLORS, DeleteDC,
     DeleteObject, GetDIBits, GetObjectW, HBITMAP,
 };
+use windows::Win32::System::Com::COINIT_MULTITHREADED;
 use windows::Win32::UI::Shell::{
     IShellItemImageFactory, SHCreateItemFromParsingName, SIIGBF_BIGGERSIZEOK,
 };
 use windows::core::HSTRING;
 
 use crate::model::transform::Kind;
+
+/// Whether each path is a folder, and its picture about `size` physical pixels square, learnt on
+/// a worker thread of its own (the shell wants COM there) and sent back one path at a time.
+pub fn resolve(
+    paths: Vec<PathBuf>,
+    size: i32,
+) -> async_channel::Receiver<(PathBuf, bool, Option<Arc<RenderImage>>)> {
+    let (tx, rx) = async_channel::unbounded();
+    std::thread::spawn(move || {
+        crate::win32::with_com(COINIT_MULTITHREADED, || {
+            for path in paths {
+                let is_dir = path.is_dir();
+                let icon = load(&path, size);
+                if tx.send_blocking((path, is_dir, icon)).is_err() {
+                    break;
+                }
+            }
+        })
+    });
+    rx
+}
 
 /// The picture for `path`, about `size` physical pixels square. Call inside
 /// [`crate::win32::with_com`].

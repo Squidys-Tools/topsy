@@ -29,6 +29,9 @@ macro_rules! icons {
 icons! {
     Add => "add",
     Brightness => "brightness",
+    ChevronDown => "chevron-down",
+    ChevronLeft => "chevron-left",
+    ChevronRight => "chevron-right",
     Close => "close",
     Combine => "combine",
     Compress => "compress",
@@ -36,6 +39,7 @@ icons! {
     Copy => "copy",
     File => "file",
     Gif => "gif",
+    Inbox => "inbox",
     More => "more",
     Next => "next",
     Open => "open",

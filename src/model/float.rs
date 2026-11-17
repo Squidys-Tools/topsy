@@ -1,7 +1,7 @@
-//! Where the floating tray opens: centred under the pointer, moved only as far as it takes to stay
+//! Where the basket opens: centred under the pointer, moved only as far as it takes to stay
 //! whole on the pointer's monitor. Physical screen pixels; no OS calls.
 
-/// Room kept between the floating tray and the edge of the work area, in logical pixels.
+/// Room kept between the basket and the edge of the work area, in logical pixels.
 pub const MARGIN: f32 = 8.0;
 
 /// A screen rectangle: left and top inclusive, right and bottom exclusive.
