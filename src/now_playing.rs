@@ -192,13 +192,18 @@ impl Island {
     /// overflow is the last layout's, so a new title starts moving a frame after it is drawn.
     fn scroll_title(&self, cx: &mut Context<Self>) {
         let now = Instant::now();
+        let fresh = self.media.title_shown.get().is_none();
         let shown = *self.media.title_shown.get().get_or_insert(now);
         self.media.title_shown.set(Some(shown));
         let overflow = f32::from(self.media.title.max_offset().width);
-        let Some((x, next)) = marquee::at(overflow, now - shown) else {
-            return;
+        let next = match marquee::at(overflow, now - shown) {
+            Some((x, next)) => {
+                self.media.title.set_offset(point(px(-x), px(0.0)));
+                next
+            }
+            None if fresh => marquee::FRAME,
+            None => return,
         };
-        self.media.title.set_offset(point(px(-x), px(0.0)));
         if self.media.scrolling.replace(true) {
             return;
         }
