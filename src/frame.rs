@@ -1,6 +1,6 @@
 //! A glass window and its shape: where it sits (hanging from the top edge as the notch, or
 //! floating where a jiggle opened it, as the basket), how big it is, and what it is filled with.
-//! The OS window is always exactly the shape (README, Notch and Glass).
+//! The OS window is always exactly the shape (docs/internals/notch.md, glass.md).
 
 use gpui::{
     AnyElement, App, Background, Div, ExternalPaths, Pixels, Size, canvas, div, linear_color_stop,

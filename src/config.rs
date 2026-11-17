@@ -1,5 +1,5 @@
-//! The `TOPSY_*` switches (README, Running), read once at startup. The rest of the app asks
-//! [`get`] and never the environment, so a new switch is one field here and one README line.
+//! The `TOPSY_*` switches (docs/operations/running.md), read once at startup. The rest of the app
+//! asks [`get`] and never the environment, so a new switch is one field here and one row there.
 
 use std::ffi::OsString;
 use std::path::PathBuf;

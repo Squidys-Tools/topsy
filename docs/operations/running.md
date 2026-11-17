@@ -1,0 +1,23 @@
+# Running with test switches
+
+Every `TOPSY_*` switch is a field in `src/config.rs`, read once at startup. A new switch is a field there and a
+row here.
+
+| Switch | What it does |
+|---|---|
+| `TOPSY_DEMO=1` | Expand and collapse the island by itself. |
+| `TOPSY_LOG=1` | Event trace on stderr. |
+| `TOPSY_EXIT_AFTER_MS=<n>` | Quit after `n` ms. |
+| `TOPSY_NO_HOOK=1` | Don't install the mouse hook. The notch then rests peeking, as nothing could reveal it. |
+| `TOPSY_NO_TRAY=1` | No tray icon and no menu, so right-clicking the notch quits. Start with Windows is left alone. |
+| `TOPSY_NO_MEDIA=1` | Don't watch the system's media session: no Now Playing. |
+| `TOPSY_NO_KEYS=1` | Leave the volume keys to Windows, whatever the *Volume HUD* setting says. |
+| `TOPSY_IDLE=peek\|tray` | What the notch rests as, instead of hidden. The live checks use it. |
+| `TOPSY_SEED=<path;path>` | Start with these files on the shelf. |
+| `TOPSY_TRANSFORM=<path;path>` | Open the Transform panel on these files at launch. |
+| `TOPSY_STATE=<path>` | The shelf's save file, `%LOCALAPPDATA%\topsy\shelf.txt` by default (the basket's sits beside it). Set empty to not save. |
+| `TOPSY_CLIPBOARD=<dir>` | Where clipboard history is kept, `%LOCALAPPDATA%\topsy\clipboard` by default. Set empty for none. A run with `TOPSY_STATE` set keeps none unless this says where, so a live check never touches the real history. |
+| `TOPSY_GLASS=acrylic\|tint\|solid\|clear` | Force a fill and ignore the *Black notch* setting; the default is the notch-shaped blur. See [Glass](../internals/glass.md). |
+
+The developer's own topsy may be running, and other worktrees run theirs. Stop only a PID you started; never
+kill topsy by name (AGENTS.md, The ways to hurt yourself).

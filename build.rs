@@ -71,7 +71,7 @@ fn main() {
     if !matches!(status, Ok(s) if s.success()) {
         panic!(
             "windres failed or is missing: it comes with MinGW-w64 gcc, which must be on PATH \
-             (see README, Building)"
+             (see docs/operations/building.md)"
         );
     }
     // Every link, tests included, so a test can check the icon made it in.

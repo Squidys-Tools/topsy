@@ -35,7 +35,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      # build.rs asks gcc where libktmw32.a lives (see README).
+      # build.rs asks gcc where libktmw32.a lives (see docs/internals/toolchain.md).
       - name: Find MinGW-w64 gcc
         shell: pwsh
         run: |
