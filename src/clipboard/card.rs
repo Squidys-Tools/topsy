@@ -31,6 +31,9 @@ const CODE_INK: u32 = 0xd6deeb;
 /// How much of a long text a card shows.
 const PREVIEW_LINES: usize = 12;
 const PREVIEW_CHARS: usize = 400;
+/// Whole lines of a text or code preview that fit a card's body, so none is cut through.
+const TEXT_LINES: usize = 5;
+const CODE_LINES: usize = 6;
 
 /// The pictures a card wants: the app's icon, an image's pixels, a file's thumbnail, a link's
 /// site icon.
@@ -191,8 +194,11 @@ fn body(entry: &Entry, kind: Kind, picture: &dyn Fn(&PathBuf) -> Option<Arc<Rend
                 .font_family("Consolas")
                 .text_xs()
                 .text_color(rgb(CODE_INK))
-                .child(code(preview(text))),
-            _ => body.px(px(12.0)).text_sm().child(preview(text)),
+                .child(div().line_clamp(CODE_LINES).child(code(preview(text)))),
+            _ => body
+                .px(px(12.0))
+                .text_sm()
+                .child(div().line_clamp(TEXT_LINES).child(preview(text))),
         },
         Content::Image { .. } => match super::image_path(entry.id).and_then(|p| picture(&p)) {
             Some(image) => body.child(img(image).size_full().object_fit(ObjectFit::Cover)),
