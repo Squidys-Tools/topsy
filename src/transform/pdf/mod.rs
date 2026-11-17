@@ -4,6 +4,7 @@
 
 mod combine;
 mod compress;
+mod place;
 mod render;
 #[cfg(test)]
 pub(crate) mod tests;
@@ -20,7 +21,7 @@ use crate::model::image_geometry::Rotation;
 use crate::model::pdf::{LADDER, PageSize, PdfCompress};
 
 use combine::Builder;
-pub use render::{PDFIUM, fetch, to_images};
+pub use render::{PDFIUM, ensure_renderer, fetch, first_page, to_images};
 
 /// What Compress PDF wrote.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -117,15 +118,19 @@ pub fn compress(
 ) -> io::Result<PdfWritten> {
     let steps = Steps::new(progress, cancel);
     let original = std::fs::read(src)?;
-    let kit = match compress::has_pictures(&load(&original)?) {
+    let has_pictures = compress::has_pictures(&load(&original)?);
+    // A file already under its target needs nothing; the gentlest preset would only shave a
+    // fraction off it and call that compressing.
+    let presets = match how {
+        PdfCompress::Quality(q) => vec![q.preset()],
+        PdfCompress::FileSize(t) if original.len() as u64 <= t => Vec::new(),
+        PdfCompress::FileSize(_) => LADDER.to_vec(),
+    };
+    let kit = match has_pictures && !presets.is_empty() {
         true => Some(Kit::get(&steps, false)?),
         false => None,
     };
     steps.at(0.0)?;
-    let presets = match how {
-        PdfCompress::Quality(q) => vec![q.preset()],
-        PdfCompress::FileSize(_) => LADDER.to_vec(),
-    };
     let target = match how {
         PdfCompress::Quality(_) => u64::MAX,
         PdfCompress::FileSize(t) => t,

@@ -34,6 +34,8 @@ pub mod notch;
 pub mod orientation;
 #[allow(dead_code)]
 pub mod pdf;
+pub mod pdf_image;
+pub mod pdf_place;
 // Drawn by build.rs into the exe's icon; here only for its tests.
 #[cfg(test)]
 pub mod pill;

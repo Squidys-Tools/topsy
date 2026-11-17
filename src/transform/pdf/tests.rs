@@ -110,8 +110,54 @@ fn pages_turn_and_metadata_goes() {
 }
 
 #[test]
-fn pdfs_without_pictures_compress_without_fetching_anything() {
-    let dir = Scratch::new("pdfplain");
+fn a_picture_is_as_big_as_its_page_draws_it() {
+    let mut doc = Document::with_version("1.7");
+    let pages = doc.new_object_id();
+    let mut image = || {
+        doc.add_object(lopdf::Stream::new(
+            dictionary! { "Subtype" => "Image", "Width" => 8, "Height" => 8, "BitsPerComponent" => 8,
+                "ColorSpace" => "DeviceGray" },
+            vec![0; 64],
+        ))
+    };
+    let (big, small, unseen) = (image(), image(), image());
+    // A form drawn at twice its size, itself halved by its own matrix, draws `small` 200 x 100.
+    let form = lopdf::Stream::new(
+        dictionary! {
+            "Subtype" => "Form",
+            "Matrix" => vec![Object::Real(0.5), 0.into(), 0.into(), Object::Real(0.5), 0.into(), 0.into()],
+            "Resources" => dictionary! { "XObject" => dictionary! { "S" => small } },
+        },
+        b"q 200 0 0 100 0 0 cm /S Do Q".to_vec(),
+    );
+    let form = doc.add_object(form);
+    let content = doc.add_object(lopdf::Stream::new(
+        dictionary! {},
+        b"q 306 0 0 396 100 100 cm /B Do Q q 2 0 0 2 0 0 cm /F Do Q".to_vec(),
+    ));
+    let page = doc.add_object(dictionary! {
+        "Type" => "Page", "Parent" => pages, "Contents" => content,
+        "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+        "Resources" => dictionary! { "XObject" => dictionary! { "B" => big, "F" => form, "U" => unseen } },
+    });
+    doc.objects.insert(
+        pages,
+        dictionary! { "Type" => "Pages", "Kids" => vec![page.into()], "Count" => 1 }.into(),
+    );
+    let catalog = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages });
+    doc.trailer.set("Root", catalog);
+
+    let sizes = place::picture_sizes(&doc);
+    assert_eq!(sizes[&big], (306.0, 396.0), "not the page it is on");
+    assert_eq!(sizes[&small], (200.0, 100.0), "through a form's own matrix");
+    assert_eq!(
+        sizes[&unseen],
+        (612.0, 792.0),
+        "a picture no content draws is taken as page-sized"
+    );
+}
+
+fn plain_pdf(path: &std::path::Path) {
     let mut doc = Document::with_version("1.7");
     let pages = doc.new_object_id();
     let mut content = lopdf::Stream::new(dictionary! {}, b"0 0 m 100 100 l S\n".repeat(400));
@@ -127,14 +173,43 @@ fn pdfs_without_pictures_compress_without_fetching_anything() {
     );
     let catalog = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages });
     doc.trailer.set("Root", catalog);
-    let src = dir.path("plain.pdf");
-    doc.save(&src).unwrap();
+    doc.save(path).unwrap();
+}
 
+#[test]
+fn pdfs_without_pictures_compress_without_fetching_anything() {
+    let dir = Scratch::new("pdfplain");
+    let src = dir.path("plain.pdf");
+    plain_pdf(&src);
     let out = dir.path("out.pdf");
     let how = PdfCompress::Quality(crate::model::pdf::PdfQuality::High);
     let w = compress(&src, how, &out, &quiet, &never()).unwrap();
     assert!(!w.kept_original && w.bytes < std::fs::metadata(&src).unwrap().len() / 4);
     assert_eq!(page_count(&out).unwrap(), 1);
+}
+
+#[test]
+fn a_size_target_the_file_already_meets_leaves_it_alone() {
+    let dir = Scratch::new("pdfunder");
+    let src = dir.path("plain.pdf");
+    plain_pdf(&src);
+    let size = std::fs::metadata(&src).unwrap().len();
+    let out = dir.path("out.pdf");
+    let w = compress(&src, PdfCompress::FileSize(size), &out, &quiet, &never()).unwrap();
+    assert!(w.kept_original && w.fits);
+    assert_eq!(std::fs::read(&out).unwrap(), std::fs::read(&src).unwrap());
+    let over = compress(
+        &src,
+        PdfCompress::FileSize(size - 1),
+        &out,
+        &quiet,
+        &never(),
+    )
+    .unwrap();
+    assert!(
+        !over.kept_original && over.fits,
+        "one byte over is worked on"
+    );
 }
 
 #[test]

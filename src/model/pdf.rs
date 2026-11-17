@@ -86,6 +86,18 @@ pub fn draw(p: &Placement) -> Vec<u8> {
     format!("q {w:.4} 0 0 {h:.4} {x:.4} {y:.4} cm /Im0 Do Q").into_bytes()
 }
 
+/// The pixels a page of `page` points takes when drawn to fit a square of `side` pixels.
+pub fn fit_square(page: (f32, f32), side: i32) -> (i32, i32) {
+    let side = side.max(1);
+    let valid = |v: f32| v.is_finite() && v > 0.0;
+    if !valid(page.0) || !valid(page.1) {
+        return (side, side);
+    }
+    let long = page.0.max(page.1);
+    let px = |v: f32| ((v / long * side as f32).round() as i32).clamp(1, side);
+    (px(page.0), px(page.1))
+}
+
 /// How hard Compress PDF works on the pictures inside.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PdfQuality {
@@ -229,6 +241,15 @@ mod tests {
             f64::from(w) / 8.5 >= 72.0 - 1.0 && f64::from(h) / 11.0 >= 72.0 - 1.0,
             "{w}x{h}"
         );
+    }
+
+    #[test]
+    fn a_page_preview_fits_its_square_whatever_the_page() {
+        assert_eq!(fit_square((612.0, 792.0), 200), (155, 200));
+        assert_eq!(fit_square((1440.0, 810.0), 200), (200, 113));
+        assert_eq!(fit_square((10.0, 10_000.0), 200), (1, 200));
+        assert_eq!(fit_square((0.0, 0.0), 64), (64, 64));
+        assert_eq!(fit_square((f32::NAN, 5.0), 64), (64, 64));
     }
 
     #[test]

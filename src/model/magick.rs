@@ -201,10 +201,14 @@ pub fn opaque_args(src: &str) -> Vec<String> {
         .collect()
 }
 
-/// Re-encodes an image taken out of a PDF as a JPEG of `n` components (1 grey, 3 RGB) at
-/// exactly `size`, with nothing but the pixels.
+/// Re-encodes an image taken out of a PDF as a JPEG of `n` components (1 grey, 3 RGB, 4 CMYK)
+/// at exactly `size`, with nothing but the pixels.
 pub fn pdf_image_args(src: &str, n: u8, size: (u32, u32), quality: u8, out: &str) -> Vec<String> {
-    let kind = if n == 1 { "Grayscale" } else { "TrueColor" };
+    let kind = match n {
+        1 => "Grayscale",
+        4 => "ColorSeparation",
+        _ => "TrueColor",
+    };
     [
         src,
         "-resize",

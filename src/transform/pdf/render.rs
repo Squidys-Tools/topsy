@@ -10,7 +10,7 @@ use image::codecs::png::{CompressionType, FilterType, PngEncoder};
 use image::{ExtendedColorType, ImageEncoder};
 use pdfium_render::prelude::{PdfRenderConfig, Pdfium, PdfiumError, PdfiumInternalError};
 
-use crate::model::pdf::PageFormat;
+use crate::model::pdf::{PageFormat, fit_square};
 use crate::transform::Steps;
 use crate::transform::fetch::Pinned;
 use crate::transform::tools::Tool;
@@ -70,6 +70,32 @@ fn keep(p: &Path) -> bool {
 /// Fetches pdfium if it isn't here yet.
 pub fn fetch(progress: &dyn Fn(f32), cancel: &AtomicBool) -> io::Result<()> {
     PDFIUM.get_with(&keep, progress, cancel).map(drop)
+}
+
+/// Gets pdfium for page pictures unless it is here. Blocking, so a worker thread asks; a failure
+/// only leaves the PDF with its icon.
+pub fn ensure_renderer() {
+    if PDFIUM.status() == crate::transform::fetch::Status::Missing {
+        let _ = fetch(&|_| {}, &AtomicBool::new(false));
+    }
+}
+
+/// The first page drawn to fit `side` pixels square, as the BGRA pixels GPUI wants. `None` when
+/// pdfium isn't here (this never downloads it) or the PDF won't open or draw.
+pub fn first_page(path: &Path, side: i32) -> Option<image::RgbaImage> {
+    let dll = PDFIUM.program().ok().filter(|p| p.is_file())?;
+    let doc = pdfium(&dll).ok()?.load_pdf_from_file(path, None).ok()?;
+    let page = doc.pages().get(0).ok()?;
+    let (w, h) = fit_square((page.width().value, page.height().value), side);
+    let config = PdfRenderConfig::new()
+        .set_target_size(w, h)
+        .render_form_data(true);
+    let bitmap = page.render_with_config(&config).ok()?;
+    image::RgbaImage::from_raw(
+        bitmap.width().try_into().ok()?,
+        bitmap.height().try_into().ok()?,
+        bitmap.as_raw_bytes(),
+    )
 }
 
 /// Each page as a picture at `dpi`, written to `out(page index)`. Returns how many were written.
