@@ -25,6 +25,7 @@ pub mod jpeg;
 pub mod levels;
 #[allow(dead_code)]
 pub mod magick;
+pub mod marquee;
 pub mod matte;
 pub mod media;
 pub mod notch;

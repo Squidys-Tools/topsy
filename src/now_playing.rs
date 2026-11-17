@@ -9,12 +9,13 @@ use std::time::{Duration, Instant};
 
 use gpui::{
     App, Bounds, ClickEvent, Context, Entity, FontWeight, MouseButton, MouseDownEvent, ObjectFit,
-    RenderImage, canvas, div, fill, img, point, prelude::*, px, relative, rgb, rgba,
+    RenderImage, ScrollHandle, canvas, div, fill, img, point, prelude::*, px, relative, rgb, rgba,
 };
 
 use crate::icons::{self, Icon};
 use crate::media::{self, Button};
 use crate::model::levels::{self, BARS, Levels};
+use crate::model::marquee;
 use crate::model::media::{Card, Event, NowPlaying, Progress, clock};
 use crate::win32::meter::Meter;
 use crate::{Island, Mode, icon, log};
@@ -46,6 +47,11 @@ pub struct Media {
     meter: Option<(Meter, Instant)>,
     /// The bars' next frame is booked.
     metering: Cell<bool>,
+    /// The player's title line, scrolled when the title is too long for it.
+    title: ScrollHandle,
+    /// When this track's title was first shown, and whether its next scroll step is booked.
+    title_shown: Cell<Option<Instant>>,
+    scrolling: Cell<bool>,
 }
 
 /// Start watching the system's media session, unless `TOPSY_NO_MEDIA` is set.
@@ -68,6 +74,7 @@ impl Island {
         };
         let mut changed = self.media.now.apply(update.event);
         if track {
+            self.media.title_shown.set(None);
             changed |= self.media.art.is_some() || update.art.is_some();
             self.media.accent = update.art.as_ref().and_then(|a| a.accent);
             let art = update.art.map(|a| a.image);
@@ -105,6 +112,7 @@ impl Island {
         if playing && let Some(p) = progress.filter(|p| p.elapsed < p.length) {
             self.tick(p, cx);
         }
+        self.scroll_title(cx);
         let header = div()
             .h(px(ART))
             .flex()
@@ -120,10 +128,16 @@ impl Island {
                     .flex_col()
                     .child(
                         div()
+                            .id("title")
                             .text_size(px(15.0))
                             .font_weight(FontWeight::SEMIBOLD)
-                            .truncate()
-                            .child(title.to_owned()),
+                            .whitespace_nowrap()
+                            .overflow_x_scroll()
+                            .track_scroll(&self.media.title)
+                            // GPUI scrolls as far as its children's boxes reach, and a block
+                            // child is only as wide as the line: this one keeps the text's width.
+                            .flex()
+                            .child(div().flex_none().child(title.to_owned())),
                     )
                     .children(artist.map(|a| {
                         div()
@@ -170,6 +184,41 @@ impl Island {
                 this.media.ticking.set(false);
                 if this.mode == Mode::Tray {
                     cx.notify();
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// Scroll a title too long for its line to where it is now, and book the next step. The
+    /// overflow is the last layout's, so a new title starts moving a frame after it is drawn.
+    fn scroll_title(&self, cx: &mut Context<Self>) {
+        let now = Instant::now();
+        let fresh = self.media.title_shown.get().is_none();
+        let shown = *self.media.title_shown.get().get_or_insert(now);
+        self.media.title_shown.set(Some(shown));
+        let overflow = f32::from(self.media.title.max_offset().width);
+        let next = match marquee::at(overflow, now - shown) {
+            Some((x, next)) => {
+                self.media.title.set_offset(point(px(-x), px(0.0)));
+                next
+            }
+            None if fresh => marquee::FRAME,
+            None => return,
+        };
+        if self.media.scrolling.replace(true) {
+            return;
+        }
+        cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(next).await;
+            this.update(cx, |this, cx| {
+                this.media.scrolling.set(false);
+                if this.mode == Mode::Tray && this.sections().media {
+                    cx.notify();
+                } else {
+                    // Shown again, it starts from the beginning.
+                    this.media.title_shown.set(None);
                 }
             })
             .ok();
