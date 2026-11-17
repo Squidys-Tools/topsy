@@ -35,6 +35,7 @@ trimmed, turned into a GIF or a PDF, stripped of metadata or cut out of their ba
 | `src/model/archive.rs` | Naming a chip's zip (`report.zip`, `report (2).zip`) and the entries inside it |
 | `src/model/media.rs` | Now Playing: the media session's events reduced to what the tray and the peek show |
 | `src/model/levels.rs` | Now Playing's level bars: peak readings to bar heights, and the colour they take from the art |
+| `src/model/marquee.rs` | Now Playing's title scroll: where a title too long for its line is, and when to look again |
 | `src/model/clipboard.rs` | Clipboard history: adding a copy (a repeat moves up), pins, expiry, the cap, and its save format |
 | `src/model/clip_kind.rs` | What a copy is (text, link, colour, code, image, files) and how its card describes it; search |
 | `src/model/highlight.rs` | A code card's colours: keywords, strings, comments and numbers, in one pass that knows no language |
@@ -210,6 +211,9 @@ with the count beside it. Stopped or no session shows nothing.
   at about 2.5–3% of a core on top of idle), and reopened each second to follow a change of output device.
   Otherwise it is let go and nothing is booked. `model::levels` gives the bars an automatic gain (a quiet track fills them as a loud one does) and ripples each beat out from the middle.
   They take a colour averaged from the art's vivid pixels, lifted to read on black, or white when the art has none.
+- **A long title** scrolls side to side in the player (`model::marquee`): it rests two seconds at each end and
+  glides between at 30 px/s, read off the title line's own scroll extent, so no text is measured. Only a glide books
+  frames; a rest books one wake for its end, and a tray that closes books nothing more. The peek truncates instead.
 - **Buttons** go to the same thread, which calls the session's `Try*Async` without waiting; the icon changes
   when the app reports its new state.
 
