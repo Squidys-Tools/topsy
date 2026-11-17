@@ -125,6 +125,7 @@ impl Island {
 
     fn set_mode(&mut self, mode: Mode, cx: &mut Context<Self>) {
         self.mode = mode;
+        win32::escape::take(mode == Mode::Tray && self.tray_cause == TrayCause::Opened);
         let (w, h) = self.size_for(mode);
         self.width.set_target(w);
         self.height.set_target(h);
@@ -250,7 +251,6 @@ impl Island {
     /// Open the tray. `cause` is what it is waiting for: a `Timed` one folds on its
     /// own timer; a `Drag` one waits for a drag in progress to end, land, or be refused.
     fn open_tray(&mut self, cause: TrayCause, cx: &mut Context<Self>) {
-        // Cancels any pending collapse from earlier.
         self.collapse_generation += 1;
         self.tray_cause = cause;
         self.set_mode(Mode::Tray, cx);
@@ -341,7 +341,7 @@ impl Island {
         }
     }
 
-    /// Fold back to rest now, cancelling any collapse already scheduled.
+    /// Fold back to rest now, cancelling any collapse already scheduled (Escape, the tray icon).
     fn fold(&mut self, cx: &mut Context<Self>) {
         self.collapse_generation += 1;
         self.set_mode(self.rest, cx);

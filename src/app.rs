@@ -233,6 +233,9 @@ pub fn run() {
             .detach();
         }
 
+        forward(cx, &island, win32::escape::presses(), |island, (), cx| {
+            island.fold(cx)
+        });
         crate::now_playing::start(cx, &island);
         crate::hud::start(cx, &island);
         if let Some(files) = config.transform.clone() {

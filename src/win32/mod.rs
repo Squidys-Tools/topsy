@@ -6,6 +6,7 @@ pub mod brightness;
 pub mod clipboard;
 mod dialog;
 mod dragdrop;
+pub mod escape;
 mod hook;
 pub mod http;
 pub mod inbox;
