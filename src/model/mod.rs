@@ -2,6 +2,9 @@
 //! time and input as arguments, so its tests drive them directly. `scripts/check-structure.ps1`
 //! holds this folder to that.
 
+// Drawn by build.rs into the exe's icon; here only for its tests.
+#[cfg(test)]
+pub mod app_icon;
 pub mod archive;
 pub mod basket;
 pub mod clamp;
@@ -37,9 +40,6 @@ pub mod orientation;
 pub mod pdf;
 pub mod pdf_image;
 pub mod pdf_place;
-// Drawn by build.rs into the exe's icon; here only for its tests.
-#[cfg(test)]
-pub mod pill;
 pub mod shelf;
 #[allow(dead_code)]
 pub mod size_search;

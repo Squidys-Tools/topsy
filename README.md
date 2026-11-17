@@ -115,7 +115,7 @@ You need:
   lives: rustc's bundled MinGW ships only some of the Windows import libraries and a GPUI dependency links
   `ktmw32`. Only that one file is copied, so the build doesn't mix two MinGW runtimes. Pointing rustc's
   linker at the system gcc instead does not work: scoop's gcc has no `libgcc_eh.a`. The same MinGW's `windres`
-  turns the icon `build.rs` draws (`src/model/pill.rs`, written as a binary `.res`) into an object linked into the
+  turns the icon `build.rs` draws (`src/model/app_icon.rs`, written as a binary `.res`) into an object linked into the
   exe, so no `.rc` script and no preprocessor are involved. GPUI's windows and the tray icon load it as resource 1.
 - rustup's `cargo` first on `PATH`. A standalone Rust install (such as an MSVC one) ignores `rust-toolchain.toml`,
   so `build.rs` stops an MSVC build rather than let it through without the icon.
@@ -151,7 +151,7 @@ To build locally without installing the SDK, GPUI only needs `fxc.exe` (and the 
   were parked are dropped from the shelf when the tray opens (checked off the UI thread). The shelf is saved to
   `%LOCALAPPDATA%\topsy\shelf.txt` on every change and comes back on the next start. Startup never looks at the saved files (a dead share would
   stall launch): chips return as `…` and are settled off the UI thread, which drops entries whose files are gone.
-- **Tray icon.** A small glass-blue pill in the notification area, the exe's own icon (drawn in code, no asset). Left click opens
+- **Tray icon.** A small topsy-turvy notch in the notification area (a glass notch hanging into a dark half, an ink one rising into a light half), the exe's own icon (drawn in code, no asset). Left click opens
   or closes the shelf. Right click, or right-click the notch itself, opens the menu: *Show shelf*, *Clear shelf (N)*,
   *Black notch*, *Start with Windows* and *Show in Send to* (each checked when on), *Settings…* and *Quit topsy*. The icon lives on its own thread with a hidden window,
   re-adds itself when Explorer restarts, and is removed on Quit. On Windows 11 a new icon starts in the overflow
