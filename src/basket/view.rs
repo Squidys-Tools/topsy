@@ -11,6 +11,7 @@ use gpui::{
     prelude::*, px, rgb, rgba,
 };
 
+use super::rename::Rename;
 use super::{Basket, CARD, Grip, LIST, THUMB};
 use crate::chip::DRAG_OUT_THRESHOLD;
 use crate::icons::{Icon, icon};
@@ -145,7 +146,11 @@ impl Basket {
             .relative()
             .child(body)
             .children((!self.files.is_empty() && self.rename.is_none()).then(|| self.pill(h, cx)))
-            .children(self.rename.is_some().then(|| self.name_field(w, h, cx)))
+            .children(
+                self.rename
+                    .as_ref()
+                    .map(|rename| self.name_field(rename, w, h, cx)),
+            )
             .child(self.header(cx))
     }
 
@@ -391,8 +396,13 @@ impl Basket {
 
     /// The new name being typed, where the pill was: the selection lit, the caret where it is
     /// typed. A name that can't be used says why above it.
-    fn name_field(&self, w: f32, h: f32, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        let rename = self.rename.as_ref().expect("renaming");
+    fn name_field(
+        &self,
+        rename: &Rename,
+        w: f32,
+        h: f32,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
         let field = &rename.field;
         let text = field.text();
         let sel = field.selection();

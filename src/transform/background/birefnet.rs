@@ -259,7 +259,7 @@ impl BiRefNet {
         drop(joined);
         step();
 
-        let mut p = feats.pop().unwrap();
+        let mut p = feats.pop().ok_or_else(|| io::Error::other("no features"))?;
         for level in &self.levels {
             let side = run_pair(&level.input, &tiles(x, p.h), cancel)?;
             p = level.block.forward(&concat(&[&p, &side]), cancel)?;

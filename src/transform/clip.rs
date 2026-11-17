@@ -20,6 +20,7 @@ use super::options::{FPS, GIF_WIDTHS, TRIM_MODES};
 use super::video;
 use super::widgets::{button, note, row, segmented};
 use super::{Panel, State};
+use crate::log::LogErr;
 use crate::model::transform::{Action, Kind};
 use crate::model::video::{GIF_MAX, TrimRange};
 use crate::{icon, log};
@@ -143,9 +144,10 @@ impl Panel {
         let (tx, rx) = async_channel::unbounded();
         std::thread::spawn(move || {
             let report = |p: f32| {
-                let _ = tx.try_send(Err(p));
+                tx.try_send(Err(p)).log_err();
             };
-            let _ = tx.send_blocking(Ok(video::prepare(&report, &cancel)));
+            tx.send_blocking(Ok(video::prepare(&report, &cancel)))
+                .log_err();
         });
         cx.spawn(async move |this, cx: &mut AsyncApp| {
             while let Ok(message) = rx.recv().await {
@@ -351,7 +353,7 @@ fn load(path: &std::path::Path, tx: &async_channel::Sender<Loaded>) {
         Ok(probe) => probe,
         Err(err) => {
             log(&format!("clip probe failed: {err}"));
-            let _ = tx.send_blocking(Loaded::Failed(err.to_string()));
+            tx.send_blocking(Loaded::Failed(err.to_string())).log_err();
             return;
         }
     };
@@ -371,7 +373,8 @@ fn load(path: &std::path::Path, tx: &async_channel::Sender<Loaded>) {
                 let at = duration.mul_f32((i as f32 + 0.5) / FRAMES as f32);
                 match video::frame_at(path, at, FRAME_SIDE) {
                     Ok(frame) => {
-                        let _ = tx.send_blocking(Loaded::Frame(i, picture_of(frame)));
+                        tx.send_blocking(Loaded::Frame(i, picture_of(frame)))
+                            .log_err();
                     }
                     Err(err) => log(&format!("clip frame {i} failed: {err}")),
                 }

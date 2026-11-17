@@ -21,6 +21,7 @@ use windows::Win32::UI::Shell::{
 };
 use windows::core::HSTRING;
 
+use crate::log::LogErr;
 use crate::model::transform::Kind;
 
 /// Whether each path is a folder, and its picture about `size` physical pixels square, learnt on
@@ -113,7 +114,7 @@ unsafe fn shell_bitmap(path: &Path, size: i32) -> Option<(u32, u32, Vec<u8>)> {
     let bitmap =
         unsafe { factory.GetImage(SIZE { cx: size, cy: size }, SIIGBF_BIGGERSIZEOK) }.ok()?;
     let pixels = unsafe { bitmap_pixels(bitmap) };
-    let _ = unsafe { DeleteObject(bitmap.into()) };
+    unsafe { DeleteObject(bitmap.into()) }.ok().log_err();
     pixels
 }
 
@@ -157,7 +158,7 @@ unsafe fn bitmap_pixels(bitmap: HBITMAP) -> Option<(u32, u32, Vec<u8>)> {
             DIB_RGB_COLORS,
         )
     };
-    let _ = unsafe { DeleteDC(dc) };
+    unsafe { DeleteDC(dc) }.ok().log_err();
     (lines == height).then_some((width as u32, height as u32, pixels))
 }
 

@@ -26,6 +26,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows::core::{PCWSTR, w};
 
+use crate::log::LogErr;
 use crate::settings::Setting;
 use crate::win32::wide;
 
@@ -74,7 +75,7 @@ static EVENTS: OnceLock<async_channel::Sender<TrayEvent>> = OnceLock::new();
 
 fn send(event: TrayEvent) {
     if let Some(tx) = EVENTS.get() {
-        let _ = tx.try_send(event);
+        tx.try_send(event).log_err();
     }
 }
 
@@ -108,7 +109,7 @@ pub fn remove() {
     if let Some(hwnd) = window() {
         let data = icon_data(hwnd, NIF_MESSAGE);
         unsafe {
-            let _ = Shell_NotifyIconW(NIM_DELETE, &data);
+            Shell_NotifyIconW(NIM_DELETE, &data).ok().log_err();
         }
     }
 }
@@ -124,7 +125,7 @@ pub fn spawn() -> async_channel::Receiver<TrayEvent> {
     std::thread::Builder::new()
         .name("topsy-tray".into())
         .spawn(|| unsafe { run() })
-        .expect("spawn tray thread");
+        .log_err();
     rx
 }
 
@@ -171,6 +172,10 @@ unsafe fn run() {
 
         let mut msg = MSG::default();
         while GetMessageW(&mut msg, None, 0, 0).as_bool() {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "says whether a character message was posted, not an error"
+            )]
             let _ = TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
@@ -206,7 +211,7 @@ unsafe fn add_icon(hwnd: HWND) {
         }
         // Version 4 reports the click position and keyboard activation properly.
         data.Anonymous.uVersion = NOTIFYICON_VERSION_4;
-        let _ = Shell_NotifyIconW(NIM_SETVERSION, &data);
+        Shell_NotifyIconW(NIM_SETVERSION, &data).ok().log_err();
     }
 }
 
@@ -230,7 +235,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         WM_SHOW_MENU => {
             let mut at = POINT::default();
             unsafe {
-                let _ = GetCursorPos(&mut at);
+                GetCursorPos(&mut at).log_err();
                 open_menu(hwnd, at);
             }
             LRESULT(0)
@@ -260,8 +265,8 @@ unsafe fn open_menu(hwnd: HWND, at: POINT) {
         } else {
             MF_STRING | MF_GRAYED
         };
-        let _ = AppendMenuW(menu, MF_STRING, ID_SHOW, w!("&Show shelf"));
-        let _ = AppendMenuW(menu, clear_flags, ID_CLEAR, PCWSTR(clear.as_ptr()));
+        AppendMenuW(menu, MF_STRING, ID_SHOW, w!("&Show shelf")).log_err();
+        AppendMenuW(menu, clear_flags, ID_CLEAR, PCWSTR(clear.as_ptr())).log_err();
         let held = BASKET_COUNT.load(Ordering::Relaxed);
         let basket = wide(format!("Show bas&ket ({held})"));
         let basket_flags = if held > 0 {
@@ -269,8 +274,8 @@ unsafe fn open_menu(hwnd: HWND, at: POINT) {
         } else {
             MF_STRING | MF_GRAYED
         };
-        let _ = AppendMenuW(menu, basket_flags, ID_BASKET, PCWSTR(basket.as_ptr()));
-        let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
+        AppendMenuW(menu, basket_flags, ID_BASKET, PCWSTR(basket.as_ptr())).log_err();
+        AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null()).log_err();
         for (i, setting) in Setting::ALL.into_iter().enumerate() {
             let flags = if setting.is_on() {
                 MF_STRING | MF_CHECKED
@@ -278,16 +283,20 @@ unsafe fn open_menu(hwnd: HWND, at: POINT) {
                 MF_STRING
             };
             let label = wide(setting.menu_label());
-            let _ = AppendMenuW(menu, flags, ID_SETTING + i, PCWSTR(label.as_ptr()));
+            AppendMenuW(menu, flags, ID_SETTING + i, PCWSTR(label.as_ptr())).log_err();
         }
-        let _ = AppendMenuW(menu, MF_STRING, ID_SETTINGS, w!("Se&ttings…"));
-        let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
-        let _ = AppendMenuW(menu, MF_STRING, ID_QUIT, w!("&Quit topsy"));
+        AppendMenuW(menu, MF_STRING, ID_SETTINGS, w!("Se&ttings…")).log_err();
+        AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null()).log_err();
+        AppendMenuW(menu, MF_STRING, ID_QUIT, w!("&Quit topsy")).log_err();
 
         // The owner has to be foreground or the menu won't close when you click elsewhere.
         // This is the hidden window, so it takes focus from nothing visible; it is handed back
         // afterwards, or keys would go nowhere until the next click.
         let previous = crate::win32::foreground_window();
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "Windows may refuse the foreground; the menu still opens"
+        )]
         let _ = SetForegroundWindow(hwnd);
         let choice = TrackPopupMenu(
             menu,
@@ -299,8 +308,8 @@ unsafe fn open_menu(hwnd: HWND, at: POINT) {
             None,
         );
         // Documented companion to the above: lets the menu dismiss properly next time.
-        let _ = PostMessageW(Some(hwnd), WM_NULL, WPARAM(0), LPARAM(0));
-        let _ = DestroyMenu(menu);
+        PostMessageW(Some(hwnd), WM_NULL, WPARAM(0), LPARAM(0)).log_err();
+        DestroyMenu(menu).log_err();
         // The settings window takes foreground itself, which needs the app to still hold it.
         if choice.0 as usize != ID_SETTINGS {
             crate::win32::restore_foreground(previous);

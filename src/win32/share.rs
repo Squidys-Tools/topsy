@@ -16,6 +16,8 @@ use windows_collections::IIterable;
 
 use super::with_com;
 
+use crate::log::LogErr;
+
 /// What the next share hands over: its title and files. The sheet asks for it once it is up.
 static PENDING: Mutex<Option<(String, Vec<PathBuf>)>> = Mutex::new(None);
 /// The windows (as addresses) whose `DataRequested` handler is registered.
@@ -64,10 +66,12 @@ fn on_request(request: DataRequest) -> Result<()> {
             with_com(COINIT_MULTITHREADED, || {
                 if let Err(err) = fill(&request, &title, &paths) {
                     eprintln!("topsy: could not share: {err}");
-                    let _ = request.FailWithDisplayText(&HSTRING::from(err.message()));
+                    request
+                        .FailWithDisplayText(&HSTRING::from(err.message()))
+                        .log_err();
                 }
                 crate::log("share filled");
-                let _ = deferral.Complete();
+                deferral.Complete().log_err();
             })
         })
         .map(drop)

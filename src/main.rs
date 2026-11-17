@@ -14,6 +14,7 @@ mod frame;
 mod hud;
 mod icon;
 mod icons;
+mod log;
 mod look;
 mod media;
 mod model;
@@ -38,6 +39,7 @@ use gpui::{
 use windows::Win32::Foundation::HWND;
 
 use crate::frame::{Frame, Glass, Mode, PEEK};
+use crate::log::log;
 use crate::model::shelf::{self, Shelf};
 use crate::model::spring::{Spring, SpringConfig};
 use crate::model::tray_cause::{HeldDrag, TrayCause};
@@ -50,13 +52,6 @@ const PEEK_LINGER: Duration = Duration::from_millis(400);
 const COLLAPSE_AFTER_RELEASE: Duration = Duration::from_millis(1200);
 /// How long the tray stays once the cursor has left it.
 const COLLAPSE_AFTER_LEAVE: Duration = Duration::from_millis(1500);
-
-/// Event trace for scripted tests; silent unless TOPSY_LOG is set.
-fn log(message: &str) {
-    if config::get().log {
-        eprintln!("topsy: {message}");
-    }
-}
 
 struct Island {
     mode: Mode,

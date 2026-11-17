@@ -17,6 +17,7 @@ pub(super) use self::tools::Kit;
 use self::tools::path;
 pub use self::tools::{MAGICK, OXIPNG};
 use super::Steps;
+use crate::log::LogErr;
 use crate::model::download::ModelStatus;
 use crate::model::exif;
 use crate::model::image_geometry::{Resize, Rotation, fit_within};
@@ -413,7 +414,7 @@ impl Scratch {
 
 impl Drop for Scratch {
     fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.0);
+        std::fs::remove_file(&self.0).log_err();
     }
 }
 

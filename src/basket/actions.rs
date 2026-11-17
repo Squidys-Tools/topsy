@@ -8,6 +8,7 @@ use gpui::{ClipboardItem, Context, Window};
 use super::Basket;
 use crate::chip::{self, ACTIONS, Action};
 use crate::log;
+use crate::log::LogErr;
 use crate::model::shelf::{Item, Kind};
 use crate::win32::{self, MenuEntry};
 
@@ -72,7 +73,7 @@ impl Basket {
         self.end_rename(cx);
         let (tx, rx) = async_channel::bounded(1);
         if !chip::on_thread("topsy-basket-menu", move || {
-            let _ = tx.send_blocking(win32::popup_menu(entries));
+            tx.send_blocking(win32::popup_menu(entries)).log_err();
         }) {
             return;
         }

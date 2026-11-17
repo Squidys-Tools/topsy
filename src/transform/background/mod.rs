@@ -125,14 +125,14 @@ fn matte(
     };
     let logits = {
         let mut net = NET.lock().unwrap_or_else(|e| e.into_inner());
-        if net.is_none() {
-            *net = Some(load()?);
-        }
+        let loaded = match net.take() {
+            Some(loaded) => loaded,
+            None => load()?,
+        };
+        let loaded = net.insert(loaded);
         check(cancel)?;
         progress(0.05);
-        net.as_ref()
-            .unwrap()
-            .forward(&input, cancel, &|f| progress(0.05 + f * 0.85))?
+        loaded.forward(&input, cancel, &|f| progress(0.05 + f * 0.85))?
     };
     let soft = matte::upscale(&matte::sigmoid(&logits), SIZE, SIZE, w, h);
     check(cancel)?;

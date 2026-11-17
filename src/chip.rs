@@ -9,6 +9,7 @@ use gpui::{
 };
 
 use crate::icons::{Icon, icon};
+use crate::log::LogErr;
 use crate::model::shelf::{Item, Kind};
 use windows::Win32::Foundation::HWND;
 
@@ -270,7 +271,7 @@ impl Island {
         // Transform, first, takes files only.
         let from = usize::from(item.kind != Kind::File);
         if !on_thread("topsy-chip-menu", move || {
-            let _ = tx.send_blocking(win32::popup_menu(&MENU[from..]));
+            tx.send_blocking(win32::popup_menu(&MENU[from..])).log_err();
         }) {
             return;
         }
@@ -384,7 +385,7 @@ pub(crate) fn zip<T: 'static>(
     let (tx, rx) = async_channel::bounded(1);
     let source = item.path.clone();
     if !on_thread("topsy-zip", move || {
-        let _ = tx.send_blocking(archive::compress(&source));
+        tx.send_blocking(archive::compress(&source)).log_err();
     }) {
         return;
     }

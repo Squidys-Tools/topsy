@@ -12,6 +12,8 @@ use windows::core::{PCWSTR, w};
 
 use super::{restore_foreground, wide};
 
+use crate::log::LogErr;
+
 pub enum Entry {
     /// A command and its label (`&` marks the access key). Ids start at 1.
     Item(usize, &'static str),
@@ -67,7 +69,7 @@ pub fn popup(entries: &[Entry]) -> Option<usize> {
                     })
                     .collect();
                 for (entry, label) in entries.iter().zip(&labels) {
-                    let _ = match entry {
+                    match entry {
                         Entry::Item(id, _) => {
                             AppendMenuW(menu, MF_STRING, *id, PCWSTR(label.as_ptr()))
                         }
@@ -87,11 +89,16 @@ pub fn popup(entries: &[Entry]) -> Option<usize> {
                             AppendMenuW(menu, flags, *id, PCWSTR(label.as_ptr()))
                         }
                         Entry::Separator => AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null()),
-                    };
+                    }
+                    .log_err();
                 }
                 let previous = GetForegroundWindow();
                 let mut at = POINT::default();
-                let _ = GetCursorPos(&mut at);
+                GetCursorPos(&mut at).log_err();
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "Windows may refuse the foreground; the menu still opens"
+                )]
                 let _ = SetForegroundWindow(owner);
                 let choice = TrackPopupMenu(
                     menu,
@@ -103,14 +110,14 @@ pub fn popup(entries: &[Entry]) -> Option<usize> {
                     None,
                 );
                 // Documented companion to the above: lets the menu dismiss properly next time.
-                let _ = PostMessageW(Some(owner), WM_NULL, WPARAM(0), LPARAM(0));
-                let _ = DestroyMenu(menu);
+                PostMessageW(Some(owner), WM_NULL, WPARAM(0), LPARAM(0)).log_err();
+                DestroyMenu(menu).log_err();
                 restore_foreground(previous);
                 choice.0 as usize
             }
             Err(_) => 0,
         };
-        let _ = DestroyWindow(owner);
+        DestroyWindow(owner).log_err();
         (choice != 0).then_some(choice)
     }
 }

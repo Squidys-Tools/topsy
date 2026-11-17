@@ -18,6 +18,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::autostart::RegString;
 use crate::log;
+use crate::log::LogErr;
 use crate::model::clipboard::{Added, Content, Entry, History, leftovers};
 use crate::model::dib::{self, Rgba};
 use crate::win32::clipboard::{self as watcher, Copy};
@@ -97,7 +98,7 @@ pub fn entries() -> Arc<[Entry]> {
 
 pub fn send(command: Command) {
     if let Some(store) = STORE.get() {
-        let _ = store.commands.send(command);
+        store.commands.send(command).log_err();
     }
 }
 
@@ -153,13 +154,15 @@ pub fn start(dir: Option<PathBuf>) -> Option<async_channel::Receiver<Event>> {
         return None;
     }
     let copies = tx.clone();
-    let _ = STORE.set(Store { dir, commands: tx });
+    if STORE.set(Store { dir, commands: tx }).is_err() {
+        eprintln!("topsy: clipboard history started twice");
+    }
     watcher::spawn(
         move |copy| {
-            let _ = copies.send(Command::Copied(copy));
+            copies.send(Command::Copied(copy)).log_err();
         },
         move |previous| {
-            let _ = events.try_send(Event::Hotkey(previous));
+            events.try_send(Event::Hotkey(previous)).log_err();
         },
     );
     Some(heard)
@@ -184,7 +187,7 @@ fn run(dir: &Path, rx: &mpsc::Receiver<Command>, changed: &async_channel::Sender
         }
         if std::mem::take(&mut dirty) {
             *ENTRIES.lock().unwrap_or_else(|e| e.into_inner()) = Some(history.entries().into());
-            let _ = changed.try_send(Event::Changed);
+            changed.try_send(Event::Changed).log_err();
         }
         let wait = history
             .next_expiry(keep)
@@ -266,12 +269,12 @@ fn sweep(dir: &Path) {
         .collect();
     for name in leftovers(&names) {
         log(&format!("clipboard leftover {name}"));
-        let _ = std::fs::remove_file(dir.join(name));
+        std::fs::remove_file(dir.join(name)).log_err();
     }
     let icons = std::fs::read_dir(dir.join("icons")).into_iter().flatten();
     for icon in icons.filter_map(Result::ok) {
         if icon.path().extension().is_some_and(|e| e == "tmp") {
-            let _ = std::fs::remove_file(icon.path());
+            std::fs::remove_file(icon.path()).log_err();
         }
     }
 }
@@ -313,6 +316,6 @@ fn write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 
 fn delete(dir: &Path, id: u64) {
     for ext in ["json", "png"] {
-        let _ = std::fs::remove_file(dir.join(format!("{id}.{ext}")));
+        std::fs::remove_file(dir.join(format!("{id}.{ext}"))).log_err();
     }
 }

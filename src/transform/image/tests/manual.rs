@@ -10,7 +10,7 @@ use crate::transform::image::{compress, convert, probe, resize, rotate, strip_me
 /// Every operation on real photos, timed. `TOPSY_PHOTOS` names a folder of them; the outputs go
 /// to its `out` folder for a look.
 #[test]
-#[ignore]
+#[ignore = "runs on photos you point it at"]
 fn manual_run_on_real_photos() {
     use std::time::Instant;
     let dir = PathBuf::from(std::env::var("TOPSY_PHOTOS").expect("TOPSY_PHOTOS"));

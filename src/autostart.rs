@@ -10,6 +10,7 @@ use windows::Win32::System::Registry::{
 };
 use windows::core::{PCWSTR, Result};
 
+use crate::log::LogErr;
 use crate::win32::wide;
 
 const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
@@ -83,7 +84,7 @@ impl Key {
 impl Drop for Key {
     fn drop(&mut self) {
         unsafe {
-            let _ = RegCloseKey(self.0);
+            RegCloseKey(self.0).ok().log_err();
         }
     }
 }
@@ -207,7 +208,9 @@ mod tests {
             use windows::Win32::System::Registry::RegDeleteKeyW;
             let path = wide(&self.0);
             unsafe {
-                let _ = RegDeleteKeyW(HKEY_CURRENT_USER, PCWSTR(path.as_ptr()));
+                RegDeleteKeyW(HKEY_CURRENT_USER, PCWSTR(path.as_ptr()))
+                    .ok()
+                    .log_err();
             }
         }
     }
