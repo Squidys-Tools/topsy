@@ -271,6 +271,8 @@ impl Strip {
             "backspace" => {
                 self.query.pop();
             }
+            // GPUI names the space key and gives it no typed character.
+            "space" if !command => self.query.push(' '),
             _ => match key.key_char.as_deref() {
                 Some(typed) if !command && !typed.chars().any(char::is_control) => {
                     self.query.push_str(typed);

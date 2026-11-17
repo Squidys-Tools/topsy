@@ -18,6 +18,8 @@ use crate::model::highlight::{Token, highlight};
 
 /// A card's side, in logical pixels.
 pub const SIZE: f32 = 208.0;
+/// Inside the border. GPUI only truncates text with an ellipsis in an element of definite width.
+const INNER: f32 = SIZE - 4.0;
 /// The app icon in the pill.
 pub const APP_ICON: f32 = 16.0;
 /// A file's picture on a files card.
@@ -136,7 +138,13 @@ pub fn card(
         .py(px(8.0))
         .text_xs()
         .text_color(faint)
-        .child(div().truncate().child(detail(&entry.content, kind)));
+        .child(
+            div()
+                .w(px(INNER - 20.0))
+                .text_center()
+                .truncate()
+                .child(detail(&entry.content, kind)),
+        );
     div()
         .flex()
         .flex_col()
@@ -180,6 +188,8 @@ fn body(entry: &Entry, kind: Kind, picture: &dyn Fn(&PathBuf) -> Option<Arc<Rend
                     div()
                         .text_lg()
                         .font_weight(FontWeight::SEMIBOLD)
+                        .w(px(INNER - 24.0))
+                        .text_center()
                         .truncate()
                         .child(SharedString::from(clip_kind::host(text).to_string())),
                 ),
@@ -194,7 +204,12 @@ fn body(entry: &Entry, kind: Kind, picture: &dyn Fn(&PathBuf) -> Option<Arc<Rend
                 .font_family("Consolas")
                 .text_xs()
                 .text_color(rgb(CODE_INK))
-                .child(div().line_clamp(CODE_LINES).child(code(preview(text)))),
+                .child(
+                    div()
+                        .whitespace_nowrap()
+                        .line_clamp(CODE_LINES)
+                        .child(code(preview(text))),
+                ),
             _ => body
                 .px(px(12.0))
                 .text_sm()
@@ -220,7 +235,8 @@ fn body(entry: &Entry, kind: Kind, picture: &dyn Fn(&PathBuf) -> Option<Arc<Rend
             .children(files.iter().take(3).map(|f| {
                 let name = f.file_name().unwrap_or(f.as_os_str());
                 div()
-                    .max_w_full()
+                    .w(px(INNER - 24.0))
+                    .text_center()
                     .text_xs()
                     .truncate()
                     .child(name.to_string_lossy().to_string())
