@@ -6,10 +6,11 @@ use std::sync::Arc;
 
 use gpui::{
     AnyElement, Div, FontStyle, FontWeight, HighlightStyle, ObjectFit, RenderImage, SharedString,
-    StyledText, div, img, prelude::*, px, rgb, rgba,
+    StyledText, Window, div, img, prelude::*, px, rgb, rgba,
 };
 
 use super::pictures::{Pictures, Want};
+use super::preview::Face;
 use crate::icons::{Icon, icon};
 use crate::model::clip_kind::{self, Kind, ago, detail};
 use crate::model::clipboard::{Content, Entry};
@@ -30,12 +31,22 @@ const CARD: u32 = 0x1c1c1e;
 const PILL: u32 = 0xf2f2f2;
 const CODE_PILL: u32 = 0xf0a04b;
 const CODE_INK: u32 = 0xd6deeb;
-/// How much of a long text a card shows.
-const PREVIEW_LINES: usize = 12;
-const PREVIEW_CHARS: usize = 400;
+const MONO: &str = "Consolas";
 /// Whole lines of a text or code preview that fit a card's body, so none is cut through.
-const TEXT_LINES: usize = 5;
-const CODE_LINES: usize = 6;
+const TEXT: Face = Face {
+    family: None,
+    rems: 0.875,
+    width: INNER - 24.0,
+    lines: 5,
+    wrap: true,
+};
+const CODE: Face = Face {
+    family: Some(MONO),
+    rems: 0.75,
+    width: INNER - 24.0,
+    lines: 6,
+    wrap: false,
+};
 
 /// The pictures a card wants: the app's icon, an image's pixels, a file's thumbnail, a link's
 /// site icon.
@@ -69,6 +80,7 @@ pub fn card(
     now: u64,
     pictures: &Pictures,
     more: AnyElement,
+    window: &Window,
 ) -> Div {
     let colour = match &entry.content {
         Content::Text(text) if kind == Kind::Color => clip_kind::color(text.trim()),
@@ -160,11 +172,16 @@ pub fn card(
         .border_2()
         .border_color(if selected { rgb(0xffffff) } else { rgba(0) })
         .child(header)
-        .child(body(entry, kind, &picture))
+        .child(body(entry, kind, &picture, window))
         .child(footer)
 }
 
-fn body(entry: &Entry, kind: Kind, picture: &dyn Fn(&PathBuf) -> Option<Arc<RenderImage>>) -> Div {
+fn body(
+    entry: &Entry,
+    kind: Kind,
+    picture: &dyn Fn(&PathBuf) -> Option<Arc<RenderImage>>,
+    window: &Window,
+) -> Div {
     let body = div().flex_1().min_h_0().overflow_hidden();
     match &entry.content {
         Content::Text(text) => match kind {
@@ -204,19 +221,18 @@ fn body(entry: &Entry, kind: Kind, picture: &dyn Fn(&PathBuf) -> Option<Arc<Rend
             ),
             Kind::Code => body
                 .px(px(12.0))
-                .font_family("Consolas")
-                .text_xs()
+                .font_family(MONO)
+                .text_size(CODE.size())
                 .text_color(rgb(CODE_INK))
                 .child(
                     div()
                         .whitespace_nowrap()
-                        .line_clamp(CODE_LINES)
-                        .child(code(preview(text))),
+                        .child(code(CODE.preview(window, text))),
                 ),
             _ => body
                 .px(px(12.0))
-                .text_sm()
-                .child(div().line_clamp(TEXT_LINES).child(preview(text))),
+                .text_size(TEXT.size())
+                .child(div().w(px(TEXT.width)).child(TEXT.preview(window, text))),
         },
         Content::Image { .. } => match super::image_path(entry.id).and_then(|p| picture(&p)) {
             Some(image) => body.child(img(image).size_full().object_fit(ObjectFit::Cover)),
@@ -264,20 +280,6 @@ fn code(text: String) -> StyledText {
         }
     };
     StyledText::new(text).with_highlights(spans.into_iter().map(|(range, t)| (range, style(t))))
-}
-
-/// The start of a long text, so a card never lays out a whole copied log.
-fn preview(text: &str) -> String {
-    let mut out: String = text
-        .trim()
-        .lines()
-        .take(PREVIEW_LINES)
-        .collect::<Vec<_>>()
-        .join("\n");
-    if let Some((cut, _)) = out.char_indices().nth(PREVIEW_CHARS) {
-        out.truncate(cut);
-    }
-    out
 }
 
 /// Whether dark text reads better on this colour.

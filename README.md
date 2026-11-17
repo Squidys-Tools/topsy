@@ -38,6 +38,7 @@ trimmed, turned into a GIF or a PDF, stripped of metadata or cut out of their ba
 | `src/model/clipboard.rs` | Clipboard history: adding a copy (a repeat moves up), pins, expiry, the cap, and its save format |
 | `src/model/clip_kind.rs` | What a copy is (text, link, colour, code, image, files) and how its card describes it; search |
 | `src/model/highlight.rs` | A code card's colours: keywords, strings, comments and numbers, in one pass that knows no language |
+| `src/model/clamp.rs` | Where a card's preview is cut: after its last line, with an ellipsis, shortened until that fits |
 | `src/model/favicon.rs` | Which sites a link card may ask for an icon, where a redirect or a page's icon link may lead, and which icon a page names |
 | `src/model/hud.rs` | The HUDs: how much of the bar a level lights, and which battery changes are worth showing |
 | `src/model/dib.rs` | Reading a copied bitmap (`CF_DIB`/`CF_DIBV5`) to RGBA, and writing one back to paste |
@@ -62,6 +63,7 @@ trimmed, turned into a GIF or a PDF, stripped of metadata or cut out of their ba
 | `src/clipboard.rs` | Clipboard history on disk, owned by one thread; the history setting and how long it is kept |
 | `src/clipboard/strip.rs` | The clipboard strip: the window Ctrl+Alt+V opens, its search, tabs, keys and card menu |
 | `src/clipboard/card.rs` | One card in the strip, drawn after Droppy's |
+| `src/clipboard/preview.rs` | A text or code card's preview: lays the text out to find its last line, then cuts it there |
 | `src/clipboard/pictures.rs` | The pictures the cards show (app icons, images, file thumbnails, site icons), loaded off the UI thread |
 | `src/clipboard/favicon.rs` | A link card's site icon: fetched once per host and kept beside the history |
 | `src/hud.rs` | The HUDs: the notch dropping down to show a new volume, brightness or battery state; the *Volume HUD* setting |
@@ -230,6 +232,11 @@ or the settings window.
   the entry on the clipboard, waits up to 500 ms for that window to be in front again, and only then sends
   Ctrl+V: keys sent sooner land wherever the focus is. If it never comes back no keys are sent, and the entry
   stays on the clipboard. Being a copy, a paste moves the entry to the front.
+- **A cut preview is cut by topsy, not by GPUI's `line_clamp`.** GPUI truncates the whole string to
+  `width × lines` before it wraps, which lands past the last visible line (wrapping wastes the end of each line),
+  and it counts only soft wraps, so a text of short lines is not clamped at all and a line is cut through. So
+  `clipboard::preview` shapes the text at the card's width, finds where line N ends and cuts it there with `…`
+  (`model::clamp`). The element must keep the width and size it was measured at, which `Face` carries.
 - **A card's menu opens on the button's release.** Opened on the press, the release still goes to the strip and
   the menu never gets the keyboard: Esc and its access keys do nothing.
 - **Nothing polls.** The listener (`AddClipboardFormatListener`) wakes on each copy; the store thread wakes on a
