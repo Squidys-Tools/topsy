@@ -20,6 +20,8 @@ use windows::Win32::UI::Shell::{
 };
 use windows::core::HSTRING;
 
+use crate::model::transform::Kind;
+
 /// The picture for `path`, about `size` physical pixels square. Call inside
 /// [`crate::win32::with_com`].
 pub fn load(path: &Path, size: i32) -> Option<Arc<RenderImage>> {
@@ -53,7 +55,14 @@ pub fn load_cover(
     }))
 }
 
+/// A PDF is drawn by pdfium: the shell's thumbnail for one comes from whatever PDF app is the
+/// default, which most PCs have none of, so it would answer with a generic icon.
 fn pixels(path: &Path, size: i32) -> Option<RgbaImage> {
+    if Kind::of(path) == Kind::Pdf
+        && let Some(page) = crate::transform::pdf::first_page(path, size)
+    {
+        return Some(page);
+    }
     let (width, height, mut pixels) = unsafe { shell_bitmap(path, size) }?;
     straighten(&mut pixels);
     // GPUI's images are BGRA with straight alpha, whatever the buffer's type says.

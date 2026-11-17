@@ -46,7 +46,7 @@ trimmed, turned into a GIF or a PDF, stripped of metadata or cut out of their ba
 | `src/model/image_ops.rs`, `image_geometry.rs`, `magick.rs`, `size_search.rs` | Image Transforms: formats and picking one, sizes, crops and turns, ImageMagick's and oxipng's command lines, landing under a size |
 | `src/model/heif.rs` | Writing HEIC: x265's command line, lifting the coded frame out of FFmpeg's MP4, and the HEIF boxes around it |
 | `src/model/orientation.rs`, `exif.rs`, `jpeg/` | Turning a photo once (its EXIF orientation and the user's turn composed), and JPEGs turned and stripped losslessly without a decode |
-| `src/model/pdf.rs` | PDF Transforms: Combine's page sizes, Compress's presets, how far a picture inside may shrink |
+| `src/model/pdf.rs`, `pdf_place.rs`, `pdf_image.rs` | PDF Transforms: Combine's page sizes, Compress's presets and how far a picture inside may shrink, how big a page really draws a picture (its `cm` matrices), and which pictures can be re-encoded without changing their colours; a page preview's size |
 | `src/model/video/` | Video and audio Transforms: options, size budgets, trim ranges, FFmpeg's command lines, reading ffprobe and progress |
 | `src/model/matte.rs`, `download.rs` | Remove background's arithmetic (the model's input, its mask to a clean matte), and fetching a big file once, resumably |
 | `src/model/tray_cause.rs` | Why the tray is open, and which events fold it early |
@@ -55,7 +55,7 @@ trimmed, turned into a GIF or a PDF, stripped of metadata or cut out of their ba
 | `src/win32/` | Win32 glue GPUI doesn't expose: `window` (overlay styles, acrylic fallback, geometry, fullscreen), `dialog` (the settings window's dark caption and raising it), `dragdrop` (the drop-target wrapper that reports refused drags, dragging files out), `hook` (`WH_MOUSE_LL` thread), `shell` (opening files, showing them in Explorer), `menu` (a popup menu on a thread of its own), `meter` (the output device's peak meter), `sendto` (the Send to shortcut), `inbox` (paths handed over by a second topsy), `clipboard` (the clipboard listener and the Ctrl+Alt+V hotkey), `paste` (putting an entry back on the clipboard and pasting it), `http` (one https GET through WinHTTP), `volume` (taking the volume keys and stepping the volume), `brightness` (WMI's brightness events), `battery` (power notifications) |
 | `src/chip.rs` | A chip: how it is drawn, opening it, dragging it out, and its right-click actions |
 | `src/archive.rs` | *Compress to ZIP file*: a chip's file or folder zipped beside it ([`zip`](https://crates.io/crates/zip), MIT) |
-| `src/icon.rs` | A chip's picture: the shell's thumbnail or icon for a file, as Explorer shows it |
+| `src/icon.rs` | A chip's picture: the shell's thumbnail or icon for a file, as Explorer shows it; a PDF's first page, drawn by pdfium |
 | `src/icons.rs` | The interface's icons, built into the exe from `assets/icons` and drawn as SVG in any colour |
 | `src/state.rs` | The shelf's save file and the thread that writes it |
 | `src/tray.rs` | The notification-area icon and its menu, on their own thread |
@@ -284,8 +284,8 @@ deletes what it had made and brings the panel back.
 - **Video and audio:** Compress (by quality or to a size; a resolution cap; a bitrate for audio), Convert (MP4
   H.264 or HEVC, MOV, WebM, MKV or the sound alone; M4A, MP3, WAV, FLAC, OGG Opus, AIFF), Trim and Make GIF on a
   filmstrip with a range to drag, Rotate, Remove metadata.
-- **PDF:** Compress (three presets or a size), Convert to PNG or JPEG pages at 72, 150 or 300 dpi, Rotate pages,
-  Remove metadata, Combine. **Anything:** Zip, Rename.
+- **PDF:** Compress (three presets or a size; the pictures inside shrink), Convert to PNG or JPEG pages at 72,
+  150 or 300 dpi, Rotate pages, Remove metadata, Combine. **Anything:** Zip, Rename.
 
 How it is built:
 
@@ -304,6 +304,18 @@ How it is built:
 - **HDR video stays HDR in HEVC,** written 10-bit with its BT.2020 tags. H.264, VP9, GIFs and the filmstrip are
   8-bit SDR, so an HDR source (PQ or HLG, from ffprobe's `color_transfer`) is tone-mapped first: zscale to
   linear light, then the Mobius curve, which keeps the tones SDR can show and rolls off only the highlights.
+- **A PDF's preview is drawn by pdfium, not the shell.** Windows draws a PDF's thumbnail only through a
+  handler the PDF app registers; with a browser as the default there is none, and the shell returns a generic
+  icon. `icon::pixels` draws the first page itself when pdfium is installed, and the panel fetches pdfium when a
+  PDF is added (a shelf chip uses it only once it is there, so parking a file never downloads anything).
+- **Compress PDF re-encodes pictures as JPEG at the size the page shows them,** which is not their own `/Width`:
+  the page's content is walked (`cm` matrices, `q`/`Q`, form XObjects; `transform/pdf/place`) to find how big
+  each `Do` really draws it, so a full-page scan, a slide's photo and a logo each shrink to their own dpi. The
+  preset's quality then applies, and a result is kept only if it is smaller (a picture left at its size must save
+  10%). Indexed pictures go through their palette; CMYK ones only if they are JPEGs written the Adobe way (the
+  marker and `/Decode [1 0 1 0 1 0 1 0]` together), since ImageMagick round-trips those without a colour
+  conversion. A picture with a colour-key `/Mask` is left alone, as a JPEG no longer has its exact colours. A
+  size target the file already meets leaves it as it is.
 - **JPEGs turn and strip losslessly, in Rust** (`model/jpeg`), since jpegtran ships for Windows only inside
   installers. A turn that would split an 8x8 block at an edge goes to ImageMagick instead.
 - **A photo is turned once.** Its EXIF orientation and the chosen turn compose into one (`model/orientation`)
@@ -505,7 +517,9 @@ hook, not the media thread). It is worth a profile, because an always-on app sho
 - Resizing a window every frame is not profiled, and the window trails the spring by a frame. No tearing showed
   in sampled frames, but it was not measured at speed.
 - A chip's picture is fetched once, when it is parked; a file edited while on the shelf keeps its old thumbnail.
-  Until the picture arrives, or if the shell has none, the chip shows an extension badge.
+  Until the picture arrives, or if the shell has none, the chip shows an extension badge. A PDF's chip shows
+  its first page only once pdfium has been downloaded (by the Transform panel or *Convert* on a PDF); before
+  that it has the shell's icon.
 - The target decides copy, move or link (the default shell drop source offers all three), so a drag to a folder on
   the same drive moves the file, as in Explorer; the chip then leaves the shelf.
 - *Compress to ZIP file* shows no progress, and a big folder can take a while before its chip appears. Errors only
@@ -533,6 +547,12 @@ hook, not the media thread). It is worth a profile, because an always-on app sho
   `vcomp140.dll`), so a PC without it can't run the image actions (FFmpeg and pdfium don't need it). Writing HEIC
   needs FFmpeg too. A video keeps its main picture and its sound: subtitles, data tracks and cover art are
   dropped. An animated GIF or WebP comes out as its first frame.
+- Compress PDF leaves alone the pictures it can't re-encode without changing them: black-and-white scans
+  (CCITT, JBIG2), JPEG 2000, CMYK that isn't an Adobe-style JPEG, pictures under 8 bits a component, image
+  masks, and pictures with a colour-key mask. A PDF that is mostly text or vector art only has its structure
+  packed (about a fifth smaller). A picture drawn through a shading or pattern, or from a content stream topsy
+  can't parse, is sized as if it filled the page, so it keeps more resolution than it needs. Only measured on
+  PDFs of up to a few hundred pages; a PDF of thousands of pictures runs one ImageMagick per picture.
 - No droplets yet. The settings window is a plain dark fill, not Mica.
 
 ## License

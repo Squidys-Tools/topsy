@@ -242,7 +242,12 @@ impl Panel {
         let (tx, rx) = async_channel::unbounded();
         std::thread::spawn(move || {
             win32::with_com(COINIT_MULTITHREADED, || {
+                let mut renderer = false;
                 for path in new {
+                    if !renderer && Kind::of(&path) == Kind::Pdf {
+                        renderer = true;
+                        pdf::ensure_renderer();
+                    }
                     let bytes = std::fs::metadata(&path).map_or(0, |m| m.len());
                     let thumb = icon::load_cover(&path, size, TILE / THUMB, None);
                     if tx.send_blocking((path, bytes, thumb)).is_err() {
