@@ -1,20 +1,22 @@
 //! Escape folds a tray opened to look. The island never has the focus, so the key is read by a
 //! low-level keyboard hook, installed only while such a tray is open. It takes Escape from the
-//! app in front, unless a mouse button is down (Escape cancels a drag) or a menu is up (Escape
-//! closes it); every other key passes straight through.
+//! app in front, unless a mouse button is down (Escape cancels a drag), a menu is up (Escape
+//! closes it) or a window of topsy's is in front (the Transform panel and the clipboard strip
+//! take Escape themselves); every other key passes straight through.
 
 use std::sync::mpsc;
 use std::sync::{Mutex, OnceLock};
 
 use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
-use windows::Win32::System::Threading::GetCurrentThreadId;
+use windows::Win32::System::Threading::{GetCurrentProcessId, GetCurrentThreadId};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, VIRTUAL_KEY, VK_ESCAPE, VK_LBUTTON, VK_MBUTTON, VK_RBUTTON,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, DispatchMessageW, GUI_INMENUMODE, GUI_POPUPMENUMODE, GUITHREADINFO,
-    GetGUIThreadInfo, GetMessageW, HC_ACTION, KBDLLHOOKSTRUCT, MSG, PostThreadMessageW,
-    SetWindowsHookExW, UnhookWindowsHookEx, WH_KEYBOARD_LL, WM_KEYDOWN, WM_QUIT,
+    GetForegroundWindow, GetGUIThreadInfo, GetMessageW, GetWindowThreadProcessId, HC_ACTION,
+    KBDLLHOOKSTRUCT, MSG, PostThreadMessageW, SetWindowsHookExW, UnhookWindowsHookEx,
+    WH_KEYBOARD_LL, WM_KEYDOWN, WM_QUIT,
 };
 
 static PRESSED: OnceLock<async_channel::Sender<()>> = OnceLock::new();
@@ -67,7 +69,8 @@ fn spawn_hook() -> Option<u32> {
     installed.recv().ok().flatten()
 }
 
-/// Escape belongs to whatever is in the middle of something: a drag, or a menu.
+/// Escape belongs to whatever is in the middle of something: a drag, a menu, or one of our
+/// own windows.
 fn busy() -> bool {
     // SAFETY: plain state queries; GetGUIThreadInfo(0) reads the foreground thread.
     unsafe {
@@ -80,7 +83,9 @@ fn busy() -> bool {
         };
         let menu = GetGUIThreadInfo(0, &mut gui).is_ok()
             && (gui.flags.0 & (GUI_INMENUMODE.0 | GUI_POPUPMENUMODE.0)) != 0;
-        held || menu
+        let mut pid = 0;
+        GetWindowThreadProcessId(GetForegroundWindow(), Some(&mut pid));
+        held || menu || pid == GetCurrentProcessId()
     }
 }
 

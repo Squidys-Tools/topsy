@@ -334,7 +334,8 @@ nothing on screen, nothing to click.
   OS where the cursor is rather than waiting for a hover "leave", which a cursor flicked off the edge doesn't
   always deliver. Escape folds a tray opened this way (or from the tray icon) at once. The island has no focus to
   hear it, so a low-level keyboard hook (`src/win32/escape.rs`) is installed only while such a tray is open, and
-  takes Escape from the app in front unless a mouse button is down (it cancels a drag) or a menu is up.
+  takes Escape from the app in front unless a mouse button is down (it cancels a drag), a menu is up, or a window
+  of topsy's is in front (the Transform panel and the clipboard strip take Escape themselves).
 - **The floating tray.** Jiggling a drag anywhere opens the tray as a floating panel centred under the pointer, as
   Droppy's *Floating File Tray* does, so letting go there parks the files. It is the same window, moved: rounded
   all round, no ears, with the notch's dynamic glass (black at the top fading to glass) and its rim.
