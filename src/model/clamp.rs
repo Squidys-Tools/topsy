@@ -1,7 +1,8 @@
-//! Where a card's preview ends. GPUI's own line clamp can't mark a cut: it truncates the whole
-//! string to `width * lines` before wrapping, which lands past the last visible line, and it
-//! counts only soft wraps, so a text of short lines is never clamped at all. So the card asks
-//! the text system where each line falls and cuts the text itself (see `clipboard::preview`).
+//! Where a card's preview ends. GPUI's own line clamp can't mark a cut: it draws no ellipsis and
+//! counts only soft wraps, so a text of short lines is never clamped at all, and with
+//! `text_ellipsis` it truncates the whole string to `width * lines` before wrapping, which lands
+//! past the last visible line. So the card asks the text system where each line falls and cuts
+//! the text itself (see `clipboard::preview`).
 
 use std::borrow::Cow;
 use std::ops::Range;

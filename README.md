@@ -232,11 +232,12 @@ or the settings window.
   the entry on the clipboard, waits up to 500 ms for that window to be in front again, and only then sends
   Ctrl+V: keys sent sooner land wherever the focus is. If it never comes back no keys are sent, and the entry
   stays on the clipboard. Being a copy, a paste moves the entry to the front.
-- **A cut preview is cut by topsy, not by GPUI's `line_clamp`.** GPUI truncates the whole string to
-  `width × lines` before it wraps, which lands past the last visible line (wrapping wastes the end of each line),
-  and it counts only soft wraps, so a text of short lines is not clamped at all and a line is cut through. So
-  `clipboard::preview` shapes the text at the card's width, finds where line N ends and cuts it there with `…`
-  (`model::clamp`). The element must keep the width and size it was measured at, which `Face` carries.
+- **A cut preview is cut by topsy, not by GPUI's `line_clamp`.** `line_clamp` draws no ellipsis and counts
+  only soft wraps, so a text of short lines is not clamped at all and a line is cut through; adding
+  `text_ellipsis` truncates the whole string to `width × lines` before it wraps, which lands past the last
+  visible line (wrapping wastes the end of each line). So `clipboard::preview` shapes the text at the card's
+  width, finds where line N ends and cuts it there with `…` (`model::clamp`). The element must keep the width
+  and size it was measured at, which `Face` carries.
 - **A card's menu opens on the button's release.** Opened on the press, the release still goes to the strip and
   the menu never gets the keyboard: Esc and its access keys do nothing.
 - **Nothing polls.** The listener (`AddClipboardFormatListener`) wakes on each copy; the store thread wakes on a
