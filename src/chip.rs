@@ -14,7 +14,7 @@ use crate::{COLLAPSE_AFTER_LEAVE, COLLAPSE_AFTER_RELEASE, Island, archive, log};
 /// How far (logical pixels) a pressed chip must be dragged before it becomes a drag out.
 const DRAG_OUT_THRESHOLD: f32 = 6.0;
 
-const CHIP: (f32, f32) = (72.0, 70.0);
+pub(crate) const CHIP: (f32, f32) = (72.0, 70.0);
 /// The picture at the top of a chip, square.
 pub const ICON: f32 = 38.0;
 
