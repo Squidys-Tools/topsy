@@ -141,6 +141,11 @@ impl Island {
         }
     }
 
+    /// Folded away, or held down in the peek by an activity: either way a drag up here opens it.
+    pub(crate) fn at_rest(&self) -> bool {
+        self.mode == Mode::Hidden || (self.mode == Mode::Peek && self.mode == self.resting())
+    }
+
     /// What the island folds back to: the peek while an activity lasts, else its rest.
     pub(crate) fn resting(&self) -> Mode {
         if self.rest == Mode::Hidden && !self.activity.list.is_empty() && !self.activity.held_back {
