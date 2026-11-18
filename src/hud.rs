@@ -19,8 +19,8 @@ const LINGER: Duration = Duration::from_millis(1500);
 /// The notch's body while it shows a HUD: the peek's height, wider for the bar.
 pub const SIZE: (f32, f32) = (280.0, PEEK.1);
 const UNLIT: u32 = 0xffffff33;
-const GREEN: u32 = 0x34c759;
-const RED: u32 = 0xff453a;
+pub(crate) const GREEN: u32 = 0x34c759;
+pub(crate) const RED: u32 = 0xff453a;
 
 #[derive(Default)]
 pub struct State {
@@ -112,12 +112,12 @@ impl Island {
         self.hud.shown = None;
         if self.mode != Mode::Peek {
             cx.notify();
-        } else if self.rest != Mode::Peek && self.hwnd.is_some_and(win32::cursor_over) {
+        } else if self.resting() != Mode::Peek && self.hwnd.is_some_and(win32::cursor_over) {
             // Being looked at: back to the plain peek, which folds once the cursor leaves.
             self.set_mode(Mode::Peek, cx);
             self.schedule_collapse(PEEK_LINGER, cx);
         } else {
-            self.set_mode(self.rest, cx);
+            self.set_mode(self.resting(), cx);
         }
     }
 
@@ -223,7 +223,7 @@ fn bar(level: f32) -> Div {
 }
 
 /// A battery drawn as a cell filled to its charge, with the terminal on its right.
-fn cell(percent: u8, fill: u32) -> Div {
+pub(crate) fn cell(percent: u8, fill: u32) -> Div {
     let inner = 20.0 * f32::from(percent.min(100)) / 100.0;
     div()
         .flex()

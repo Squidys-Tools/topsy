@@ -3,10 +3,12 @@
 //! holds this folder to that.
 
 // Drawn by build.rs into the exe's icon; here only for its tests.
+pub mod activity;
 #[cfg(test)]
 pub mod app_icon;
 pub mod archive;
 pub mod basket;
+pub mod browser_download;
 pub mod clamp;
 pub mod clip_kind;
 pub mod clipboard;

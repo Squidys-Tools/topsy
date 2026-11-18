@@ -1,6 +1,7 @@
 // A release build is a GUI app: a console window would take the focus at launch. Debug keeps it.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod activity;
 mod app;
 mod archive;
 mod autostart;
@@ -87,6 +88,7 @@ struct Island {
     icons: HashMap<PathBuf, Arc<RenderImage>>,
     media: now_playing::Media,
     hud: hud::State,
+    activity: activity::State,
     basket: Option<Entity<basket::Basket>>,
 }
 
@@ -114,6 +116,7 @@ impl Island {
             icons: HashMap::new(),
             media: Default::default(),
             hud: Default::default(),
+            activity: Default::default(),
             basket: None,
         }
     }
@@ -257,7 +260,7 @@ impl Island {
                     // Still being used; look again later, in case no "leave" ever arrives.
                     this.schedule_collapse(after, cx);
                 } else {
-                    this.set_mode(this.rest, cx);
+                    this.set_mode(this.resting(), cx);
                 }
             })
             .ok();
@@ -272,7 +275,7 @@ impl Island {
             HookEvent::Jiggle => {}
             HookEvent::Edge { at_edge, pressed } => {
                 self.at_edge = at_edge;
-                if at_edge && self.mode == Mode::Hidden && !self.fullscreen() {
+                if at_edge && self.at_rest() && !self.fullscreen() {
                     if pressed {
                         // Something is being dragged up here: give it somewhere to land.
                         if self.held.may_open_tray() {
@@ -326,16 +329,11 @@ impl Island {
     /// Fold back to rest now, cancelling any collapse already scheduled (Escape, the tray icon).
     fn fold(&mut self, cx: &mut Context<Self>) {
         self.collapse_generation += 1;
-        self.set_mode(self.rest, cx);
-    }
-
-    fn clear_shelf(&mut self, cx: &mut Context<Self>) {
-        self.shelf.clear();
-        self.shelf_changed(cx);
+        self.set_mode(self.resting(), cx);
     }
 
     fn on_hover(&mut self, hovered: bool, cx: &mut Context<Self>) {
-        if self.drag_out || self.chip_menu || self.mode == self.rest {
+        if self.drag_out || self.chip_menu || self.mode == self.resting() {
         } else if self.mode == Mode::Peek {
             // The linger re-checks the cursor itself, so it needs no "leave", which a cursor
             // flicked off the top edge doesn't always deliver.
@@ -347,13 +345,6 @@ impl Island {
             self.collapse_generation += 1;
         } else {
             self.schedule_collapse(COLLAPSE_AFTER_LEAVE, cx);
-        }
-    }
-
-    fn remove_item(&mut self, index: usize, cx: &mut Context<Self>) {
-        if let Some(item) = self.shelf.remove(index) {
-            log(&format!("removed {}", item.name()));
-            self.shelf_changed(cx);
         }
     }
 }

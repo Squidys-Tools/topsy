@@ -84,6 +84,8 @@ impl Island {
                     basket.update(cx, |basket, cx| basket.set_black(on, cx));
                 }
             }
+            // Switched off, what is on screen goes now.
+            Setting::LiveActivities => self.activities_changed(std::time::Instant::now(), cx),
             Setting::Autostart | Setting::SendTo | Setting::Clipboard | Setting::VolumeHud => {}
         }
     }
@@ -270,6 +272,7 @@ pub fn run() {
         });
         crate::now_playing::start(cx, &island);
         crate::hud::start(cx, &island);
+        crate::activity::start(cx, &island);
         if let Some(files) = config.transform.clone() {
             crate::transform::open(cx, &island, files);
         }

@@ -45,6 +45,8 @@ trimmed, turned into a GIF or a PDF, stripped of metadata or cut out of their ba
 | `src/model/clamp.rs` | Where a card's preview is cut: after its last line, with an ellipsis, shortened until that fits |
 | `src/model/favicon.rs` | Which sites a link card may ask for an icon, where a redirect or a page's icon link may lead, and which icon a page names |
 | `src/model/hud.rs` | The HUDs: how much of the bar a level lights, and which battery changes are worth showing |
+| `src/model/activity.rs` | Live Activities: which stay, which pass after a moment, and the two the notch shows |
+| `src/model/browser_download.rs` | Telling a browser download, its finish or its cancel from the Downloads folder's changes |
 | `src/model/dib.rs` | Reading a copied bitmap (`CF_DIB`/`CF_DIBV5`) to RGBA, and writing one back to paste |
 | `src/model/transform.rs` | Transform: which actions suit which files, the panel's summary line, and naming results and renames |
 | `src/model/transform_card.rs` | What a Transform result card says: size before and after, then the sides or the name |
@@ -71,6 +73,7 @@ trimmed, turned into a GIF or a PDF, stripped of metadata or cut out of their ba
 | `src/clipboard/pictures.rs` | The pictures the cards show (app icons, images, file thumbnails, site icons), loaded off the UI thread |
 | `src/clipboard/favicon.rs` | A link card's site icon: fetched once per host and kept beside the history |
 | `src/hud.rs` | The HUDs: the notch dropping down to show a new volume, brightness or battery state; the *Volume HUD* setting |
+| `src/activity/` | Live Activities: the notch held down while one lasts (`mod`), how they look (`view`), the download watcher (`downloads`); the *Live Activities* setting |
 | `src/settings.rs` | The on/off settings, one list shared by the menu and the settings window |
 | `src/settings_window.rs` | The settings window: a switch per setting, how long clipboard history is kept, the version, Quit |
 | `src/transform/` | The Transform panel (`mod`, `view`, `options`, `widgets`, `clip` for the trim range), its result cards (`cards`), its worker (`job`), the bridge to the engines (`engines`, `pictures`), the engines (`image`, `pdf`, `video`, `background`), and the downloaded tools (`fetch`, `tools`) |
@@ -323,6 +326,25 @@ it falls below 20% and 10% (or is unplugged below 20%), and when it is full on t
   a thread blocks on it. Windows' own brightness flyout still shows: the keys are the laptop's firmware's.
 - **Battery** changes arrive as power-setting callbacks (`PowerSettingRegisterNotification`). Nothing polls; a
   machine without a battery registers nothing.
+
+## Live Activities
+
+While something is going on, the notch stays down a little wider and shows it, after Droppy's: a browser
+download with its name and the size it has reached, then a green tick and *Done*; Bluetooth headphones or a
+speaker connecting, with the battery where Windows knows it, or leaving. A download stays for as long as it runs, or
+a minute after it stops growing (paused or failed); the rest pass after 3 s. Two show side by side, newest first. A HUD takes over the notch for its moment, an open
+tray folds back to the activity, and a fullscreen app in front keeps it hidden. Clicking a finished download
+shows it in Explorer; clicking anything else opens the tray as usual. The *Live Activities* setting turns it off.
+
+- **Downloads** are told apart from the Downloads folder's changes alone (`ReadDirectoryChangesW` on a thread
+  that blocks in it): browsers write to a partial file (`.crdownload` for Chrome and Edge, `.part` for Firefox)
+  and rename it when it's done, or delete it if cancelled. Nothing says how big a download will be, so there's no
+  ring filling up, only the size so far, read at most once a second while it grows.
+- **Bluetooth audio** comes from `IMMNotificationClient`: an output endpoint turning active or going away. Its
+  device container is looked up in Configuration Manager to tell Bluetooth from a monitor's speakers, and for
+  the name and battery; a device's several endpoints count once. Windows often learns the battery a few seconds
+  after the connection, so a device that had none is asked once more 2 s later, inside its 3 s, and the
+  activity updates in place (its 3 s start again).
 
 ## Transform
 
@@ -620,6 +642,11 @@ hook, not the media thread). It is worth a profile, because an always-on app sho
   packed (about a fifth smaller). A picture drawn through a shading or pattern, or from a content stream topsy
   can't parse, is sized as if it filled the page, so it keeps more resolution than it needs. Only measured on
   PDFs of up to a few hundred pages; a PDF of thousands of pictures runs one ImageMagick per picture.
+- Live Activities: only the Downloads folder is watched, so a download saved elsewhere doesn't show, and a file
+  any app writes there as `.part` or `.crdownload` counts as a download. A download running when topsy starts
+  shows once it next grows. Earbuds' battery is read as they connect and once more 2 s later, so one Windows
+  learns after that doesn't show; not checked with real Bluetooth devices yet. No timers, calls or coding agents
+  yet.
 - No droplets yet. The settings window is a plain dark fill, not Mica.
 
 ## License
