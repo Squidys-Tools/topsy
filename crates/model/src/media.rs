@@ -1,5 +1,5 @@
 //! Now Playing: what the system's current media session reports, reduced to what the island
-//! shows. The glue (`src/media.rs`) turns each WinRT event into an [`Event`]; nothing here
+//! shows. The glue (`src/now_playing/session.rs`) turns each WinRT event into an [`Event`]; nothing here
 //! ticks, so a song playing costs nothing until the app reports a change. The position is
 //! carried forward from the app's last report when it is drawn, at the moment it is drawn.
 

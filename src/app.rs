@@ -17,7 +17,7 @@ use crate::basket::Basket;
 use crate::frame::{ACRYLIC_TINT, Frame, Glass, PEEK};
 use crate::log::LogErr;
 use crate::settings::Setting;
-use crate::settings_window::{self, Change, OnChange};
+use crate::settings::window::{self as settings_window, Change, OnChange};
 use crate::tray::{self, TrayEvent};
 use crate::win32::DropEvent;
 use crate::win32::sendto;

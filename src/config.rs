@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 use std::time::Duration;
 
-use crate::{Glass, Mode};
+use crate::frame::{Glass, Mode};
 
 pub struct Config {
     /// `TOPSY_LOG`: trace events to stderr, for the live checks.

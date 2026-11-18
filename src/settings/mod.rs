@@ -1,6 +1,8 @@
 //! The app's on/off settings, in one list that both the tray icon's menu and the settings
 //! window are built from. A new toggle is a variant here and an arm in each match below.
 
+pub(crate) mod window;
+
 use crate::win32::sendto;
 use crate::{activity, autostart, clipboard, hud, look};
 

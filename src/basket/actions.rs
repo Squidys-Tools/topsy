@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use gpui::{ClipboardItem, Context, Window};
 
 use super::Basket;
-use crate::chip::{self, ACTIONS, Action};
+use crate::island::chip::{self, ACTIONS, Action};
 use crate::log;
 use crate::log::LogErr;
 use crate::win32::{self, MenuEntry};

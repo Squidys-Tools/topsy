@@ -13,8 +13,8 @@ use gpui::{
 
 use super::rename::Rename;
 use super::{Basket, CARD, Grip, LIST, THUMB};
-use crate::chip::DRAG_OUT_THRESHOLD;
 use crate::icons::{Icon, icon};
+use crate::island::chip::DRAG_OUT_THRESHOLD;
 use model::basket::{shows_content, stack_depth, summary};
 use model::shelf::Item;
 
@@ -368,7 +368,7 @@ impl Basket {
                 )
                 .on_click({
                     let item = item.clone();
-                    move |_: &ClickEvent, _window, _cx| crate::chip::open(item.clone())
+                    move |_: &ClickEvent, _window, _cx| crate::island::chip::open(item.clone())
                 })
                 .on_mouse_up(
                     MouseButton::Right,

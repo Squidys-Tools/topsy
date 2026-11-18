@@ -8,7 +8,7 @@ use gpui::{App, Pixels, Size};
 use windows::Win32::Foundation::HWND;
 
 use crate::backdrop::Backdrop;
-use crate::{Island, log, win32};
+use crate::{log, win32};
 use model::notch::Notch;
 
 /// The notch's body when it peeks down from the top edge, and when it holds the tray.
@@ -356,15 +356,9 @@ impl Frame {
     }
 }
 
-impl Island {
-    /// A fullscreen video, game or slideshow has the screen: the hook's gestures stay out of its
-    /// way. Read at the moment of the gesture rather than tracked, so nothing runs meanwhile.
-    pub(crate) fn fullscreen(&self) -> bool {
-        fullscreen(self.hwnd)
-    }
-}
-
-/// Whether a fullscreen app has the screen under the cursor; `own` is the asking window.
+/// Whether a fullscreen app (a video, a game, a slideshow) has the screen under the cursor, so
+/// the hook's gestures stay out of its way; `own` is the asking window. Read at the moment of the
+/// gesture rather than tracked, so nothing runs meanwhile.
 pub(crate) fn fullscreen(own: Option<HWND>) -> bool {
     let fullscreen = own.is_some_and(win32::fullscreen_over);
     if fullscreen {

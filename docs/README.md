@@ -24,6 +24,7 @@ not explain. Most code changes need no internal doc change. Follow the
 [documentation rules](../AGENTS.md#documentation) before adding one.
 
 - [GPUI traps](./internals/gpui.md)
+- [Features and the island](./internals/features.md): how a feature is wired in, and adding one
 - [Findings: focus and input](./internals/findings.md)
 - [Notch](./internals/notch.md)
 - [Glass](./internals/glass.md)

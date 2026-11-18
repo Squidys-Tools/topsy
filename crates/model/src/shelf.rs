@@ -1,6 +1,6 @@
 //! The shelf: files parked on the island.
 //!
-//! A plain model with no UI or OS calls, so it can be unit tested. `main.rs` renders it
+//! A plain model with no UI or OS calls, so it can be unit tested. The island renders it
 //! and `win32::drag_files_out` drags items back out. Items are references to the original
 //! files, not copies.
 

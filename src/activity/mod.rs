@@ -102,7 +102,7 @@ impl State {
 
     fn show_download(&mut self, key: &Key, path: PathBuf) -> Effect {
         log(&format!("activity {key:?} shown in folder"));
-        crate::chip::show_in_folder(path);
+        crate::island::chip::show_in_folder(path);
         self.list.remove(key);
         Effect::Changed(Instant::now())
     }

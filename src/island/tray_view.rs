@@ -5,8 +5,9 @@ use std::time::Instant;
 
 use gpui::{ClickEvent, Context, Div, ScrollWheelEvent, div, prelude::*, px, rgb, rgba};
 
+use crate::island::PEEK_LINGER;
 use crate::widgets::{self, Effect};
-use crate::{Island, Mode, PEEK_LINGER, activity, frame, hud, now_playing, win32};
+use crate::{Island, Mode, activity, frame, hud, now_playing, win32};
 use model::activity::{Activity, Key};
 use model::tray_cause::Sections;
 
@@ -322,9 +323,10 @@ impl Island {
             );
             let chips: Vec<_> = (self.shelf.items().iter().enumerate())
                 .map(|(i, item)| {
-                    let left = i as f32 * (crate::chip::CHIP.0 + GAP) + x;
-                    let right = left + crate::chip::CHIP.0;
-                    let seen = (right.min(row) - left.max(0.0)).max(0.0) / crate::chip::CHIP.0;
+                    let left = i as f32 * (crate::island::chip::CHIP.0 + GAP) + x;
+                    let right = left + crate::island::chip::CHIP.0;
+                    let seen =
+                        (right.min(row) - left.max(0.0)).max(0.0) / crate::island::chip::CHIP.0;
                     let opacity = if row <= 0.0 || seen >= 1.0 {
                         1.0
                     } else {

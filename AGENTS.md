@@ -106,16 +106,19 @@ they decide. Work that blocks or pumps messages goes back out to a `cx.spawn` ta
   only tests use is `#[cfg(any(test, feature = "test-support"))]`, so the app's tests can reach it too.
 - `src/win32/`: Win32 glue GPUI doesn't expose, a file per job (`window`, `dragdrop`, `hook`, `shell`, `menu`,
   `clipboard`, …).
-- `src/main.rs`: the island view. `src/app.rs`: the app's wiring. `src/config.rs`: every `TOPSY_*` switch.
-- One file or folder per feature beside them: `activity/`, `basket/`, `clipboard/`, `transform/`, `tray.rs`,
-  `hud.rs`, `media.rs` and `now_playing.rs`, `settings.rs` and `settings_window.rs`. Each module's doc comment says
-  what it owns.
+- `src/island/`: the island view, its modes and springs, the shelf's chips, the tray's layout and pages, and the
+  entry points features reach it through. `src/app.rs`: the app's wiring. `src/config.rs`: every `TOPSY_*` switch.
+- One file or folder per feature beside them: `activity/`, `basket/`, `clipboard/`, `now_playing/`, `settings/`,
+  `transform/`, `widgets/`, `hud.rs`, `tray.rs` (the tray icon). Each module's doc comment says what it owns. A
+  feature keeps its logic on its own types and never adds methods to `Island`; how a feature is wired in, and every
+  place a new one touches, is in [Features](docs/internals/features.md).
 
 ### Structure
 
 - No file over 500 lines. When a file nears the limit, split it by job, not by size.
-- `scripts/check-structure.ps1` (in `check.ps1` and CI) enforces that and the purity of `crates/model`. `main.rs`
-  has a ceiling of its own there that only comes down: lower it when the file shrinks, never raise it.
+- `scripts/check-structure.ps1` (in `check.ps1` and CI) enforces that, that only `src/island/` and `src/app.rs`
+  add methods to `Island`, and the purity of `crates/model`. `src/island/mod.rs` has a ceiling of its own there
+  that only comes down: lower it when the file shrinks, never raise it.
 
 ## Rust
 

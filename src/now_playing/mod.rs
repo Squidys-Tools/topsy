@@ -3,6 +3,8 @@
 //! the peek's hint (art and title). The rules are in `model::media`, the system session in
 //! `media`.
 
+pub(crate) mod session;
+
 use std::cell::Cell;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -14,7 +16,7 @@ use gpui::{
 };
 
 use crate::icons::{self, Icon};
-use crate::media::{self, Button};
+use crate::now_playing::session::{self as media, Button};
 use crate::win32::meter::Meter;
 use crate::{Island, icon, log};
 use model::levels::{self, BARS, Levels};
@@ -274,7 +276,7 @@ impl Media {
     ) -> Option<Div> {
         let title = self.now.hint()?;
         let hint = div()
-            .w(px(crate::PEEK.0))
+            .w(px(crate::frame::PEEK.0))
             .flex_shrink_0()
             .px(px(14.0))
             .flex()

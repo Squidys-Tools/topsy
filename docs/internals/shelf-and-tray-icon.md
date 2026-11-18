@@ -22,7 +22,7 @@ Decisions behind [the shelf](../user/shelf.md) and [the tray icon and settings](
 - The icon lives on its own thread with a hidden window, re-adds itself when Explorer restarts
   (`TaskbarCreated`), and is removed on Quit.
 - **One list of settings.** The menu and the settings window are both built from the list in
-  `src/settings.rs`, and each reads its value from where it is saved, so a switch in one shows in the other. A new
+  `src/settings/mod.rs`, and each reads its value from where it is saved, so a switch in one shows in the other. A new
   toggle is a variant there, an arm in each of its matches, and what the island does about it
   (`Island::on_setting`).
 - **Start with Windows and Send to are never created by themselves.** Each is off until turned on. At launch the

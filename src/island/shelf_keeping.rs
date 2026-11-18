@@ -5,7 +5,8 @@ use std::path::PathBuf;
 
 use gpui::Context;
 
-use crate::{Island, chip, icon, log, tray};
+use crate::island::chip;
+use crate::{Island, icon, log, tray};
 use model::shelf;
 
 impl Island {

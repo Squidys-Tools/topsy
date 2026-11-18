@@ -1,14 +1,17 @@
 # Keeps the source tree in the shape AGENTS.md describes (Structure). CI runs it, and so does check.ps1.
 #   1. No file under src/ or crates/ grows past $MaxLines. A file over it today has its own ceiling in
 #      $Ceilings, which may only come down: lower it when the file shrinks, never raise it.
-#   2. crates/model stays pure: no Win32, no GPUI, no clock and no environment, so its rules are
+#   2. Only the island's own code (src/island/, and src/app.rs, which wires it up) adds methods
+#      to Island. A feature keeps its logic on its own types and reaches the island through an
+#      entry point there (docs/internals/features.md).
+#   3. crates/model stays pure: no Win32, no GPUI, no clock and no environment, so its rules are
 #      tested by driving time and input directly. Its Cargo.toml keeps gpui and windows out; this
 #      keeps out the clock and the environment, which std always offers.
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot
 $MaxLines = 500
 $Ceilings = @{
-    'src/main.rs' = 318
+    'src/island/mod.rs' = 299
 }
 
 $failures = @()
@@ -25,6 +28,14 @@ foreach ($file in Get-ChildItem (Join-Path $root 'src'), (Join-Path $root 'crate
 foreach ($rel in $Ceilings.Keys) {
     if (-not (Test-Path (Join-Path $root $rel))) {
         $failures += "$rel is gone: remove its ceiling from scripts/check-structure.ps1"
+    }
+}
+
+foreach ($file in Get-ChildItem (Join-Path $root 'src') -Recurse -Filter *.rs) {
+    $rel = $file.FullName.Substring($root.Length + 1).Replace('\', '/')
+    if ($rel -like 'src/island/*' -or $rel -eq 'src/app.rs') { continue }
+    if (Select-String -LiteralPath $file.FullName -Pattern '^impl Island\b' -Quiet) {
+        $failures += "$rel adds methods to Island: keep them on the feature's own types, see docs/internals/features.md"
     }
 }
 

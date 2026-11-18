@@ -13,8 +13,9 @@ use crate::log::LogErr;
 use model::shelf::{Item, Kind};
 use windows::Win32::Foundation::HWND;
 
+use crate::island::{COLLAPSE_AFTER_LEAVE, COLLAPSE_AFTER_RELEASE};
 use crate::win32::{self, DragOutcome, MenuEntry};
-use crate::{COLLAPSE_AFTER_LEAVE, COLLAPSE_AFTER_RELEASE, Island, archive, log};
+use crate::{Island, archive, log};
 
 /// How far (logical pixels) a pressed chip must be dragged before it becomes a drag out.
 pub(crate) const DRAG_OUT_THRESHOLD: f32 = 6.0;

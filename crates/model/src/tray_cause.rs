@@ -1,6 +1,6 @@
 //! Why the island's tray is open, what it shows for it, and which events fold it away early.
 //!
-//! Pure model (no OS calls, no clock reads): `main.rs` maps hook and drop-target
+//! Pure model (no OS calls, no clock reads): the island maps hook and drop-target
 //! events onto it, so the rules are unit-testable.
 
 use std::time::Duration;
