@@ -14,9 +14,10 @@ draws the tint and rim on top. A second such pane is the page capsule under the 
   (1.45x, Notchy's value for Droppy's look) and a Gaussian blur of our choosing (10 logical px). The host backdrop's
   blur is fixed and heavier than Droppy's; this one lets what is behind stay recognisable. The visual must be made for
   a window with live preview turned off, so a cloaked tool window of topsy's own hosts it. Ordinal 164 lost an
-  argument before build 20000, so the path is only tried where the Windows 11 host backdrop attribute is accepted. It
-  cost DWM about 0.5% of the GPU over content repainting every 600 ms, against 0.1% for the host backdrop, and nothing
-  in topsy's process.
+  argument before build 20000, so the path is only tried where the Windows 11 host backdrop attribute is accepted. The copy
+  spans every monitor, so it is clipped to the notch plus the blur's reach *before* the blur: blurring it whole cost
+  a quarter of an integrated GPU whenever anything on screen moved. Clipped, the open tray over content changing at
+  30 fps costs no measurable GPU over the desktop alone, as the host backdrop does.
 - **Host backdrop (the fallback, `TOPSY_GLASS=host`).** Windows.UI.Composition's host backdrop brush (the desktop
   behind, blurred by the system, enabled by `DWMWA_USE_HOSTBACKDROPBRUSH`) through the same saturation, a Direct2D
   colour matrix the compositor runs. Its blur can be added to but never lightened, and Windows.UI.Composition takes
