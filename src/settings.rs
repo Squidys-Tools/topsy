@@ -7,6 +7,8 @@ use crate::{activity, autostart, clipboard, hud, look};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Setting {
     Black,
+    /// The glass bends at its rim while the tray is open (`backdrop`).
+    Refract,
     Autostart,
     /// "Send to > topsy" in Explorer's right-click menu.
     SendTo,
@@ -20,8 +22,9 @@ pub enum Setting {
 
 impl Setting {
     /// In the order the menu and the window show them.
-    pub const ALL: [Setting; 6] = [
+    pub const ALL: [Setting; 7] = [
         Setting::Black,
+        Setting::Refract,
         Setting::Autostart,
         Setting::SendTo,
         Setting::Clipboard,
@@ -33,6 +36,7 @@ impl Setting {
     pub fn menu_label(self) -> &'static str {
         match self {
             Setting::Black => "&Black notch",
+            Setting::Refract => "Li&quid glass",
             Setting::Autostart => "Start with &Windows",
             Setting::SendTo => "Show in Sen&d to",
             Setting::Clipboard => "Clipboard &history",
@@ -49,6 +53,7 @@ impl Setting {
     pub fn is_on(self) -> bool {
         match self {
             Setting::Black => look::is_black(),
+            Setting::Refract => look::is_refracting(),
             Setting::Autostart => autostart::is_enabled(),
             Setting::SendTo => sendto::is_enabled(),
             Setting::Clipboard => clipboard::is_enabled(),
@@ -60,6 +65,7 @@ impl Setting {
     pub fn set(self, on: bool) -> windows::core::Result<()> {
         match self {
             Setting::Black => look::set_black(on),
+            Setting::Refract => look::set_refracting(on),
             Setting::Autostart if on => std::env::current_exe()
                 .map_err(windows::core::Error::from)
                 .and_then(|exe| autostart::enable(&exe)),

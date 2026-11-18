@@ -50,7 +50,8 @@ impl Render for Basket {
         self.frame.sync(
             self.width.value,
             self.height.value,
-            window.scale_factor(),
+            self.height.target,
+            window,
             cx,
         );
         let viewport = window.viewport_size();

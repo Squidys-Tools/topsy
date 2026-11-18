@@ -17,6 +17,7 @@ row here.
 | `TOPSY_TRANSFORM=<path;path>` | Open the Transform panel on these files at launch. |
 | `TOPSY_STATE=<path>` | The shelf's save file, `%LOCALAPPDATA%\topsy\shelf.txt` by default (the basket's sits beside it). Set empty to not save. |
 | `TOPSY_CLIPBOARD=<dir>` | Where clipboard history is kept, `%LOCALAPPDATA%\topsy\clipboard` by default. Set empty for none. A run with `TOPSY_STATE` set keeps none unless this says where, so a live check never touches the real history. |
+| `TOPSY_REFRACT=1\|0` | Bend the glass's rim while the tray is open, or don't, whatever the *Liquid glass* setting says. See [Glass](../internals/glass.md). |
 | `TOPSY_GLASS=host\|acrylic\|tint\|solid\|clear` | Force a fill and ignore the *Black notch* setting; the default is the notch-shaped live blur, and `host` holds it to the system's host backdrop. See [Glass](../internals/glass.md). |
 
 The developer's own topsy may be running, and other worktrees run theirs. Stop only a PID you started; never

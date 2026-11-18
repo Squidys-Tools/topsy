@@ -17,6 +17,9 @@ pub struct Config {
     /// What the island folds back to: `TOPSY_IDLE=peek|tray` keeps it down for the live checks,
     /// and without the mouse hook nothing could reveal it, so it peeks.
     pub rest: Mode,
+    /// `TOPSY_REFRACT=1|0`: bend the glass's rim while the tray is open, or don't, whatever the
+    /// *Liquid glass* setting says.
+    pub refract: Option<bool>,
     /// `TOPSY_NO_HOOK`: no global mouse hook, to measure idle cost without hook traffic.
     pub no_hook: bool,
     /// `TOPSY_NO_TRAY`: no notification-area icon.
@@ -55,6 +58,7 @@ impl Config {
                 "clear" => Glass::Clear,
                 _ => Glass::Blur,
             }),
+            refract: text("TOPSY_REFRACT").map(|v| v != "0"),
             rest: match text("TOPSY_IDLE").as_deref() {
                 Some("peek") => Mode::Peek,
                 Some("tray") => Mode::Tray,
@@ -103,6 +107,9 @@ mod tests {
         let c = config(&[]);
         assert_eq!(c.rest, Mode::Hidden);
         assert_eq!(c.glass, None);
+        assert_eq!(c.refract, None);
+        assert_eq!(config(&[("TOPSY_REFRACT", "0")]).refract, Some(false));
+        assert_eq!(config(&[("TOPSY_REFRACT", "1")]).refract, Some(true));
         assert!(!c.no_hook && !c.no_tray && !c.no_media && !c.no_keys && !c.demo && !c.log);
         assert!(config(&[("TOPSY_NO_MEDIA", "1")]).no_media);
         assert!(c.seed.is_none() && c.exit_after.is_none() && c.state.is_none());

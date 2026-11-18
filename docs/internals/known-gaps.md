@@ -17,8 +17,9 @@ Keep this honest: remove a gap you close, add one you find and leave.
 - **Glass.** The fill, ears and rim are matched to Droppy's screenshots by sampling them, and compared over a
   vivid blue and a purple backdrop, not side by side with Droppy itself. The live glass rests on undocumented dwmapi
   ordinals, tested on build 26300 only: another build could accept them and draw nothing (one other project reports
-  that), and nothing detects it; `TOPSY_GLASS=host` is the way out. No luminosity layer or noise, and no Liquid Glass
-  refraction at the edges. Not verified: Windows 10
+  that), and nothing detects it; `TOPSY_GLASS=host` is the way out. No luminosity layer. The refraction (off by
+  default) costs a little GPU for as long as the tray is open, even over a still desktop, and its rim updates 10
+  times a second. Not verified: Windows 10
   (falls back to acrylic with square corners), behaviour with "Transparency effects" turned off, and light
   backdrops.
 - **Motion.** Resizing a window every frame is not profiled, and the window trails the spring by a frame. No

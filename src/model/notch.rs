@@ -55,9 +55,45 @@ impl Notch {
     }
 }
 
+/// The open glass is solid black down to this share of its height, as Droppy's is.
+const BLACK_UNTIL: f32 = 0.38;
+
+/// The tint over the glass of a body `h` tall on its way to `target`: solid black down to the
+/// returned share of the body (never less than `at_least` pixels), then fading to the returned
+/// colour at its foot, which reaches `floor` (0xRRGGBBAA) once open. The black is measured on
+/// the height the body is growing to, so the glass rises out of it rather than it sliding down.
+pub fn tint(h: f32, target: f32, at_least: f32, floor: u32) -> (f32, u32) {
+    let h = h.max(1.0);
+    let reach = target.max(h);
+    let black_px = (reach * BLACK_UNTIL).max(at_least).min(reach);
+    let glass_share = if reach > black_px {
+        ((h - black_px) / (reach - black_px)).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let alpha = 255.0 - glass_share * (255.0 - (floor & 0xff) as f32);
+    (
+        (black_px / h).min(1.0),
+        (floor & 0xffffff00) | alpha.round() as u32,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_glass_rises_out_of_the_black_as_the_tray_opens() {
+        let floor = 0x00000070;
+        assert_eq!(tint(32.0, 32.0, 32.0, floor), (1.0, 0x000000ff));
+        let (until, bottom) = tint(118.0, 118.0, 32.0, floor);
+        assert!((until - BLACK_UNTIL).abs() < 1e-6);
+        assert_eq!(bottom, floor);
+        // Halfway open: the black already reaches as far down as it will, the foot half clear.
+        let (until, bottom) = tint(80.0, 118.0, 32.0, floor);
+        assert!((until * 80.0 - 118.0 * BLACK_UNTIL).abs() < 1e-3);
+        assert!(bottom & 0xff > 0x70 && bottom & 0xff < 0xff);
+    }
 
     #[test]
     fn the_window_leaves_room_for_an_ear_each_side() {

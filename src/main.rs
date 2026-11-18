@@ -357,8 +357,8 @@ impl Render for Island {
         if moving {
             window.request_animation_frame();
         }
-        let (width, height) = (self.width.value, self.height.value);
-        self.frame.sync(width, height, window.scale_factor(), cx);
+        let (width, height, target) = (self.width.value, self.height.value, self.height.target);
+        self.frame.sync(width, height, target, window, cx);
         // The window resizes asynchronously, a moment after this frame. Draw to the size it
         // really has, so the notch's edge always lines up with the window's (and the blur's).
         let viewport = window.viewport_size();

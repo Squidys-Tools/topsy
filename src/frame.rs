@@ -3,14 +3,14 @@
 //! The OS window is always exactly the shape (docs/internals/notch.md, glass.md).
 
 use gpui::{
-    AnyElement, App, Background, Div, ExternalPaths, Pixels, Size, canvas, div, linear_color_stop,
-    linear_gradient, point, prelude::*, px, rgb, rgba,
+    AnyElement, App, Background, Div, ExternalPaths, Pixels, Size, Window, canvas, div,
+    linear_color_stop, linear_gradient, point, prelude::*, px, rgb, rgba,
 };
 use windows::Win32::Foundation::HWND;
 
-use crate::backdrop::{self, Backdrop, Outline};
-use crate::model::notch::Notch;
-use crate::{Island, log, win32};
+use crate::backdrop::{self, Backdrop, Outline, Refract, Shape};
+use crate::model::notch::{Notch, tint};
+use crate::{Island, config, log, look, win32};
 
 /// The notch's body when it peeks down from the top edge, and when it holds the tray.
 pub const PEEK: (f32, f32) = (200.0, 32.0);
@@ -26,7 +26,6 @@ pub const ACRYLIC_TINT: u32 = 0x0c101c8c;
 /// Droppy's recipe, measured from its screenshots: solid black for the top 38% of the notch,
 /// then fading to about 44% black at the bottom edge, so the backdrop's own colour shows
 /// through, darkened but not greyed. The basket is filled the same way, to a darker floor.
-const BLACK_UNTIL: f32 = 0.38;
 const GLASS_FLOOR: u32 = 0x00000070;
 /// The basket's floor, sampled from Droppy's: about 88% black at the bottom edge.
 pub const BASKET_FLOOR: u32 = 0x000000e0;
@@ -120,6 +119,10 @@ pub struct Frame {
     applied: Option<Applied>,
     /// How dark the glass is at the bottom edge (0xRRGGBBAA).
     floor: u32,
+    /// The "Liquid glass" setting: bend the glass's rim while the tray is out.
+    refract: bool,
+    /// The glass is bending and carries the tint, so the body is drawn without one.
+    lensed: bool,
 }
 
 impl Frame {
@@ -141,6 +144,8 @@ impl Frame {
             drawn_scale: scale,
             applied: None,
             floor: GLASS_FLOOR,
+            refract: config::get().refract.unwrap_or_else(look::is_refracting),
+            lensed: false,
         }
     }
 
@@ -210,6 +215,11 @@ impl Frame {
         }
     }
 
+    pub fn set_refract(&mut self, on: bool) {
+        self.refract = config::get().refract.unwrap_or(on);
+        self.applied = None;
+    }
+
     /// The outline that fills a window of `viewport`'s size.
     pub fn outline(&self, viewport: Size<Pixels>) -> Notch {
         let ears = !self.is_floating() && self.look().has_ears();
@@ -234,7 +244,8 @@ impl Frame {
     /// The resize runs in a foreground task rather than here: this is called from `render`,
     /// and a resize mid-draw would reach GPUI's window handler where it cannot update the
     /// window (see [`win32::move_window`]).
-    pub fn sync(&mut self, width: f32, height: f32, drawn_scale: f32, cx: &mut App) {
+    pub fn sync(&mut self, width: f32, height: f32, target: f32, window: &Window, cx: &mut App) {
+        let drawn_scale = window.scale_factor();
         if drawn_scale != self.drawn_scale {
             // GPUI has moved the window to the size Windows suggested for the new DPI.
             self.drawn_scale = drawn_scale;
@@ -311,11 +322,26 @@ impl Frame {
                 radius: r,
             }
         };
+        // The bend runs from the moment the tray leaves the peek until it is back.
+        self.lensed = self.refract
+            && blur
+            && !floating
+            && notch.height > PEEK.1
+            && shape.as_ref().is_some_and(Shape::refracts);
+        let refract = self.lensed.then(|| {
+            let (w, h) = Notch::new(TRAY.0, TRAY.1, true).window_size();
+            let (black_until, bottom) = tint(notch.height, target, PEEK.1, self.floor);
+            Refract {
+                open: (px(w), px(h)),
+                black_until: black_until * size.1 as f32,
+                bottom: (bottom & 0xff) as f32 / 255.0,
+            }
+        });
         cx.spawn(async move |_| {
             win32::move_window(hwnd, origin.0, origin.1, size.0, size.1, appearing);
             win32::set_clip(hwnd, clip);
             if let Some(shape) = shape {
-                shape.set(origin, s, glass);
+                shape.set(origin, s, glass, refract);
             }
         })
         .detach();
@@ -348,20 +374,11 @@ impl Frame {
 
         // Black at the top, giving way to glass near the bottom: Droppy's dynamic glass, on the
         // basket as on the notch. The closed notch is black all the way down, like the
-        // real one. The band is measured on the height the body is growing to, so the glass
-        // rises out of the black as it opens rather than the black sliding down with it.
+        // real one. While the glass bends, the lens draws this tint instead.
         let h = notch.height.max(1.0);
-        let reach = target_height.max(h);
-        let black_px = (reach * BLACK_UNTIL).max(PEEK.1).min(reach);
-        let black_until = (black_px / h).min(1.0);
-        let glass_share = if reach > black_px {
-            ((h - black_px) / (reach - black_px)).clamp(0.0, 1.0)
-        } else {
-            0.0
-        };
+        let black_until = tint(h, target_height, PEEK.1, self.floor).0;
         let edge_fill = |floor: u32| {
-            let alpha = 255.0 - glass_share * (255.0 - (floor & 0xff) as f32);
-            let bottom = (floor & 0xffffff00) | alpha.round() as u32;
+            let (black_until, bottom) = tint(h, target_height, PEEK.1, floor);
             linear_gradient(
                 180.0,
                 linear_color_stop(black, black_until),
@@ -369,6 +386,7 @@ impl Frame {
             )
         };
         let fill = match look {
+            Glass::Blur | Glass::HostBlur if self.lensed => rgba(0x00000000).into(),
             Glass::Blur | Glass::HostBlur | Glass::Tint => edge_fill(self.floor),
             Glass::Acrylic => edge_fill(0x00000000),
             Glass::Solid => black.into(),
@@ -396,7 +414,7 @@ impl Frame {
         // softer than a circle, as Droppy's are: a cubic with its handles halfway in.
         let ear = notch.ear;
         let slot = notch.ear_slot;
-        let rim_from = black_px.min(h);
+        let rim_from = black_until * h;
         let rim = look != Glass::Solid && notch.height >= PEEK.1;
         let shapes = canvas(
             |_, _, _| {},

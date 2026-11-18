@@ -87,6 +87,10 @@ impl Island {
                     basket.update(cx, |basket, cx| basket.set_black(on, cx));
                 }
             }
+            Setting::Refract => {
+                self.frame.set_refract(on);
+                cx.notify();
+            }
             // Switched off, what is on screen goes now.
             Setting::LiveActivities => self.activities_changed(std::time::Instant::now(), cx),
             Setting::Autostart | Setting::SendTo | Setting::Clipboard | Setting::VolumeHud => {}

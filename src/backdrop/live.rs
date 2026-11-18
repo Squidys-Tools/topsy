@@ -6,7 +6,7 @@
 //! shifted so the part behind the window lines up with it. Unlike the host backdrop, its blur is
 //! ours to choose. A faint fixed grain over it, as on acrylic, keeps large flat areas from
 //! banding and reads as material. DWM does the work; topsy only moves the visual when the window
-//! moves.
+//! moves. Above it sits the refraction ([`Lens`]), drawn only while the tray is open.
 
 use std::cell::Cell;
 use std::ffi::c_void;
@@ -32,27 +32,28 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::{BOOL, Error, HRESULT, IUnknown, Interface, PCSTR, s, w};
 use windows_numerics::{Vector2, Vector4};
 
-use super::{Outline, SATURATION};
+use super::lens::Lens;
+use super::{Outline, Refract, SATURATION};
 use crate::log::LogErr;
 
 /// The blur's standard deviation in logical pixels: light enough that what is behind stays
 /// recognisable through the glass, as it does through Droppy's.
-const BLUR: f32 = 4.0;
+pub(super) const BLUR: f32 = 4.0;
 /// The grain: how much of the noise is added, how fine (cycles per physical pixel), and how
 /// far it reaches, which only has to cover the largest window.
-const GRAIN: f32 = 0.3;
-const GRAIN_FREQUENCY: f32 = 0.8;
-const GRAIN_REACH: f32 = 8192.0;
+pub(super) const GRAIN: f32 = 0.3;
+pub(super) const GRAIN_FREQUENCY: f32 = 0.8;
+pub(super) const GRAIN_REACH: f32 = 8192.0;
 /// What one octave of fractal-sum turbulence averages, so the grain can be centred on zero.
-const GRAIN_MEAN: f32 = 0.39;
+pub(super) const GRAIN_MEAN: f32 = 0.39;
 /// `DWM_CLOAKED_APP`.
 const CLOAKED_APP: u32 = 2;
 /// `WCA_EXCLUDED_FROM_LIVEPREVIEW`, for `SetWindowCompositionAttribute`.
 const WCA_EXCLUDED_FROM_LIVEPREVIEW: u32 = 13;
 
-type CreateSharedMultiWindowVisual =
+pub(super) type CreateSharedMultiWindowVisual =
     unsafe extern "system" fn(HWND, *mut c_void, *mut *mut c_void, *mut isize) -> HRESULT;
-type UpdateSharedMultiWindowVisual = unsafe extern "system" fn(
+pub(super) type UpdateSharedMultiWindowVisual = unsafe extern "system" fn(
     isize,
     *const HWND,
     u32,
@@ -74,13 +75,13 @@ type SetWindowCompositionAttribute =
 
 /// The device and the entry points every window's glass shares, made on first use.
 #[derive(Clone)]
-struct Shared {
-    device: IDCompositionDesktopDevice,
-    create: CreateSharedMultiWindowVisual,
-    update: UpdateSharedMultiWindowVisual,
+pub(super) struct Shared {
+    pub(super) device: IDCompositionDesktopDevice,
+    pub(super) create: CreateSharedMultiWindowVisual,
+    pub(super) update: UpdateSharedMultiWindowVisual,
     /// The visual must be made for a window with live preview turned off; a cloaked window of
     /// its own keeps that off the island.
-    host: HWND,
+    pub(super) host: HWND,
 }
 
 impl gpui::Global for Shared {}
@@ -214,7 +215,10 @@ impl Live {
             // Clips are aliased unless asked otherwise, which steps the notch's rounded corners.
             root.SetBorderMode(DCOMPOSITION_BORDER_MODE_SOFT)?;
             root.AddVisual(&copy, false, None::<&IDCompositionVisual>)?;
-            target.SetRoot(&root)?;
+            let top = device.CreateVisual()?;
+            top.AddVisual(&root, false, None::<&IDCompositionVisual>)?;
+            let lens = Lens::new(&shared, hwnd, &top, &root, &clip, cx)?;
+            target.SetRoot(&top)?;
 
             Ok(Self {
                 _target: target,
@@ -227,6 +231,7 @@ impl Live {
                     clip,
                     source,
                     blur,
+                    lens,
                     shown: Cell::new(None),
                 })),
             })
@@ -248,6 +253,7 @@ struct Parts {
     /// The copy's own clip, in virtual-screen coordinates.
     source: IDCompositionRectangleClip,
     blur: IDCompositionGaussianBlurEffect,
+    lens: Lens,
     /// The virtual screen and scale the copy was last made for.
     shown: Cell<Option<(RECT, f32)>>,
 }
@@ -262,7 +268,11 @@ impl Drop for Parts {
 pub struct LiveShape(Rc<Parts>);
 
 impl LiveShape {
-    pub fn set(&self, origin: (i32, i32), scale: f32, outline: Outline) {
+    pub fn refracts(&self) -> bool {
+        self.0.lens.works()
+    }
+
+    pub fn set(&self, origin: (i32, i32), scale: f32, outline: Outline, refract: Option<Refract>) {
         let parts = &*self.0;
         unsafe {
             let virtual_screen = RECT {
@@ -333,5 +343,6 @@ impl LiveShape {
             }
             parts.device.Commit().log_err();
         }
+        parts.lens.set(origin, scale, outline, refract);
     }
 }

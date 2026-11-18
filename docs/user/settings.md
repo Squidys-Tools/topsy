@@ -19,6 +19,8 @@ other way round.
 ## Settings
 
 - **Black notch** draws the notch plain black instead of glass. Saved in `HKCU\Software\topsy\Look`.
+- **Liquid glass** bends the glass at its edge while the tray is open, like the rim of a lens. It uses a little
+  graphics power while the tray is open. Saved in `HKCU\Software\topsy\Refract`.
 - **Start with Windows** starts topsy when you sign in. It is off until you turn it on, needs no admin rights,
   and writes `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\topsy`. If you move `topsy.exe`, the entry
   follows it the next time you start it.

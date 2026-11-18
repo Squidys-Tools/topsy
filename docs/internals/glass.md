@@ -5,7 +5,8 @@ The notch is a real blur of whatever is behind it, in its own shape. The shape f
 GPUI presents through DirectComposition as the window's *topmost* visual tree. A window can carry one more,
 non-topmost tree, which DWM composes underneath GPUI's; `src/backdrop/` puts the glass there, clipped to a rounded
 rectangle whose top corners sit above the window and are cut off with it, which gives the notch its square top. GPUI
-draws the tint and rim on top. Either kind of glass holds while the window is inactive, which the island always is.
+draws the tint and rim on top (the tint is the lens's while the glass bends, see Refraction). Either kind of glass
+holds while the window is inactive, which the island always is.
 
 - **Live (the default).** dwmapi's undocumented shared multi-window visual (ordinals 163 and 164, as VLC 4 uses
   them) is a live copy of every window on the virtual screen except the ones excluded (the island itself), updated
@@ -22,6 +23,27 @@ centred on zero so it lightens nothing, keeps large flat areas from banding, as 
   behind, blurred by the system, enabled by `DWMWA_USE_HOSTBACKDROPBRUSH`) through the same saturation, a Direct2D
   colour matrix the compositor runs. Its blur can be added to but never lightened, and Windows.UI.Composition takes
   only some built-in Direct2D effects: no displacement map, so no refraction.
+
+## Refraction (the *Liquid glass* setting)
+
+Off by default. From the moment the tray leaves the peek until it is back, the live glass bends at its rim like the
+edge of a lens (`src/backdrop/lens/`, the bend itself in `src/model/lens.rs`). DirectComposition can't displace
+pixels, so the lens needs what is behind the notch as a texture, and the only way to read a live copy back is to
+capture it: a second copy of just the region behind the notch is shown in a helper window parked beside every screen
+and captured with Windows.Graphics.Capture. Direct2D runs the live glass's recipe on it with three displacement maps
+(one per colour, for a faint fringe) and draws it into a surface above the live glass, masked to the rim band, so the
+middle stays DWM's own live glass with no lag.
+
+- **The lens draws the tint.** GPUI's tint sits above every compositor visual and would darken what the rim bends
+  in to nothing. While the lens is up the body is drawn without a fill and the lens paints the same tint, lifted over
+  the rim below the black, so the rim shows bright. Before the first captured frame it paints only that tint, so the
+  hand-over doesn't flash.
+- **A live copy is never still.** WGC sees a new frame on every composition, dirty regions included, so frames come
+  as fast as DWM composes even when nothing behind changes. The capture is held to 10 frames a second, which only
+  the rim shows: about 3% of an integrated GPU in DWM and 0.6% in topsy while the tray is open, nothing otherwise.
+  Copying only the captured region, not the virtual screen, halved DWM's share.
+- **The capture's WinRT calls pump messages** on the UI thread, so GPUI can run a frame in the middle of one and call
+  back into the lens. A call made meanwhile is taken up when the running one ends.
 
 The window-wide alternative, `SetWindowCompositionAttribute` with `ACCENT_ENABLE_ACRYLICBLURBEHIND` (what
 GPUI's own `WindowBackgroundAppearance::Blurred` does), blurs the **whole window rectangle** and ignores
