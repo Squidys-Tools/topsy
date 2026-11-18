@@ -65,7 +65,7 @@ impl Render for Basket {
             .w(viewport.width)
             .h(viewport.height)
             .text_color(rgb(0xffffff))
-            .children(self.frame.draw(viewport, content))
+            .children(self.frame.draw(viewport, self.height.target, content))
             .on_drop(cx.listener(|this, paths: &ExternalPaths, _window, cx| {
                 let names: Vec<_> = (paths.paths().iter())
                     .filter_map(|p| p.file_name())

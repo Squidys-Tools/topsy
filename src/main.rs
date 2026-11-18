@@ -379,7 +379,7 @@ impl Render for Island {
             .w(viewport.width)
             .h(viewport.height)
             .text_color(rgb(0xffffff))
-            .children(self.frame.draw(viewport, content))
+            .children(self.frame.draw(viewport, self.height.target, content))
             .on_drop(cx.listener(|this, paths: &ExternalPaths, _window, cx| {
                 let names: Vec<String> = paths
                     .paths()

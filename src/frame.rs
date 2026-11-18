@@ -300,8 +300,13 @@ impl Frame {
     }
 
     /// The body holding `content`, then the ears and rim drawn over it, for a window of
-    /// `viewport`'s size.
-    pub fn draw(&self, viewport: Size<Pixels>, content: AnyElement) -> [AnyElement; 2] {
+    /// `viewport`'s size on its way to a body `target_height` tall.
+    pub fn draw(
+        &self,
+        viewport: Size<Pixels>,
+        target_height: f32,
+        content: AnyElement,
+    ) -> [AnyElement; 2] {
         let notch = self.outline(viewport);
         let look = self.look();
         let black = rgba(0x000000ff);
@@ -321,14 +326,24 @@ impl Frame {
 
         // Black at the top, giving way to glass near the bottom: Droppy's dynamic glass, on the
         // basket as on the notch. The closed notch is black all the way down, like the
-        // real one.
+        // real one. The band is measured on the height the body is growing to, so the glass
+        // rises out of the black as it opens rather than the black sliding down with it.
         let h = notch.height.max(1.0);
-        let black_until = (h * BLACK_UNTIL).max(PEEK.1).min(h) / h;
+        let reach = target_height.max(h);
+        let black_px = (reach * BLACK_UNTIL).max(PEEK.1).min(reach);
+        let black_until = (black_px / h).min(1.0);
+        let glass_share = if reach > black_px {
+            ((h - black_px) / (reach - black_px)).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
         let edge_fill = |floor: u32| {
+            let alpha = 255.0 - glass_share * (255.0 - (floor & 0xff) as f32);
+            let bottom = (floor & 0xffffff00) | alpha.round() as u32;
             linear_gradient(
                 180.0,
                 linear_color_stop(black, black_until),
-                linear_color_stop(rgba(floor), 1.0),
+                linear_color_stop(rgba(bottom), 1.0),
             )
         };
         let fill = match look {
@@ -359,7 +374,7 @@ impl Frame {
         // softer than a circle, as Droppy's are: a cubic with its handles halfway in.
         let ear = notch.ear;
         let slot = notch.ear_slot;
-        let rim_from = h * black_until;
+        let rim_from = black_px.min(h);
         let rim = look != Glass::Solid && notch.height >= PEEK.1;
         let shapes = canvas(
             |_, _, _| {},
