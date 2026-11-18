@@ -6,17 +6,16 @@
 # usage: e2e-drag.ps1 [-Exe target\debug\topsy.exe]
 param([string]$Exe = "$PSScriptRoot\..\target\debug\topsy.exe")
 $ErrorActionPreference = 'Stop'
+Import-Module "$PSScriptRoot\lib\Topsy.psm1" -DisableNameChecking
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 Add-Type @"
 using System; using System.Runtime.InteropServices;
 public static class Native {
   [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
   [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT p);
-  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
   [DllImport("user32.dll")] public static extern void mouse_event(uint f, int dx, int dy, uint d, UIntPtr e);
   [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr e);
-  [DllImport("user32.dll")] public static extern uint GetDpiForSystem();
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
@@ -32,7 +31,6 @@ public static class Native {
   }
 }
 "@
-[void][Native]::SetProcessDPIAware()
 $LEFTDOWN = 0x2; $LEFTUP = 0x4
 
 $work = Join-Path $env:TEMP 'topsy-e2e'
@@ -46,23 +44,6 @@ $tgtLog = Join-Path $work 'target.log'
 $shots = Join-Path (Split-Path $PSScriptRoot) 'shots'
 New-Item -ItemType Directory $shots -Force | Out-Null
 
-function Wait-Log($path, $pattern, $ms) {
-    $sw = [Diagnostics.Stopwatch]::StartNew()
-    while ($sw.ElapsedMilliseconds -lt $ms) {
-        if ((Test-Path $path) -and (Select-String -Path $path -Pattern $pattern -Quiet)) { return $true }
-        Start-Sleep -Milliseconds 25
-    }
-    return $false
-}
-$scale = [Native]::GetDpiForSystem() / 96.0
-$screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-# Injected absolute moves go through the real input path (SetCursorPos does not
-# reliably reach low-level mouse hooks, which is exactly what we're testing).
-function Move-Cursor($x, $y) {
-    $nx = [int]([math]::Round($x * 65535 / ($screen.Width - 1)))
-    $ny = [int]([math]::Round($y * 65535 / ($screen.Height - 1)))
-    [Native]::mouse_event(0x8001, $nx, $ny, 0, [UIntPtr]::Zero)   # MOVE | ABSOLUTE
-}
 $srcX = 300; $srcY = 500
 $tgtX = 1000; $tgtY = 450
 function Basket-Rect {
@@ -76,10 +57,7 @@ function Shoot-Basket($name) {
     & "$PSScriptRoot\shot.ps1" -Out (Join-Path $shots $name) -Rect ($r.Left - $pad), ($r.Top - $pad), ($r.Right - $r.Left + 2 * $pad), ($r.Bottom - $r.Top + 2 * $pad)
 }
 
-$env:TOPSY_LOG = '1'
-$env:TOPSY_STATE = Join-Path $work 'shelf.state'
-# No -WindowStyle Hidden: it hides the first window the process shows, i.e. the island.
-$app = Start-Process $Exe -PassThru -RedirectStandardError $appLog
+$app = Start-Topsy -Exe $Exe -Env @{ TOPSY_LOG = '1'; TOPSY_STATE = (Join-Path $work 'shelf.state') } -Log $appLog
 $src = Start-Process powershell -ArgumentList @('-NoProfile', '-STA', '-File', "$PSScriptRoot\drag-source.ps1", $payload, $srcX, $srcY, $srcLog) -PassThru
 $failed = $null; $tgt = $null
 try {
@@ -165,7 +143,7 @@ try {
     [Native]::mouse_event($LEFTUP, 0, 0, 0, [UIntPtr]::Zero)
 } finally {
     Start-Sleep -Milliseconds 200
-    Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
+    Stop-Topsy $app
     Stop-Process -Id $src.Id -Force -ErrorAction SilentlyContinue
     if ($tgt) { Stop-Process -Id $tgt.Id -Force -ErrorAction SilentlyContinue }
 }

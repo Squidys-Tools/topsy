@@ -14,8 +14,8 @@ use super::options::{BITRATES, Options, VIDEO_TARGETS};
 use super::pictures::{self, Pictures};
 use super::video;
 use super::widgets::note;
-use crate::model::transform::{Action, Kind, result_paths};
-use crate::model::video::{
+use model::transform::{Action, Kind, result_paths};
+use model::video::{
     AudioFormat, CompressBy, CompressVideo, ConvertTarget, GifFps, GifOptions, GifWidth,
     MaxResolution, Quality, Rotate, TrimMode, TrimRange, VideoFormat, edited_extension,
 };

@@ -11,34 +11,23 @@
 # usage: check-overlay.ps1 [-Exe target\release\topsy.exe]
 param([string]$Exe = "$PSScriptRoot\..\target\release\topsy.exe")
 $ErrorActionPreference = 'Stop'
+Import-Module "$PSScriptRoot\lib\Topsy.psm1" -DisableNameChecking
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type @"
 using System; using System.Runtime.InteropServices;
 public static class N {
   [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
-  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
   [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT p);
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
-  [DllImport("user32.dll")] public static extern uint GetDpiForSystem();
-  [DllImport("user32.dll")] public static extern void mouse_event(uint f, int dx, int dy, uint d, UIntPtr e);
 }
 "@
-[void][N]::SetProcessDPIAware()
 function Owner-Pid([IntPtr]$h) { $p = 0; [void][N]::GetWindowThreadProcessId($h, [ref]$p); $p }
 function Pid-At($x, $y) {
     $pt = New-Object N+POINT; $pt.X = [int]$x; $pt.Y = [int]$y
     Owner-Pid ([N]::WindowFromPoint($pt))
 }
-$scale = [N]::GetDpiForSystem() / 96.0
-$screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
 $cx = $screen.X + $screen.Width / 2
-# Injected moves reach the low-level mouse hook; SetCursorPos does not reliably.
-function Move-Cursor($x, $y) {
-    $nx = [int]([math]::Round($x * 65535 / ($screen.Width - 1)))
-    $ny = [int]([math]::Round($y * 65535 / ($screen.Height - 1)))
-    [N]::mouse_event(0x8001, $nx, $ny, 0, [UIntPtr]::Zero)   # MOVE | ABSOLUTE
-}
 function Wait-For([scriptblock]$cond, $ms) {
     $sw = [Diagnostics.Stopwatch]::StartNew()
     while (-not (& $cond) -and $sw.ElapsedMilliseconds -lt $ms) { Start-Sleep -Milliseconds 50 }
@@ -50,10 +39,8 @@ $notchY = 16 * $scale   # the middle of the 32 px peek
 $away = @($cx, (300 * $scale))
 Move-Cursor $away[0] $away[1]
 $fgBefore = [N]::GetForegroundWindow()
-$env:TOPSY_STATE = Join-Path $env:TEMP 'topsy-overlay-state.txt'
-$env:TOPSY_LOG = '1'
 $appLog = Join-Path $env:TEMP 'topsy-overlay.log'
-$app = Start-Process $Exe -PassThru -RedirectStandardError $appLog
+$app = Start-Topsy -Exe $Exe -Env @{ TOPSY_STATE = (Join-Path $env:TEMP 'topsy-overlay-state.txt'); TOPSY_LOG = '1' } -Log $appLog
 $failures = @()
 try {
     $mine = $app.Id
@@ -100,7 +87,7 @@ try {
         Move-Cursor $away[0] $away[1]
     }
 } finally {
-    Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
+    Stop-Topsy $app
     if ($full) { Stop-Process -Id $full.Id -Force -ErrorAction SilentlyContinue }
 }
 if ($failures) { "FAIL: " + ($failures -join '; '); exit 1 }

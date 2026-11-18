@@ -16,13 +16,13 @@ use gpui::{Context, FocusHandle, Pixels, Point, RenderImage, WeakEntity};
 use windows::Win32::Foundation::HWND;
 
 use crate::frame::{self, Frame};
-use crate::model::float::{self, MARGIN};
-use crate::model::shelf::{self, Shelf};
-use crate::model::spring::{Spring, SpringConfig};
-use crate::model::tray_cause::HeldDrag;
 use crate::state::{Persistence, Writer};
 use crate::win32::{self, DragOutcome, DropEvent, HookEvent};
 use crate::{Island, log, tray};
+use model::float::{self, MARGIN};
+use model::shelf::{self, Shelf};
+use model::spring::{Spring, SpringConfig};
+use model::tray_cause::HeldDrag;
 
 /// The closed basket, measured from Droppy's: the card with its handle, buttons, stack and pill.
 pub const CARD: (f32, f32) = (208.0, 228.0);

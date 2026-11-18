@@ -12,6 +12,7 @@
 # usage: e2e-tray.ps1 [-Exe target\release\topsy.exe]
 param([string]$Exe = "$PSScriptRoot\..\target\release\topsy.exe")
 $ErrorActionPreference = 'Stop'
+Import-Module "$PSScriptRoot\lib\Topsy.psm1" -DisableNameChecking
 $Exe = (Resolve-Path $Exe).Path
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 Add-Type @"
@@ -25,10 +26,7 @@ public static class Native {
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
   [DllImport("user32.dll")] public static extern int GetClassName(IntPtr h, StringBuilder s, int n);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
-  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
-  [DllImport("user32.dll")] public static extern void mouse_event(uint f, int dx, int dy, uint d, UIntPtr e);
   [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr e);
-  [DllImport("user32.dll")] public static extern uint GetDpiForSystem();
   [DllImport("shell32.dll")] public static extern int Shell_NotifyIconGetRect(ref NOTIFYICONIDENTIFIER id, out RECT r);
   // First window of `pid` with this class (hidden ones included when `visibleOnly` is false).
   public static IntPtr WindowOf(uint pid, string cls, bool visibleOnly) {
@@ -52,8 +50,6 @@ public static class Native {
   }
 }
 "@
-[void][Native]::SetProcessDPIAware()
-$LEFTDOWN = 0x2; $LEFTUP = 0x4; $RIGHTDOWN = 0x8; $RIGHTUP = 0x10
 $RunKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 
 $work = Join-Path $env:TEMP 'topsy-e2e-tray'
@@ -64,33 +60,6 @@ $appLog = Join-Path $work 'app.log'
 $shots = Join-Path (Split-Path $PSScriptRoot) 'shots'
 New-Item -ItemType Directory $shots -Force | Out-Null
 
-function Wait-Log($pattern, $ms) {
-    $sw = [Diagnostics.Stopwatch]::StartNew()
-    while ($sw.ElapsedMilliseconds -lt $ms) {
-        if ((Test-Path $appLog) -and (Select-String -Path $appLog -Pattern $pattern -Quiet)) { return $true }
-        Start-Sleep -Milliseconds 25
-    }
-    return $false
-}
-function Log-Count($pattern) { if (Test-Path $appLog) { @(Select-String -Path $appLog -Pattern $pattern).Count } else { 0 } }
-function Wait-Until([scriptblock]$cond, $ms) {
-    $sw = [Diagnostics.Stopwatch]::StartNew()
-    while ($sw.ElapsedMilliseconds -lt $ms) { if (& $cond) { return $true }; Start-Sleep -Milliseconds 30 }
-    return $false
-}
-$scale = [Native]::GetDpiForSystem() / 96.0
-$screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-function Move-Cursor($x, $y) {
-    $nx = [int]([math]::Round($x * 65535 / ($screen.Width - 1)))
-    $ny = [int]([math]::Round($y * 65535 / ($screen.Height - 1)))
-    [Native]::mouse_event(0x8001, $nx, $ny, 0, [UIntPtr]::Zero)
-}
-function Click($x, $y, [switch]$Right) {
-    Move-Cursor $x $y; Start-Sleep -Milliseconds 150
-    $down, $up = if ($Right) { $RIGHTDOWN, $RIGHTUP } else { $LEFTDOWN, $LEFTUP }
-    [Native]::mouse_event($down, 0, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 50
-    [Native]::mouse_event($up, 0, 0, 0, [UIntPtr]::Zero)
-}
 function Tap-Key([byte]$vk) {
     [Native]::keybd_event($vk, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 60
     [Native]::keybd_event($vk, 0, 2, [UIntPtr]::Zero)
@@ -189,19 +158,20 @@ $SendToLink = Join-Path ([Environment]::GetFolderPath('SendTo')) 'topsy.lnk'
 $savedLink = if (Test-Path $SendToLink) { [IO.File]::ReadAllBytes($SendToLink) }
 Remove-Item $SendToLink -ErrorAction SilentlyContinue
 
-$env:TOPSY_LOG = '1'
-# Keep the notch down at rest, so there is something to right-click.
-$env:TOPSY_IDLE = 'peek'
-$env:TOPSY_SEED = $files -join ';'
-$env:TOPSY_STATE = Join-Path $work 'shelf.state'
-# A playing song adds a row to the tray and moves what this clicks.
-$env:TOPSY_NO_MEDIA = '1'
-$env:TOPSY_NO_WIDGETS = '1'
-$app = Start-Process $Exe -PassThru -RedirectStandardError $appLog
-[void]$app.Handle   # cache the handle, or ExitCode reads as empty once the process is gone
+$topsyEnv = @{
+    TOPSY_LOG = '1'
+    # Keep the notch down at rest, so there is something to right-click.
+    TOPSY_IDLE = 'peek'
+    TOPSY_SEED = $files -join ';'
+    TOPSY_STATE = Join-Path $work 'shelf.state'
+    # A playing song adds a row to the tray and moves what this clicks.
+    TOPSY_NO_MEDIA = '1'
+    TOPSY_NO_WIDGETS = '1'
+}
+$app = Start-Topsy -Exe $Exe -Env $topsyEnv -Log $appLog
 $failed = $null
 try {
-    if (-not (Wait-Log 'seeded 2' 8000)) { throw 'the shelf was never seeded' }
+    if (-not (Wait-Log $appLog 'seeded 2' 8000)) { throw 'the shelf was never seeded' }
     if ($null -ne (Run-Value)) { throw 'starting the app must not turn on start-with-Windows by itself' }
 
     # 1. The icon is registered with the shell (it can say where it is), promoted out of the overflow
@@ -221,12 +191,12 @@ try {
 
     # 2. Left click toggles the shelf: open, then closed again.
     Icon-Click
-    if (-not (Wait-Log 'tray Toggle \(mode Peek\)' 3000)) { throw 'left-clicking the icon did nothing' }
+    if (-not (Wait-Log $appLog 'tray Toggle \(mode Peek\)' 3000)) { throw 'left-clicking the icon did nothing' }
     if (-not (Wait-Until { Island-Open } 3000)) { throw 'the shelf did not open from the icon' }
     Start-Sleep -Milliseconds 400
     & "$PSScriptRoot\shot.ps1" -Out (Join-Path $shots 'tray-1-opened.png')
     Icon-Click
-    if (-not (Wait-Log 'tray Toggle \(mode Tray\)' 3000)) { throw 'the second click on the icon did nothing' }
+    if (-not (Wait-Log $appLog 'tray Toggle \(mode Tray\)' 3000)) { throw 'the second click on the icon did nothing' }
     if (-not (Wait-Until { -not (Island-Open) } 3000)) { throw 'the shelf did not close from the icon' }
 
     # 3. Start with Windows: the menu item writes the real Run value, and clears it again.
@@ -241,7 +211,7 @@ try {
     # 3b. Black notch: saved, applied straight away, checked in the menu, and turned back.
     Use-Menu $IconMenu 0x42 'black-on'              # B
     if (-not (Wait-Until { (Look-Value) -eq 'black' } 3000)) { throw 'Black notch did not save the look' }
-    if (-not (Wait-Log 'tray Setting\(Black, true\)' 3000)) { throw 'Black notch did not reach the island' }
+    if (-not (Wait-Log $appLog 'tray Setting\(Black, true\)' 3000)) { throw 'Black notch did not reach the island' }
     Use-Menu $IconMenu 0 'black-checked'            # look at it (checked), then Escape
     Icon-Click
     if (-not (Wait-Until { Island-Open } 3000)) { throw 'the shelf did not open from the icon' }
@@ -251,7 +221,7 @@ try {
     if (-not (Wait-Until { -not (Island-Open) } 3000)) { throw 'the shelf did not close from the icon' }
     Use-Menu $IconMenu 0x42 'black-off'             # B again
     if (-not (Wait-Until { $null -eq (Look-Value) } 3000)) { throw 'Black notch did not turn back to glass' }
-    if (-not (Wait-Log 'tray Setting\(Black, false\)' 3000)) { throw 'turning Black notch off did not reach the island' }
+    if (-not (Wait-Log $appLog 'tray Setting\(Black, false\)' 3000)) { throw 'turning Black notch off did not reach the island' }
 
     # 3c. Show in Send to: the menu item writes the SendTo shortcut to this exe, checked, and removes it.
     Use-Menu $IconMenu 0x44 'sendto-on'             # D
@@ -264,13 +234,13 @@ try {
 
     # 4. Show shelf opens it (a closed island), Clear shelf empties it.
     Use-Menu $IconMenu 0x53 'show'                  # S
-    if (-not (Wait-Log 'tray Show' 3000)) { throw 'Show shelf did nothing' }
+    if (-not (Wait-Log $appLog 'tray Show' 3000)) { throw 'Show shelf did nothing' }
     if (-not (Wait-Until { Island-Open } 3000)) { throw 'Show shelf did not open the shelf' }
     Use-Menu $IconMenu 0x43 'clear'                 # C
-    if (-not (Wait-Log 'tray ClearShelf' 3000)) { throw 'Clear shelf did nothing' }
-    if (-not (Wait-Log 'shelf now 0' 3000)) { throw 'Clear shelf did not empty the shelf' }
+    if (-not (Wait-Log $appLog 'tray ClearShelf' 3000)) { throw 'Clear shelf did nothing' }
+    if (-not (Wait-Log $appLog 'shelf now 0' 3000)) { throw 'Clear shelf did not empty the shelf' }
     Use-Menu $IconMenu 0 'empty'                    # Clear is greyed out now; look, then Escape
-    if ((Log-Count 'tray ClearShelf') -ne 1) { throw 'dismissing the menu must not clear anything' }
+    if ((Log-Count $appLog 'tray ClearShelf') -ne 1) { throw 'dismissing the menu must not clear anything' }
 
     # 5. Right-clicking the notch itself opens the same menu.
     if (Island-Open) { Icon-Click; [void](Wait-Until { -not (Island-Open) } 3000) }   # fold it so the peek is what is on screen
@@ -290,10 +260,7 @@ try {
     if ($left -gt 3) { throw "the icon is still in the notification area after Quit ($left blue pixels)" }
 
     # 7. With no tray there is no menu, so right-clicking the notch quits: the only way out.
-    $env:TOPSY_NO_TRAY = '1'
-    $app = Start-Process $Exe -PassThru -RedirectStandardError (Join-Path $work 'notray.log')
-    [void]$app.Handle
-    Remove-Item Env:\TOPSY_NO_TRAY
+    $app = Start-Topsy -Exe $Exe -Env ($topsyEnv + @{ TOPSY_NO_TRAY = '1' }) -Log (Join-Path $work 'notray.log')
     if (-not (Wait-Until { [Native]::IslandOf($app.Id) -ne [IntPtr]::Zero } 8000)) { throw 'the tray-less island never appeared' }
     Start-Sleep -Milliseconds 800
     if ([Native]::WindowOf($app.Id, 'topsy-tray', $false) -ne [IntPtr]::Zero) { throw 'TOPSY_NO_TRAY still made a tray window' }
@@ -306,7 +273,7 @@ try {
     [Native]::keybd_event(0x1B, 0, 0, [UIntPtr]::Zero); [Native]::keybd_event(0x1B, 0, 2, [UIntPtr]::Zero)
 } finally {
     Start-Sleep -Milliseconds 200
-    if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue }
+    Stop-Topsy $app
     # Leave the shell's icon flag and start-with-Windows exactly as they were found.
     if ($promoteKey) { if ($null -ne $hadPromoted) { Set-ItemProperty -Path $promoteKey -Name IsPromoted -Value $hadPromoted -Type DWord } else { Remove-ItemProperty -Path $promoteKey -Name IsPromoted -ErrorAction SilentlyContinue } }
     Move-Cursor ($screen.Width / 2) ($screen.Height / 2)

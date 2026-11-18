@@ -10,7 +10,7 @@ use gpui::{
 use super::widgets::{ACCENT, DIM, FAINT, button, primary, tile};
 use super::{Panel, RADIUS, State, THUMB, TILE, WIDTH};
 use crate::icons::{Icon, icon};
-use crate::model::transform::{Action, actions, size, summary};
+use model::transform::{Action, actions, size, summary};
 
 const PAD: f32 = 14.0;
 

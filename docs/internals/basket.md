@@ -15,7 +15,7 @@ feature page and video don't show them.
 - **The handle is a caption.** The strip between the buttons answers as a caption, so Windows does the moving
   and the basket floats from wherever it is put.
 - **Placement.** It opens on the monitor under the pointer, at that monitor's scale, moved only as far as it
-  takes to stay whole inside the work area (`src/model/float.rs`); the list grows about its centre and is kept
+  takes to stay whole inside the work area (`crates/model/src/float.rs`); the list grows about its centre and is kept
   whole too.
 - **Rename is the one time it takes the keyboard.** It comes to the front for the field and hands focus back to
   the app that had it when the field goes. The field draws no blinking caret, since nothing repaints at idle. A

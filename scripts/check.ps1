@@ -6,8 +6,8 @@ Set-Location (Split-Path $PSScriptRoot)
 
 foreach ($step in @(
         @('fmt', '--check'),
-        @('clippy', '--all-targets', '--locked', '--', '-D', 'warnings'),
-        @('test', '--locked')
+        @('clippy', '--workspace', '--all-targets', '--locked', '--', '-D', 'warnings'),
+        @('test', '--workspace', '--locked')
     )) {
     Write-Host "> cargo $($step -join ' ')"
     & cargo @step

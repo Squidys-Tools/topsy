@@ -13,7 +13,7 @@ use windows::Win32::System::SystemServices::{
 };
 use windows::Win32::UI::WindowsAndMessaging::DEVICE_NOTIFY_CALLBACK;
 
-use crate::model::hud::Power;
+use model::hud::Power;
 
 static REPORT: OnceLock<Box<dyn Fn(Power) + Send + Sync>> = OnceLock::new();
 /// `BatteryFlag`: the machine has no battery.

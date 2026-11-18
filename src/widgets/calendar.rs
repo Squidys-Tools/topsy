@@ -4,15 +4,15 @@
 //! `model::calendar`.
 
 use gpui::{
-    AnyElement, ClickEvent, Context, Div, FontWeight, MouseButton, MouseDownEvent, div, prelude::*,
-    px, rgb, rgba,
+    AnyElement, ClickEvent, Context, Div, FontWeight, MouseButton, div, prelude::*, px, rgb, rgba,
 };
 
+use super::keep_press;
 use crate::Island;
 use crate::hud::RED;
 use crate::icons::{self, Icon};
-use crate::model::calendar::{Browse, Date, Weekday, YearMonth, week_from};
 use crate::win32::clock;
+use model::calendar::{Browse, Date, Weekday, YearMonth, week_from};
 
 pub const WIDTH: f32 = 184.0;
 const HEADER: f32 = 15.0;
@@ -35,26 +35,18 @@ impl State {
     pub(crate) fn reset(&mut self) {
         self.browse = Browse::default();
     }
-}
 
-impl Island {
-    pub(crate) fn calendar_card(&self, cx: &mut Context<Self>) -> AnyElement {
+    pub(super) fn card(&self, cx: &mut Context<Island>) -> AnyElement {
         let today = clock::today();
         let first = clock::first_weekday();
         let this_month = today.year_month();
-        let shown = self.widgets.calendar.browse.shown(this_month);
+        let shown = self.browse.shown(this_month);
         let week = week_from(first);
         div()
             .size_full()
             .flex()
             .flex_col()
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|this, _: &MouseDownEvent, _window, cx| {
-                    this.press = None;
-                    cx.stop_propagation();
-                }),
-            )
+            .on_mouse_down(MouseButton::Left, cx.listener(keep_press))
             .child(header(today, shown, cx))
             .child(row(INITIALS).children(week.map(|day| {
                 cell(INITIALS)

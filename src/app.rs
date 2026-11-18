@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use gpui::{
     App, Application, Bounds, Context, Entity, Pixels, TitlebarOptions, Window,
@@ -16,15 +16,15 @@ use windows::Win32::Foundation::HWND;
 use crate::basket::Basket;
 use crate::frame::{ACRYLIC_TINT, Frame, Glass, PEEK};
 use crate::log::LogErr;
-use crate::model::edge::EdgeZone;
-use crate::model::jiggle::JiggleConfig;
-use crate::model::tray_cause::TrayCause;
 use crate::settings::Setting;
-use crate::settings_window::{self, Change, OnChange};
+use crate::settings::window::{self as settings_window, Change, OnChange};
 use crate::tray::{self, TrayEvent};
 use crate::win32::DropEvent;
 use crate::win32::sendto;
-use crate::{Island, Mode, autostart, backdrop, config, log, look, state, win32};
+use crate::{Island, Mode, activity, autostart, backdrop, config, log, look, state, win32};
+use model::edge::EdgeZone;
+use model::jiggle::JiggleConfig;
+use model::tray_cause::TrayCause;
 
 impl Island {
     fn on_tray(&mut self, event: TrayEvent, cx: &mut Context<Self>) {
@@ -42,7 +42,8 @@ impl Island {
                     island
                         .update(cx, |island, cx| match change {
                             Change::Setting(setting, on) => island.on_setting(setting, on, cx),
-                            Change::Widgets(lineup) => island.set_lineup(lineup, cx),
+                            Change::Widgets(lineup) => island
+                                .update_widgets(cx, |widgets, _, _| widgets.set_lineup(lineup)),
                         })
                         .log_err();
                 });
@@ -91,7 +92,9 @@ impl Island {
                 }
             }
             // Switched off, what is on screen goes now.
-            Setting::LiveActivities => self.activities_changed(std::time::Instant::now(), cx),
+            Setting::LiveActivities => {
+                self.update_activities(cx, |_| Some(activity::Effect::Changed(Instant::now())))
+            }
             Setting::Autostart | Setting::SendTo | Setting::Clipboard | Setting::VolumeHud => {}
         }
     }
@@ -288,7 +291,7 @@ pub fn run() {
         });
         crate::now_playing::start(cx, &island);
         crate::hud::start(cx, &island);
-        crate::activity::start(cx, &island);
+        activity::start(cx, &island);
         if let Some(files) = config.transform.clone() {
             crate::transform::open(cx, &island, files);
         }

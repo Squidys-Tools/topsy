@@ -4,18 +4,18 @@
 //! card is on screen and says so with a sound and a passing Live Activity; the countdown itself
 //! is redrawn only while the card is drawn.
 
-use std::cell::Cell;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    AnyElement, ClickEvent, Context, Div, FontWeight, MouseButton, MouseDownEvent, Rgba, Stateful,
-    div, prelude::*, px, rgb, rgba,
+    AnyElement, ClickEvent, Context, Div, FontWeight, MouseButton, Rgba, Stateful, div, prelude::*,
+    px, rgb, rgba,
 };
 
+use super::{Effect, keep_press};
+use crate::booking::Booking;
 use crate::icons::{self, Icon};
-use crate::model::activity::{Activity, Key};
-use crate::model::pomodoro::{Clock, Phase, Pomodoro, clock};
 use crate::{Island, log};
+use model::pomodoro::{Clock, Phase, Pomodoro, clock};
 
 pub const WIDTH: f32 = 176.0;
 const ORANGE: u32 = 0xff9f0a;
@@ -28,18 +28,10 @@ const STEP: f32 = 22.0;
 #[derive(Default)]
 pub struct State {
     timer: Pomodoro,
-    /// A redraw is booked for the countdown's next second.
-    ticking: Cell<bool>,
+    /// The countdown's next second.
+    ticking: Booking,
     /// Bumped on every change, so only the latest end timer finishes the phase.
     generation: u64,
-}
-
-impl State {
-    /// Switched off: a running timer stops, and its end is never shown.
-    pub fn stop(&mut self) {
-        self.timer.reset();
-        self.generation += 1;
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -50,12 +42,18 @@ enum Press {
     Adjust(i32),
 }
 
-impl Island {
-    pub(crate) fn pomodoro_card(&self, cx: &mut Context<Self>) -> AnyElement {
-        let timer = &self.widgets.pomodoro.timer;
+impl State {
+    /// Switched off: a running timer stops, and its end is never shown.
+    pub fn stop(&mut self) {
+        self.timer.reset();
+        self.generation += 1;
+    }
+
+    pub(super) fn card(&self, cx: &mut Context<Island>) -> AnyElement {
+        let timer = &self.timer;
         let now = Instant::now();
         if let Some(after) = timer.until_next_second(now) {
-            self.pomodoro_tick(after, cx);
+            self.tick(after, cx);
         }
         let running = match timer.clock() {
             Clock::Running { .. } => true,
@@ -110,9 +108,9 @@ impl Island {
             .into_any_element()
     }
 
-    fn pomodoro_press(&mut self, press: Press, cx: &mut Context<Self>) {
+    fn press(&mut self, press: Press, cx: &mut Context<Island>) {
         let now = Instant::now();
-        let timer = &mut self.widgets.pomodoro.timer;
+        let timer = &mut self.timer;
         match press {
             Press::Choose(phase) => timer.choose(phase),
             Press::PlayPause => match timer.clock() {
@@ -125,64 +123,60 @@ impl Island {
             }
         }
         log(&format!("pomodoro {:?} {:?}", timer.phase(), timer.clock()));
-        self.pomodoro_book_end(now, cx);
+        self.book_end(now, cx);
         cx.notify();
     }
 
     /// Book the running phase's end, cancelling any booked before.
-    fn pomodoro_book_end(&mut self, now: Instant, cx: &mut Context<Self>) {
-        let state = &mut self.widgets.pomodoro;
-        state.generation += 1;
-        let Clock::Running { ends } = state.timer.clock() else {
+    fn book_end(&mut self, now: Instant, cx: &mut Context<Island>) {
+        self.generation += 1;
+        let Clock::Running { ends } = self.timer.clock() else {
             return;
         };
-        let generation = state.generation;
+        let generation = self.generation;
         cx.spawn(async move |this, cx| {
             cx.background_executor()
                 .timer(ends.saturating_duration_since(now))
                 .await;
             this.update(cx, |this, cx| {
-                if this.widgets.pomodoro.generation == generation {
-                    this.pomodoro_end(cx);
-                }
+                this.update_widgets(cx, |widgets, visible, cx| {
+                    if widgets.pomodoro.generation != generation {
+                        return None;
+                    }
+                    widgets.pomodoro.end(visible, cx)
+                });
             })
             .ok();
         })
         .detach();
     }
 
-    fn pomodoro_end(&mut self, cx: &mut Context<Self>) {
+    fn end(&mut self, visible: bool, cx: &mut Context<Island>) -> Option<Effect> {
         let now = Instant::now();
-        let Some(ended) = self.widgets.pomodoro.timer.finish(now) else {
+        let Some(ended) = self.timer.finish(now) else {
             // Woken a hair early: wait out the rest.
-            self.pomodoro_book_end(now, cx);
-            return;
+            self.book_end(now, cx);
+            return None;
         };
         log(&format!("pomodoro {ended:?} over"));
-        self.widgets.pomodoro.generation += 1;
+        self.generation += 1;
         crate::win32::sound::chime();
-        self.show_activity(Key::Timer, Activity::PhaseOver { ended }, cx);
-        if self.widgets_visible() {
+        if visible {
             cx.notify();
         }
+        Some(Effect::PhaseOver(ended))
     }
 
     /// Redraw when the countdown next reads a new second, while the card is drawn.
-    fn pomodoro_tick(&self, after: Duration, cx: &mut Context<Self>) {
-        if self.widgets.pomodoro.ticking.replace(true) {
-            return;
-        }
-        cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(after).await;
-            this.update(cx, |this, cx| {
-                this.widgets.pomodoro.ticking.set(false);
-                if this.widgets_visible() {
+    fn tick(&self, after: Duration, cx: &mut Context<Island>) {
+        self.ticking.book(after, cx, |island, cx| {
+            island.update_widgets(cx, |_, visible, cx| {
+                if visible {
                     cx.notify();
                 }
-            })
-            .ok();
-        })
-        .detach();
+                None
+            });
+        });
     }
 }
 
@@ -253,15 +247,9 @@ fn pressable(element: Stateful<Div>, press: Press, cx: &mut Context<Island>) -> 
     element
         .cursor_pointer()
         .hover(|style| style.opacity(0.8))
-        .on_mouse_down(
-            MouseButton::Left,
-            cx.listener(|this, _: &MouseDownEvent, _window, cx| {
-                this.press = None;
-                cx.stop_propagation();
-            }),
-        )
+        .on_mouse_down(MouseButton::Left, cx.listener(keep_press))
         .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
             cx.stop_propagation();
-            this.pomodoro_press(press, cx);
+            this.widgets.pomodoro.press(press, cx);
         }))
 }

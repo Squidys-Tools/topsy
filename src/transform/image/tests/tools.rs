@@ -5,16 +5,14 @@ use std::io;
 use std::sync::atomic::AtomicBool;
 
 use super::*;
-use crate::model::exif::{has_gps, sample};
-use crate::model::image_geometry::{LargestSide, Resize, Rotation};
-use crate::model::image_ops::{
-    CompressBy, CompressFormat, CompressOptions, ConvertOptions, Format, Kind,
-};
-use crate::model::jpeg;
-use crate::model::orientation::Orientation;
-use crate::model::pdf::{PageFormat, PageSize, PdfCompress, PdfQuality};
 use crate::transform::image::{compress, convert, probe, resize, rotate, strip_metadata};
 use crate::transform::pdf;
+use model::exif::{has_gps, sample};
+use model::image_geometry::{LargestSide, Resize, Rotation};
+use model::image_ops::{CompressBy, CompressFormat, CompressOptions, ConvertOptions, Format, Kind};
+use model::jpeg;
+use model::orientation::Orientation;
+use model::pdf::{PageFormat, PageSize, PdfCompress, PdfQuality};
 
 fn adobe_rgb() -> Vec<u8> {
     std::fs::read(r"C:\Windows\System32\spool\drivers\color\AdobeRGB1998.icc").unwrap()

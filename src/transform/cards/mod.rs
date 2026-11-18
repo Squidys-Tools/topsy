@@ -19,10 +19,10 @@ use gpui::{
 use windows::Win32::Foundation::HWND;
 use windows::Win32::System::Com::COINIT_MULTITHREADED;
 
-use crate::model::float::Rect;
-use crate::model::transform::Action;
-use crate::model::transform_card::{Headline, Made};
 use crate::{icon, win32};
+use model::float::Rect;
+use model::transform::Action;
+use model::transform_card::{Headline, Made};
 
 mod view;
 

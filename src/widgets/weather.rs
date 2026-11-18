@@ -6,18 +6,17 @@ use std::cell::Cell;
 use std::time::Instant;
 
 use gpui::{
-    AnyElement, ClickEvent, Context, Div, FontWeight, Hsla, MouseButton, MouseDownEvent, div,
-    linear_color_stop, linear_gradient, prelude::*, px, rgb, rgba,
+    AnyElement, ClickEvent, Context, Div, FontWeight, Hsla, MouseButton, div, linear_color_stop,
+    linear_gradient, prelude::*, px, rgb, rgba,
 };
 
+use super::keep_press;
 use crate::icons::{self, Icon};
 use crate::log::LogErr;
-use crate::model::weather::{
-    self, Condition, Forecast, HOST, Hour, LIMIT, Problem, Show, Unit, Weather,
-};
 use crate::win32::http::{self, Response};
 use crate::win32::location;
 use crate::{Island, log};
+use model::weather::{self, Condition, Forecast, HOST, Hour, LIMIT, Problem, Show, Unit, Weather};
 
 pub const WIDTH: f32 = 184.0;
 const RADIUS: f32 = 16.0;
@@ -34,13 +33,12 @@ pub struct State {
     fetching: Cell<bool>,
 }
 
-impl Island {
-    pub(crate) fn weather_card(&self, cx: &mut Context<Self>) -> AnyElement {
-        let state = &self.widgets.weather;
-        if self.widgets_visible() && !state.fetching.get() && state.weather.due(Instant::now()) {
-            self.fetch_weather(cx);
+impl State {
+    pub(super) fn card(&self, visible: bool, cx: &mut Context<Island>) -> AnyElement {
+        if visible && !self.fetching.get() && self.weather.due(Instant::now()) {
+            self.fetch(cx);
         }
-        let show = state.weather.show();
+        let show = self.weather.show();
         let is_day = match show {
             Show::Forecast(forecast) => forecast.is_day,
             Show::Loading | Show::LocationOff | Show::Unavailable => true,
@@ -59,13 +57,7 @@ impl Island {
             .flex()
             .flex_col()
             .text_color(rgb(TEXT))
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|this, _: &MouseDownEvent, _window, cx| {
-                    this.press = None;
-                    cx.stop_propagation();
-                }),
-            );
+            .on_mouse_down(MouseButton::Left, cx.listener(keep_press));
         match show {
             Show::Forecast(forecast) => card.child(header(forecast)).child(hours(&forecast.hours)),
             Show::Loading => card.child(place()).child(note("Loading…", None)),
@@ -86,8 +78,8 @@ impl Island {
 
     /// Locate, ask Open-Meteo and read the answer on a thread of its own: each step blocks for
     /// seconds at worst.
-    fn fetch_weather(&self, cx: &mut Context<Self>) {
-        self.widgets.weather.fetching.set(true);
+    fn fetch(&self, cx: &mut Context<Island>) {
+        self.fetching.set(true);
         let (sender, receiver) = async_channel::bounded(1);
         let spawned = std::thread::Builder::new()
             .name("topsy-weather".into())
@@ -100,20 +92,31 @@ impl Island {
         cx.spawn(async move |this, cx| {
             let result = receiver.recv().await.unwrap_or(Err(Problem::Failed));
             this.update(cx, |this, cx| {
-                log(&format!(
-                    "weather {:?}",
-                    result.as_ref().map(|f| f.temperature)
-                ));
-                let state = &mut this.widgets.weather;
-                state.fetching.set(false);
-                state.weather.record(Instant::now(), result);
-                if this.widgets_visible() {
-                    cx.notify();
-                }
+                this.update_widgets(cx, |widgets, visible, cx| {
+                    widgets.weather.fetched(result, visible, cx);
+                    None
+                });
             })
             .ok();
         })
         .detach();
+    }
+
+    fn fetched(
+        &mut self,
+        result: Result<Forecast, Problem>,
+        visible: bool,
+        cx: &mut Context<Island>,
+    ) {
+        log(&format!(
+            "weather {:?}",
+            result.as_ref().map(|f| f.temperature)
+        ));
+        self.fetching.set(false);
+        self.weather.record(Instant::now(), result);
+        if visible {
+            cx.notify();
+        }
     }
 }
 

@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use super::tools::Tool;
-use crate::model::download::ModelStatus;
+use model::download::ModelStatus;
 
 /// Throttles progress reports and checks for a cancel.
 pub struct Steps<'a> {

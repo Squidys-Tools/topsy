@@ -9,6 +9,7 @@
 # usage: e2e-basket.ps1 [-Exe target\release\topsy.exe]
 param([string]$Exe = "$PSScriptRoot\..\target\release\topsy.exe")
 $ErrorActionPreference = 'Stop'
+Import-Module "$PSScriptRoot\lib\Topsy.psm1" -DisableNameChecking
 $Exe = (Resolve-Path $Exe).Path
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 Add-Type @"
@@ -21,10 +22,7 @@ public static class Native {
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
   [DllImport("user32.dll")] public static extern int GetClassName(IntPtr h, StringBuilder s, int n);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
-  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
-  [DllImport("user32.dll")] public static extern void mouse_event(uint f, int dx, int dy, uint d, UIntPtr e);
   [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr e);
-  [DllImport("user32.dll")] public static extern uint GetDpiForSystem();
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   // The process's visible window of class `cls` (a menu is #32768).
   public static IntPtr WindowOf(uint pid, string cls) {
@@ -67,9 +65,6 @@ public static class Native {
   }
 }
 "@
-[void][Native]::SetProcessDPIAware()
-$LEFTDOWN = 0x2; $LEFTUP = 0x4; $RIGHTDOWN = 0x8; $RIGHTUP = 0x10
-
 $work = Join-Path $env:TEMP 'topsy-e2e-basket'
 Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory $work | Out-Null
@@ -85,25 +80,6 @@ $appLog = Join-Path $work 'app.log'
 $shots = Join-Path (Split-Path $PSScriptRoot) 'shots'
 New-Item -ItemType Directory $shots -Force | Out-Null
 
-function Wait-Until([scriptblock]$cond, $ms) {
-    $sw = [Diagnostics.Stopwatch]::StartNew()
-    while ($sw.ElapsedMilliseconds -lt $ms) { if (& $cond) { return $true }; Start-Sleep -Milliseconds 30 }
-    return $false
-}
-function Wait-Log($pattern, $ms) { Wait-Until { (Test-Path $appLog) -and (Select-String -Path $appLog -Pattern $pattern -Quiet) } $ms }
-$scale = [Native]::GetDpiForSystem() / 96.0
-$screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-function Move-Cursor($x, $y) {
-    $nx = [int]([math]::Round($x * 65535 / ($screen.Width - 1)))
-    $ny = [int]([math]::Round($y * 65535 / ($screen.Height - 1)))
-    [Native]::mouse_event(0x8001, $nx, $ny, 0, [UIntPtr]::Zero)
-}
-function Click($x, $y, [switch]$Right) {
-    Move-Cursor $x $y; Start-Sleep -Milliseconds 150
-    $down, $up = if ($Right) { $RIGHTDOWN, $RIGHTUP } else { $LEFTDOWN, $LEFTUP }
-    [Native]::mouse_event($down, 0, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 50
-    [Native]::mouse_event($up, 0, 0, 0, [UIntPtr]::Zero)
-}
 function Tap-Key([byte]$vk) {
     [Native]::keybd_event($vk, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 40
     [Native]::keybd_event($vk, 0, 2, [UIntPtr]::Zero); Start-Sleep -Milliseconds 40
@@ -127,29 +103,25 @@ function Use-Menu([scriptblock]$open, [byte]$key, $what) {
     if (-not (Wait-Until { [Native]::WindowOf($app.Id, '#32768') -eq [IntPtr]::Zero } 2000)) { throw "the menu did not close ($what)" }
 }
 function Start-App {
-    $script:app = Start-Process $Exe -PassThru -RedirectStandardError $appLog
-    if (-not (Wait-Log 'restored' 8000)) { throw 'the app never started' }
+    $script:app = Start-Topsy -Exe $Exe -Env $topsyEnv -Log $appLog
+    if (-not (Wait-Log $appLog 'restored' 8000)) { throw 'the app never started' }
     Start-Sleep -Milliseconds 800
 }
 
-$env:TOPSY_LOG = '1'
-$env:TOPSY_STATE = $state
-$env:TOPSY_IDLE = 'peek'
-$env:TOPSY_NO_MEDIA = '1'
-$env:TOPSY_NO_WIDGETS = '1'
+$topsyEnv = @{ TOPSY_LOG = '1'; TOPSY_STATE = $state; TOPSY_IDLE = 'peek'; TOPSY_NO_MEDIA = '1'; TOPSY_NO_WIDGETS = '1' }
 if ([Native]::ShareSheet()) { throw 'a share sheet is already on screen; close it first' }
 $failed = $null; $app = $null
 $log = ''
 try {
     # 1. A saved basket comes back; the file that went away while the app was off is dropped.
     Start-App
-    if (-not (Wait-Log 'restored 0 \(basket 3\)' 100)) { throw 'the saved basket was not read back' }
-    if (-not (Wait-Log 'basket pruned, 2 left' 3000)) { throw 'the missing file was not dropped from the basket' }
+    if (-not (Wait-Log $appLog 'restored 0 \(basket 3\)' 100)) { throw 'the saved basket was not read back' }
+    if (-not (Wait-Log $appLog 'basket pruned, 2 left' 3000)) { throw 'the missing file was not dropped from the basket' }
 
     # 2. "Show basket" in the notch's menu (the tray icon's menu) brings it up, without the focus.
     $r = Rect-Of $true
     Use-Menu { Click (($r.Left + $r.Right) / 2) (($r.Top + $r.Bottom) / 2) -Right } 0x4B 'show-basket'   # K
-    if (-not (Wait-Log 'basket at' 2000)) { throw '"Show basket" did not bring the basket up' }
+    if (-not (Wait-Log $appLog 'basket at' 2000)) { throw '"Show basket" did not bring the basket up' }
     if (-not (Wait-Until { Basket-Open } 2000)) { throw 'the basket did not open' }
     Start-Sleep -Milliseconds 500
     if (Foreground-Ours) { throw 'showing the basket took the focus' }
@@ -167,13 +139,13 @@ try {
     $b = Rect-Of $false
     $tile = { Click ($b.Left + (10 + 32) * $scale) ($b.Top + (52 + 39) * $scale) -Right }
     Use-Menu $tile 0x4E 'rename'   # N
-    if (-not (Wait-Log 'basket rename IMG_0042.txt' 2000)) { throw 'Rename did not put the field up' }
+    if (-not (Wait-Log $appLog 'basket rename IMG_0042.txt' 2000)) { throw 'Rename did not put the field up' }
     if (-not (Wait-Until { Foreground-Ours } 2000)) { throw 'the rename field did not get the keyboard' }
     foreach ($vk in 0x42, 0x45, 0x41, 0x43, 0x48) { Tap-Key $vk }   # b e a c h
     Start-Sleep -Milliseconds 300
     Shoot 'basket-3-renaming.png'
     Tap-Key 0x0D
-    if (-not (Wait-Log 'basket renamed to beach.txt' 3000)) { throw 'Enter did not rename the file' }
+    if (-not (Wait-Log $appLog 'basket renamed to beach.txt' 3000)) { throw 'Enter did not rename the file' }
     if (-not (Test-Path $renamed) -or (Test-Path $first)) { throw 'the file was not renamed on disk' }
     if (-not (Wait-Until { -not (Foreground-Ours) } 2000)) { throw 'the focus was not handed back after the rename' }
     Start-Sleep -Milliseconds 400
@@ -182,9 +154,9 @@ try {
 
     # 5. Share opens Windows' share sheet for the file.
     Use-Menu $tile 0x53 'share'   # S
-    if (-not (Wait-Log 'share beach.txt' 2000)) { throw 'Share did not run' }
+    if (-not (Wait-Log $appLog 'share beach.txt' 2000)) { throw 'Share did not run' }
     if (-not (Wait-Until { [Native]::ShareSheet() } 5000)) { throw 'the share sheet did not come up' }
-    if (-not (Wait-Log 'share filled' 5000)) { throw 'the share sheet never asked for the file' }
+    if (-not (Wait-Log $appLog 'share filled' 5000)) { throw 'the share sheet never asked for the file' }
     Start-Sleep -Milliseconds 1500
     & "$PSScriptRoot\shot.ps1" -Out (Join-Path $shots 'basket-5-share.png') -Rect $screen.X, $screen.Y, $screen.Width, $screen.Height
     if (Select-String -Path $appLog -Pattern 'could not (open the share sheet|share)' -Quiet) { throw 'the share sheet failed' }
@@ -196,16 +168,15 @@ try {
     Stop-Process -Id $app.Id -Force
     $log += Get-Content $appLog -Raw
     Start-App
-    if (-not (Wait-Log 'restored 0 \(basket 2\)' 100)) { throw 'the basket did not come back after a restart' }
-    if (Wait-Log 'basket pruned' 1500) { throw 'a restored file was wrongly pruned' }
+    if (-not (Wait-Log $appLog 'restored 0 \(basket 2\)' 100)) { throw 'the basket did not come back after a restart' }
+    if (Wait-Log $appLog 'basket pruned' 1500) { throw 'a restored file was wrongly pruned' }
 } catch {
     $failed = $_
     [Native]::keybd_event(0x1B, 0, 0, [UIntPtr]::Zero); [Native]::keybd_event(0x1B, 0, 2, [UIntPtr]::Zero)
     if ([Native]::ShareSheet()) { [void][Native]::PostMessage([Native]::Sheet(), 0x10, [IntPtr]::Zero, [IntPtr]::Zero) }
 } finally {
     Start-Sleep -Milliseconds 200
-    if ($app) { Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue }
-    Remove-Item Env:\TOPSY_LOG, Env:\TOPSY_STATE, Env:\TOPSY_IDLE, Env:\TOPSY_NO_MEDIA, Env:\TOPSY_NO_WIDGETS -ErrorAction SilentlyContinue
+    if ($app) { Stop-Topsy $app }
 }
 "--- app log"; $log; if (Test-Path $appLog) { Get-Content $appLog }
 if ($failed) { "FAIL: $($failed.Exception.Message) (line $($failed.InvocationInfo.ScriptLineNumber))"; exit 1 }

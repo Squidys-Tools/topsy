@@ -11,10 +11,10 @@ use image::{ExtendedColorType, ImageEncoder};
 use pdfium_render::prelude::{PdfRenderConfig, Pdfium, PdfiumError, PdfiumInternalError};
 
 use crate::log::LogErr;
-use crate::model::pdf::{PageFormat, fit_square};
 use crate::transform::Steps;
 use crate::transform::fetch::Pinned;
 use crate::transform::tools::Tool;
+use model::pdf::{PageFormat, fit_square};
 
 /// pdfium as Chromium builds it, from bblanchon/pdfium-binaries (BSD-3-Clause and Apache-2.0),
 /// matching the `pdfium_8125` API that pdfium-render is built against.

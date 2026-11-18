@@ -12,13 +12,13 @@ use super::job::{Input, into, reserve};
 use super::options::{IMAGE_TARGETS, Options, PDF_TARGETS, PERCENTS, SIDES};
 use super::{image, pdf};
 use crate::log::{LogErr, MissingOk};
-use crate::model::download::ModelStatus;
-use crate::model::image_geometry::{LargestSide, Resize, Rotation};
-use crate::model::image_ops::{
+use model::download::ModelStatus;
+use model::image_geometry::{LargestSide, Resize, Rotation};
+use model::image_ops::{
     CompressBy, CompressFormat, CompressOptions, ConvertOptions, Format, Kind as Sniffed,
 };
-use crate::model::pdf::{PAGE_DPI, PageFormat, PageSize, PdfCompress, PdfQuality};
-use crate::model::transform::{Action, Kind, combined_paths, page_paths, result_paths};
+use model::pdf::{PAGE_DPI, PageFormat, PageSize, PdfCompress, PdfQuality};
+use model::transform::{Action, Kind, combined_paths, page_paths, result_paths};
 
 /// What images and PDFs get.
 pub struct Pictures {

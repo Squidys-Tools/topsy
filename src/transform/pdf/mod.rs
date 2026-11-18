@@ -17,8 +17,8 @@ use lopdf::{Document, Object};
 
 use super::Steps;
 use super::image::Kit;
-use crate::model::image_geometry::Rotation;
-use crate::model::pdf::{LADDER, PageSize, PdfCompress};
+use model::image_geometry::Rotation;
+use model::pdf::{LADDER, PageSize, PdfCompress};
 
 use combine::Builder;
 pub use render::{PDFIUM, ensure_renderer, fetch, first_page, to_images};

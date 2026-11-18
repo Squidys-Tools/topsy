@@ -4,9 +4,10 @@ topsy builds with the **GNU toolchain** (`x86_64-pc-windows-gnu`), pinned in `ru
 Why `build.rs` does what it does is in [GNU toolchain and build.rs](../internals/toolchain.md).
 
 ```powershell
-cargo run            # then hold the left mouse button on a file and jiggle it side to side
-cargo test <name>    # the tests for what you changed
-scripts/check.ps1    # fmt, clippy, the full test suite and structure: the gates CI runs
+cargo run                  # then hold the left mouse button on a file and jiggle it side to side
+cargo test <name>          # the tests for what you changed
+cargo test -p topsy-model  # just the rules, in seconds: no GPUI to build
+scripts/check.ps1          # fmt, clippy, the full test suite and structure: the gates CI runs
 ```
 
 A cold build of GPUI takes about 10 minutes in a fresh worktree.

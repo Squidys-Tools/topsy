@@ -1,11 +1,11 @@
 use std::path::{Path, PathBuf};
 
 use super::*;
-use crate::model::exif::has_gps;
-use crate::model::image_geometry::{LargestSide, Resize, Rotation};
-use crate::model::image_ops::{CompressBy, CompressOptions, ConvertOptions, Format};
-use crate::model::jpeg;
 use crate::transform::image::{compress, convert, probe, resize, rotate, strip_metadata};
+use model::exif::has_gps;
+use model::image_geometry::{LargestSide, Resize, Rotation};
+use model::image_ops::{CompressBy, CompressOptions, ConvertOptions, Format};
+use model::jpeg;
 
 /// Every operation on real photos, timed. `TOPSY_PHOTOS` names a folder of them; the outputs go
 /// to its `out` folder for a look.
@@ -112,7 +112,7 @@ fn manual_run_on_real_photos() {
         let t = Instant::now();
         let pages = crate::transform::pdf::combine(
             &[src.clone(), src],
-            crate::model::pdf::PageSize::A4,
+            model::pdf::PageSize::A4,
             &o("combined.pdf"),
             &quiet,
             &never(),
@@ -124,7 +124,7 @@ fn manual_run_on_real_photos() {
             &o("combined.pdf"),
         );
         let t = Instant::now();
-        let how = crate::model::pdf::PdfCompress::Quality(crate::model::pdf::PdfQuality::Balanced);
+        let how = model::pdf::PdfCompress::Quality(model::pdf::PdfQuality::Balanced);
         let w = crate::transform::pdf::compress(
             &o("combined.pdf"),
             how,
@@ -142,7 +142,7 @@ fn manual_run_on_real_photos() {
         let named = |i: usize| Ok(o(&format!("page-{}.png", i + 1)));
         let n = crate::transform::pdf::to_images(
             &o("combined-small.pdf"),
-            crate::model::pdf::PageFormat::Png,
+            model::pdf::PageFormat::Png,
             150,
             &named,
             &quiet,

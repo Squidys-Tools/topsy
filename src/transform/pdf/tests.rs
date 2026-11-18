@@ -1,9 +1,9 @@
 use lopdf::{Document, dictionary};
 
 use super::*;
-use crate::model::exif::sample;
-use crate::model::jpeg;
 use crate::transform::image::tests::{Scratch, jpeg_of, never, photo, quiet};
+use model::exif::sample;
+use model::jpeg;
 
 pub fn images(doc: &Document) -> Vec<&lopdf::Stream> {
     doc.objects
@@ -182,7 +182,7 @@ fn pdfs_without_pictures_compress_without_fetching_anything() {
     let src = dir.path("plain.pdf");
     plain_pdf(&src);
     let out = dir.path("out.pdf");
-    let how = PdfCompress::Quality(crate::model::pdf::PdfQuality::High);
+    let how = PdfCompress::Quality(model::pdf::PdfQuality::High);
     let w = compress(&src, how, &out, &quiet, &never()).unwrap();
     assert!(!w.kept_original && w.bytes < std::fs::metadata(&src).unwrap().len() / 4);
     assert_eq!(page_count(&out).unwrap(), 1);
@@ -217,7 +217,7 @@ fn damaged_and_protected_pdfs_read_as_errors() {
     let dir = Scratch::new("pdfbad");
     let bad = dir.file("bad.pdf", b"%PDF-1.7\nthis is not a pdf");
     let out = dir.path("o.pdf");
-    let how = PdfCompress::Quality(crate::model::pdf::PdfQuality::High);
+    let how = PdfCompress::Quality(model::pdf::PdfQuality::High);
     let err = compress(&bad, how, &out, &quiet, &never()).unwrap_err();
     assert_eq!(err.kind(), io::ErrorKind::InvalidData);
     let locked = dir.file("locked.pdf", b"%PDF-1.7\ntrailer << /Encrypt 5 0 R >>");

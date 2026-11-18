@@ -1,6 +1,6 @@
 //! Video, audio and GIF transforms, done by FFmpeg: downloaded on first use (see `tools`), run
 //! as a process without a window. The command lines and the rules behind them are in
-//! `crate::model::video`; this is the glue that runs them.
+//! `model::video`; this is the glue that runs them.
 
 use std::ffi::{OsStr, OsString};
 use std::fs;
@@ -14,7 +14,7 @@ use image::RgbaImage;
 use super::fetch::{Pinned, Status};
 use super::tools::{self, Tool};
 use crate::log::{LogErr, MissingOk};
-use crate::model::video::{
+use model::video::{
     self as rules, CompressBy, CompressVideo, ConvertTarget, GifOptions, Probe, Progress, Rate,
     Rotate, TrimMode, TrimRange, megabytes, retry_bitrate,
 };

@@ -12,8 +12,8 @@ use gpui::RenderImage;
 use image::{Frame, ImageReader, Limits};
 
 use crate::log;
-use crate::model::favicon::{page_icon, public_ip, resolve};
 use crate::win32::http::{self, Response};
+use model::favicon::{page_icon, public_ip, resolve};
 
 /// Kept icons are at most this many pixels square: sharp at 40 logical pixels up to 300%.
 const SIZE: u32 = 128;

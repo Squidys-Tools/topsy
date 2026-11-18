@@ -11,9 +11,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use sha2::{Digest, Sha256};
 
 use crate::log::{LogErr, MissingOk};
-pub use crate::model::download::ModelStatus as Status;
-use crate::model::download::{self, Reply, Start, Ticker};
 use crate::win32::http::{self, Streamed};
+pub use model::download::ModelStatus as Status;
+use model::download::{self, Reply, Start, Ticker};
 
 /// One file at a fixed address, with its size and hash, kept under `%LOCALAPPDATA%\topsy`.
 pub struct Pinned {

@@ -6,7 +6,7 @@ use std::ops::Range;
 
 use gpui::{Pixels, Rems, TextRun, Window, black, px, rems};
 
-use crate::model::clamp::{ELLIPSIS, clamp};
+use model::clamp::{ELLIPSIS, clamp};
 
 /// How much of a long text is laid out at all, so a card never shapes a whole copied log.
 const LINES: usize = 12;

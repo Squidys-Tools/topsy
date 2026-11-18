@@ -5,7 +5,7 @@ use windows::Win32::Globalization::{GetLocaleInfoEx, LOCALE_IFIRSTDAYOFWEEK};
 use windows::Win32::System::SystemInformation::GetLocalTime;
 use windows::core::PCWSTR;
 
-use crate::model::calendar::{Date, Weekday};
+use model::calendar::{Date, Weekday};
 
 pub fn today() -> Date {
     let now = unsafe { GetLocalTime() };

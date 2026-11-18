@@ -24,8 +24,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::{s, w};
 
 use crate::log::LogErr;
-use crate::model::edge::fills_monitor;
-use crate::model::float::Rect;
+use model::edge::fills_monitor;
+use model::float::Rect;
 
 /// The monitor under the cursor, and where the cursor is on it.
 fn cursor_at() -> Option<(POINT, HMONITOR)> {

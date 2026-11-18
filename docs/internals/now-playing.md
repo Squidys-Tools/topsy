@@ -3,7 +3,7 @@
 Decisions behind [Now Playing](../user/now-playing.md). A tray opened for a drag or by a drop leaves the player
 out (`TrayCause::sections`).
 
-- **Event-driven only.** `src/media.rs` subscribes to `CurrentSessionChanged`, `MediaPropertiesChanged`,
+- **Event-driven only.** `src/now_playing/session.rs` subscribes to `CurrentSessionChanged`, `MediaPropertiesChanged`,
   `PlaybackInfoChanged` and `TimelinePropertiesChanged`. WinRT raises them on thread-pool threads, whose handlers
   only wake one `topsy-media` thread; it reads the session (and decodes the art, scaled down by WIC) and sends the
   result to the UI thread over a channel. Between events nothing runs (but for the progress bar and the level

@@ -6,7 +6,7 @@ and re-centred every frame as the spring moves (see [Glass](glass.md)). User-fac
 [The notch](../user/notch.md).
 
 - **Reaching for it needs the hook.** Nothing on screen could notice the cursor on the top row above a hidden
-  notch, so the mouse hook watches for it (`src/model/edge.rs`). It reports only arriving and leaving, so there is
+  notch, so the mouse hook watches for it (`crates/model/src/edge.rs`). It reports only arriving and leaving, so there is
   still no polling. The 150 ms dwell keeps a sweep across the top from flashing it.
 - **Folding asks the OS where the cursor is.** The 400 ms fold timer reads the cursor position rather than
   waiting for a hover "leave", which a cursor flicked off the edge doesn't always deliver.

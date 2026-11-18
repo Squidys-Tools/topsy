@@ -3,23 +3,24 @@
 
 use gpui::{AnyElement, ClickEvent, Context, Div, div, prelude::*, px, rgb, rgba};
 
+use super::State;
 use crate::Island;
 use crate::frame::PEEK;
 use crate::hud::{GREEN, RED, cell};
 use crate::icons::{self, Icon};
-use crate::model::activity::{Activity, Key};
-use crate::model::pomodoro::Phase;
-use crate::model::transform::size;
+use model::activity::{Activity, Key};
+use model::pomodoro::Phase;
+use model::transform::size;
 
 const ONE: f32 = 280.0;
 const TWO: f32 = 440.0;
 const DIM: u32 = 0xffffff99;
 const ORANGE: u32 = 0xff9f0a;
 
-impl Island {
+impl State {
     /// The peek's size while it shows activities.
-    pub(crate) fn activity_size(&self) -> Option<(f32, f32)> {
-        match self.activity.list.shown().count() {
+    pub(crate) fn size(&self) -> Option<(f32, f32)> {
+        match self.list.shown().count() {
             0 => None,
             1 => Some((ONE, PEEK.1)),
             _ => Some((TWO, PEEK.1)),
@@ -27,8 +28,8 @@ impl Island {
     }
 
     /// The activities in the dropped notch, if any are on. A peek opened to look shows them too.
-    pub(crate) fn activity_peek(&self, cx: &mut Context<Self>) -> Option<Div> {
-        let (w, h) = self.activity_size()?;
+    pub(crate) fn peek(&self, cx: &mut Context<Island>) -> Option<Div> {
+        let (w, h) = self.size()?;
         Some(
             div()
                 .w(px(w))
@@ -40,20 +41,14 @@ impl Island {
                 .items_center()
                 .gap(px(12.0))
                 .text_xs()
-                .children(
-                    self.activity
-                        .list
-                        .shown()
-                        .enumerate()
-                        .flat_map(|(i, (key, a))| {
-                            let divider =
-                                (i > 0).then(|| div().w(px(1.0)).h(px(14.0)).bg(rgba(0xffffff2e)));
-                            divider
-                                .map(IntoElement::into_any_element)
-                                .into_iter()
-                                .chain([clickable(row(a), key, a, cx)])
-                        }),
-                ),
+                .children(self.list.shown().enumerate().flat_map(|(i, (key, a))| {
+                    let divider =
+                        (i > 0).then(|| div().w(px(1.0)).h(px(14.0)).bg(rgba(0xffffff2e)));
+                    divider
+                        .map(IntoElement::into_any_element)
+                        .into_iter()
+                        .chain([clickable(row(a), key, a, cx)])
+                })),
         )
     }
 }
@@ -66,7 +61,9 @@ fn clickable(row: Div, key: &Key, activity: &Activity, cx: &mut Context<Island>)
     row.id(("download", *id as usize))
         .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
             cx.stop_propagation();
-            this.show_download(&key, path.clone(), cx);
+            this.update_activities(cx, |activity| {
+                Some(activity.show_download(&key, path.clone()))
+            });
         }))
         .into_any_element()
 }

@@ -18,17 +18,17 @@ use self::tools::path;
 pub use self::tools::{MAGICK, OXIPNG};
 use super::Steps;
 use crate::log::{LogErr, MissingOk};
-use crate::model::download::ModelStatus;
-use crate::model::exif;
-use crate::model::image_geometry::{Resize, Rotation, fit_within};
-use crate::model::image_ops::{
+use model::download::ModelStatus;
+use model::exif;
+use model::image_geometry::{Resize, Rotation, fit_within};
+use model::image_ops::{
     CompressBy, CompressOptions, ConvertOptions, Format, Kind, is_lossless_webp, reencode_quality,
 };
-use crate::model::jpeg;
-use crate::model::magick::{self, Job, Metadata};
-use crate::model::orientation::Orientation;
-use crate::model::pdf::PageSize;
-use crate::model::size_search::fit_to_size;
+use model::jpeg;
+use model::magick::{self, Job, Metadata};
+use model::orientation::Orientation;
+use model::pdf::PageSize;
+use model::size_search::fit_to_size;
 
 /// Fetches ImageMagick and oxipng if they aren't here yet.
 pub fn fetch(progress: &dyn Fn(f32), cancel: &AtomicBool) -> io::Result<()> {

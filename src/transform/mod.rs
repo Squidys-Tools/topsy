@@ -35,9 +35,9 @@ use windows::Win32::Foundation::HWND;
 use windows::Win32::System::Com::COINIT_MULTITHREADED;
 
 use crate::log::LogErr;
-use crate::model::transform::{Action, Kind, actions};
 use crate::win32::{self, MenuEntry};
 use crate::{Island, icon, log};
+use model::transform::{Action, Kind, actions};
 
 pub use options::Options;
 pub use steps::Steps;

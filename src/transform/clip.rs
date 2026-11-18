@@ -21,9 +21,9 @@ use super::video;
 use super::widgets::{button, note, row, segmented};
 use super::{Panel, State};
 use crate::log::LogErr;
-use crate::model::transform::{Action, Kind};
-use crate::model::video::{GIF_MAX, TrimRange};
 use crate::{icon, log};
+use model::transform::{Action, Kind};
+use model::video::{GIF_MAX, TrimRange};
 
 const FRAMES: usize = 6;
 const STRIP_HEIGHT: f32 = 44.0;

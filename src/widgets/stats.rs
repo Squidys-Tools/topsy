@@ -2,7 +2,6 @@
 //! gauge, its percentage and a rolling graph. It samples once a second only while it is drawn;
 //! the rules are in `model::stats`, the readings in `win32::sysinfo`.
 
-use std::cell::Cell;
 use std::f32::consts::TAU;
 use std::time::Instant;
 
@@ -12,10 +11,11 @@ use gpui::{
 };
 
 use crate::Island;
+use crate::booking::Booking;
 use crate::icons::{self, Icon};
 use crate::log::LogErr;
-use crate::model::stats::{CAPACITY, History, Stats, percent};
 use crate::win32::sysinfo;
+use model::stats::{CAPACITY, History, Stats, percent};
 
 pub const WIDTH: f32 = 208.0;
 const HALF: f32 = (WIDTH - GUTTER) / 2.0;
@@ -31,21 +31,14 @@ const DIM: u32 = 0xffffff80;
 #[derive(Default)]
 pub struct State {
     stats: Stats,
-    /// The next sample is booked.
-    booked: Cell<bool>,
+    /// The next sample.
+    booked: Booking,
 }
 
-/// Which half: CPU reads left to right, memory mirrors it.
-#[derive(Clone, Copy)]
-enum Side {
-    Cpu,
-    Ram,
-}
-
-impl Island {
-    pub(crate) fn stats_card(&self, cx: &mut Context<Self>) -> AnyElement {
-        self.book_stats(cx);
-        let stats = &self.widgets.stats.stats;
+impl State {
+    pub(super) fn card(&self, visible: bool, cx: &mut Context<Island>) -> AnyElement {
+        self.book(visible, cx);
+        let stats = &self.stats;
         let memory = stats.memory();
         let cpu = gauge(Side::Cpu, stats.cpu(), None);
         let ram = gauge(
@@ -84,30 +77,35 @@ impl Island {
     }
 
     /// Book the next sample while the card is drawn; a folded tray books nothing.
-    fn book_stats(&self, cx: &mut Context<Self>) {
-        if !self.widgets_visible() || self.widgets.stats.booked.replace(true) {
+    fn book(&self, visible: bool, cx: &mut Context<Island>) {
+        if !visible {
             return;
         }
-        let after = self.widgets.stats.stats.next_sample(Instant::now());
-        cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(after).await;
-            this.update(cx, |this, cx| {
-                this.widgets.stats.booked.set(false);
-                if !this.widgets_visible() {
-                    return;
-                }
-                let times = sysinfo::cpu_times().log_err();
-                let memory = sysinfo::memory().log_err();
-                this.widgets
-                    .stats
-                    .stats
-                    .sample(times, memory, Instant::now());
-                cx.notify();
-            })
-            .ok();
-        })
-        .detach();
+        let after = self.stats.next_sample(Instant::now());
+        self.booked.book(after, cx, |island, cx| {
+            island.update_widgets(cx, |widgets, visible, cx| {
+                widgets.stats.sample(visible, cx);
+                None
+            });
+        });
     }
+
+    fn sample(&mut self, visible: bool, cx: &mut Context<Island>) {
+        if !visible {
+            return;
+        }
+        let times = sysinfo::cpu_times().log_err();
+        let memory = sysinfo::memory().log_err();
+        self.stats.sample(times, memory, Instant::now());
+        cx.notify();
+    }
+}
+
+/// Which half: CPU reads left to right, memory mirrors it.
+#[derive(Clone, Copy)]
+enum Side {
+    Cpu,
+    Ram,
 }
 
 /// The ring under its label with the percentage beside it, on the card's outer edge.

@@ -19,9 +19,9 @@ use super::{Command, Event};
 use crate::icons::{Icon, icon};
 use crate::log;
 use crate::log::LogErr;
-use crate::model::clip_kind::{Kind, matches};
-use crate::model::clipboard::Entry;
 use crate::win32::{self, MenuEntry, paste};
+use model::clip_kind::{Kind, matches};
+use model::clipboard::Entry;
 
 /// The strip's height and its gap to the screen's edges, in logical pixels.
 const HEIGHT: f32 = 284.0;

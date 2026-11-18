@@ -6,20 +6,12 @@ description = "A Droppy-style notch/island for Windows: jiggle a drag to get a f
 license = "MIT"
 repository = "https://github.com/Squidys-Tools/topsy"
 
-# CI and scripts/check.ps1 deny warnings, so these fail the build there.
-[lints.clippy]
-dbg_macro = "warn"
-todo = "warn"
-unimplemented = "warn"
-# A panic takes the whole island down: outside tests, propagate, log or encode the invariant.
-unwrap_used = "warn"
-expect_used = "warn"
-# A discarded Result is an error nobody hears about: log it, propagate it, or say why not.
-let_underscore_must_use = "warn"
-redundant_clone = "warn"
-ignore_without_reason = "warn"
+[lints]
+workspace = true
 
 [dependencies]
+# The rules: pure, so they build and test without GPUI or Win32.
+model = { package = "topsy-model", path = "crates/model" }
 async-channel = "2"
 gpui = "0.2.2"
 # Background removal runs BiRefNet on the CPU: matrix products through gemm (pure Rust SIMD), spread with rayon.
@@ -44,3 +36,22 @@ windows-numerics = "0.3"
 # Compress to .zip: deflate only, through flate2 and zlib-rs (pure Rust).
 zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
+
+[dev-dependencies]
+model = { package = "topsy-model", path = "crates/model", features = ["test-support"] }
+
+[workspace]
+members = ["crates/model"]
+
+# CI and scripts/check.ps1 deny warnings, so these fail the build there.
+[workspace.lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+unimplemented = "warn"
+# A panic takes the whole island down: outside tests, propagate, log or encode the invariant.
+unwrap_used = "warn"
+expect_used = "warn"
+# A discarded Result is an error nobody hears about: log it, propagate it, or say why not.
+let_underscore_must_use = "warn"
+redundant_clone = "warn"
+ignore_without_reason = "warn"

@@ -4,7 +4,8 @@ These drive the real desktop, so they move your cursor and/or show a window for 
 from one worktree at a time, and keep your hands off the mouse while one runs: a real click lands among the
 injected ones and fails it (the `e2e-shelf` "flake" was exactly that). The checks that click inside the tray or
 measure it run with `TOPSY_NO_MEDIA`, since whatever is playing adds a row there. Judge focus and footprint on a
-release build (see [Building](building.md)). Each script states its usage in its header.
+release build (see [Building](building.md)). Each script states its usage in its header. They share their helpers
+(waiting on the log, injected input, starting topsy and stopping it by its own PID) in `scripts/lib/Topsy.psm1`.
 
 - `e2e-drag.ps1`: starts a genuine OLE file drag from a fixture window, jiggles it with injected input,
   verifies the basket opens under the pointer without taking focus, releases the drag on it, and checks the drop
