@@ -21,20 +21,17 @@ param(
     [double]$MaxBlurShare = 0.5
 )
 $ErrorActionPreference = 'Stop'
+Import-Module "$PSScriptRoot\lib\Topsy.psm1" -DisableNameChecking
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 Add-Type @"
 using System; using System.Runtime.InteropServices;
 public static class G {
   [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
-  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
-  [DllImport("user32.dll")] public static extern uint GetDpiForSystem();
   [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT p);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
   [DllImport("user32.dll")] public static extern int GetSystemMetrics(int i);
 }
 "@
-[void][G]::SetProcessDPIAware()
-$scale = [G]::GetDpiForSystem() / 96.0
 $cx = [int]([G]::GetSystemMetrics(0) / 2)   # SM_CXSCREEN; the primary display starts at (0,0)
 $shots = Join-Path (Split-Path $PSScriptRoot) 'shots'
 New-Item -ItemType Directory $shots -Force | Out-Null
@@ -60,15 +57,16 @@ function Amplitude($left, $top, $width, $height) {
 
 # Run the pill in one glass mode and return inside/beside stripe amplitude.
 function Measure-Mode($mode) {
-    $env:TOPSY_GLASS = $mode
-    # The notch is solid black where it meets the screen edge; the glass is the open tray's
-    # lower part, so keep the tray open.
-    $env:TOPSY_IDLE = 'tray'
-    $env:TOPSY_STATE = Join-Path $env:TEMP 'topsy-glass-state.txt'
-    # A playing song puts its row where the glass is measured.
-    $env:TOPSY_NO_MEDIA = '1'
-    $env:TOPSY_NO_WIDGETS = '1'
-    $app = Start-Process $Exe -PassThru
+    $app = Start-Topsy -Exe $Exe -Env @{
+        TOPSY_GLASS = $mode
+        # The notch is solid black where it meets the screen edge; the glass is the open tray's
+        # lower part, so keep the tray open.
+        TOPSY_IDLE = 'tray'
+        TOPSY_STATE = Join-Path $env:TEMP 'topsy-glass-state.txt'
+        # A playing song puts its row where the glass is measured.
+        TOPSY_NO_MEDIA = '1'
+        TOPSY_NO_WIDGETS = '1'
+    }
     try {
         # Wait for the pill: its window answers hit-tests at the pill's centre.
         $sw = [Diagnostics.Stopwatch]::StartNew()
@@ -106,9 +104,8 @@ function Measure-Mode($mode) {
         Write-Host ("mode={0,-7}  stripe amplitude inside pill={1,3:N0}  beside pill={2,3:N0}  ratio={3:N2}" -f $mode, $inside, $beside, $ratio)
         $ratio
     } finally {
-        Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
+        Stop-Topsy $app
         $app.WaitForExit(3000) | Out-Null
-        Remove-Item Env:TOPSY_GLASS, Env:\TOPSY_IDLE, Env:\TOPSY_STATE, Env:\TOPSY_NO_MEDIA, Env:\TOPSY_NO_WIDGETS -ErrorAction SilentlyContinue
     }
 }
 

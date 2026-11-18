@@ -7,6 +7,7 @@
 # usage: e2e-shelf.ps1 [-Exe target\release\topsy.exe]
 param([string]$Exe = "$PSScriptRoot\..\target\release\topsy.exe")
 $ErrorActionPreference = 'Stop'
+Import-Module "$PSScriptRoot\lib\Topsy.psm1" -DisableNameChecking
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 Add-Type @"
 using System; using System.Collections.Generic; using System.Runtime.InteropServices; using System.Text;
@@ -20,10 +21,8 @@ public static class Native {
   [DllImport("user32.dll")] public static extern int GetClassName(IntPtr h, StringBuilder s, int n);
   [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
   [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT p);
-  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
   [DllImport("user32.dll")] public static extern void mouse_event(uint f, int dx, int dy, uint d, UIntPtr e);
   [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr e);
-  [DllImport("user32.dll")] public static extern uint GetDpiForSystem();
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
   public static IntPtr VisibleWindowOf(uint pid) {
     IntPtr found = IntPtr.Zero;
@@ -37,7 +36,6 @@ public static class Native {
   }
 }
 "@
-[void][Native]::SetProcessDPIAware()
 $LEFTDOWN = 0x2; $LEFTUP = 0x4
 
 $work = Join-Path $env:TEMP 'topsy-e2e-shelf'
@@ -50,23 +48,7 @@ $tgtLog = Join-Path $work 'target.log'
 $shots = Join-Path (Split-Path $PSScriptRoot) 'shots'
 New-Item -ItemType Directory $shots -Force | Out-Null
 
-function Wait-Log($path, $pattern, $ms) {
-    $sw = [Diagnostics.Stopwatch]::StartNew()
-    while ($sw.ElapsedMilliseconds -lt $ms) {
-        # A fixture may be writing the log this instant; a locked read is just "not yet".
-        try { if ((Test-Path $path) -and (Select-String -Path $path -Pattern $pattern -Quiet)) { return $true } } catch {}
-        Start-Sleep -Milliseconds 25
-    }
-    return $false
-}
-function Log-Count($path, $pattern) { if (Test-Path $path) { @(Select-String -Path $path -Pattern $pattern).Count } else { 0 } }
-$scale = [Native]::GetDpiForSystem() / 96.0
-$screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-function Move-Cursor($x, $y) {
-    $nx = [int]([math]::Round($x * 65535 / ($screen.Width - 1)))
-    $ny = [int]([math]::Round($y * 65535 / ($screen.Height - 1)))
-    [Native]::mouse_event(0x8001, $nx, $ny, 0, [UIntPtr]::Zero)
-}
+# Settles 120 ms before pressing, not the module's 150.
 function Click($x, $y) {
     Move-Cursor $x $y; Start-Sleep -Milliseconds 120
     [Native]::mouse_event($LEFTDOWN, 0, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 50
@@ -117,15 +99,16 @@ function Drag-Chip($i, [switch]$Escape) {
 }
 
 $tgtX = 300; $tgtY = 500
-$env:TOPSY_LOG = '1'
-# Keep the notch down at rest, so there is something to click.
-$env:TOPSY_IDLE = 'peek'
-$env:TOPSY_SEED = ($files + $dir) -join ';'
-$env:TOPSY_STATE = Join-Path $work 'shelf.state'
-# A playing song adds a row to the tray and moves the chips this clicks.
-$env:TOPSY_NO_MEDIA = '1'
-$env:TOPSY_NO_WIDGETS = '1'
-$app = Start-Process $Exe -PassThru -RedirectStandardError $appLog
+$app = Start-Topsy -Exe $Exe -Log $appLog -Env @{
+    TOPSY_LOG = '1'
+    # Keep the notch down at rest, so there is something to click.
+    TOPSY_IDLE = 'peek'
+    TOPSY_SEED = ($files + $dir) -join ';'
+    TOPSY_STATE = Join-Path $work 'shelf.state'
+    # A playing song adds a row to the tray and moves the chips this clicks.
+    TOPSY_NO_MEDIA = '1'
+    TOPSY_NO_WIDGETS = '1'
+}
 $tgt = Start-Process powershell -ArgumentList @('-NoProfile', '-STA', '-File', "$PSScriptRoot\drop-target.ps1", $tgtX, $tgtY, $tgtLog) -PassThru
 $failed = $null
 $src = $null
@@ -216,7 +199,7 @@ try {
     [Native]::mouse_event($LEFTUP, 0, 0, 0, [UIntPtr]::Zero)
 } finally {
     Start-Sleep -Milliseconds 200
-    Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
+    Stop-Topsy $app
     Stop-Process -Id $tgt.Id -Force -ErrorAction SilentlyContinue
     if ($src) { Stop-Process -Id $src.Id -Force -ErrorAction SilentlyContinue }
 }

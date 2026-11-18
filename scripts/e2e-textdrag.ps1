@@ -7,6 +7,7 @@
 # usage: e2e-textdrag.ps1 [-Exe target\release\topsy.exe]
 param([string]$Exe = "$PSScriptRoot\..\target\release\topsy.exe")
 $ErrorActionPreference = 'Stop'
+Import-Module "$PSScriptRoot\lib\Topsy.psm1" -DisableNameChecking
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 Add-Type @"
 using System; using System.Runtime.InteropServices;
@@ -18,10 +19,8 @@ public static class Native {
   [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
   [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT p);
-  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
   [DllImport("user32.dll")] public static extern void mouse_event(uint f, int dx, int dy, uint d, UIntPtr e);
   [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr e);
-  [DllImport("user32.dll")] public static extern uint GetDpiForSystem();
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
   // The basket: the one of topsy's windows not hanging from the top edge, as the notch does.
   public static IntPtr BasketOf(uint pid) {
@@ -31,7 +30,6 @@ public static class Native {
   }
 }
 "@
-[void][Native]::SetProcessDPIAware()
 $LEFTDOWN = 0x2; $LEFTUP = 0x4
 
 $work = Join-Path $env:TEMP 'topsy-e2e-textdrag'
@@ -42,21 +40,6 @@ $srcLog = Join-Path $work 'source.log'
 $shots = Join-Path (Split-Path $PSScriptRoot) 'shots'
 New-Item -ItemType Directory $shots -Force | Out-Null
 
-function Wait-Log($path, $pattern, $ms) {
-    $sw = [Diagnostics.Stopwatch]::StartNew()
-    while ($sw.ElapsedMilliseconds -lt $ms) {
-        if ((Test-Path $path) -and (Select-String -Path $path -Pattern $pattern -Quiet)) { return $true }
-        Start-Sleep -Milliseconds 25
-    }
-    return $false
-}
-$scale = [Native]::GetDpiForSystem() / 96.0
-$screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-function Move-Cursor($x, $y) {
-    $nx = [int]([math]::Round($x * 65535 / ($screen.Width - 1)))
-    $ny = [int]([math]::Round($y * 65535 / ($screen.Height - 1)))
-    [Native]::mouse_event(0x8001, $nx, $ny, 0, [UIntPtr]::Zero)
-}
 function Basket-Height {
     $h = [Native]::BasketOf($app.Id)
     if ($h -eq [IntPtr]::Zero) { throw 'the basket has no visible window' }
@@ -65,9 +48,7 @@ function Basket-Height {
 function Is-Open { (Basket-Height) -ge 100 * $scale }
 $srcX = 300; $srcY = 500
 
-$env:TOPSY_LOG = '1'
-$env:TOPSY_STATE = Join-Path $work 'shelf.state'
-$app = Start-Process $Exe -PassThru -RedirectStandardError $appLog
+$app = Start-Topsy -Exe $Exe -Env @{ TOPSY_LOG = '1'; TOPSY_STATE = (Join-Path $work 'shelf.state') } -Log $appLog
 $src = Start-Process powershell -ArgumentList @('-NoProfile', '-STA', '-File', "$PSScriptRoot\drag-source.ps1", '"topsy selected text"', $srcX, $srcY, $srcLog, '-Text') -PassThru
 $failed = $null
 try {
@@ -121,7 +102,7 @@ try {
     [Native]::mouse_event($LEFTUP, 0, 0, 0, [UIntPtr]::Zero)
 } finally {
     Start-Sleep -Milliseconds 200
-    Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
+    Stop-Topsy $app
     Stop-Process -Id $src.Id -Force -ErrorAction SilentlyContinue
 }
 "--- app log (render lines omitted)"; if (Test-Path $appLog) { Get-Content $appLog | Where-Object { $_ -notmatch 'topsy: render$' } }

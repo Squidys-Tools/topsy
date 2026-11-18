@@ -4,15 +4,13 @@ param(
     [int]$Seconds = 10,
     [string]$Exe = "$PSScriptRoot\..\target\release\topsy.exe"
 )
+Import-Module "$PSScriptRoot\lib\Topsy.psm1" -DisableNameChecking
 $err = Join-Path $env:TEMP 'topsy-render.log'
 Remove-Item $err -ErrorAction SilentlyContinue
-$env:TOPSY_LOG = '1'
-$env:TOPSY_STATE = Join-Path $env:TEMP 'topsy-count-state.txt'
-$app = Start-Process $Exe -PassThru -RedirectStandardError $err
+$app = Start-Topsy -Exe $Exe -Env @{ TOPSY_LOG = '1'; TOPSY_STATE = (Join-Path $env:TEMP 'topsy-count-state.txt') } -Log $err
 Start-Sleep -Seconds 6                      # startup + first frames
 $startLines = @(Get-Content $err -ErrorAction SilentlyContinue | Where-Object { $_ -match 'render' }).Count
 Start-Sleep -Seconds $Seconds
 $endLines = @(Get-Content $err -ErrorAction SilentlyContinue | Where-Object { $_ -match 'render' }).Count
-Stop-Process -Id $app.Id -Force
-Remove-Item Env:\TOPSY_LOG, Env:\TOPSY_STATE -ErrorAction SilentlyContinue
+Stop-Topsy $app
 "renders: $startLines during startup, $($endLines - $startLines) over the next ${Seconds}s of idle"
