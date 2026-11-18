@@ -177,6 +177,10 @@ impl Live {
             root.SetEffect(&blur)?;
             let clip = device.CreateRectangleClip()?;
             root.SetClip(&clip)?;
+            // The copy spans the virtual screen; cut it down to what the blur can reach before
+            // the effect runs, or DWM blurs every changing pixel of every monitor.
+            let source = device.CreateRectangleClip()?;
+            copy.SetClip(&source)?;
             root.AddVisual(&copy, false, None::<&IDCompositionVisual>)?;
             target.SetRoot(&root)?;
 
@@ -189,6 +193,7 @@ impl Live {
                     thumbnail,
                     copy,
                     clip,
+                    source,
                     blur,
                     shown: Cell::new(None),
                 })),
@@ -208,6 +213,8 @@ struct Parts {
     thumbnail: isize,
     copy: IDCompositionVisual2,
     clip: IDCompositionRectangleClip,
+    /// The copy's own clip, in virtual-screen coordinates.
+    source: IDCompositionRectangleClip,
     blur: IDCompositionGaussianBlurEffect,
     /// The virtual screen and scale the copy was last made for.
     shown: Cell<Option<(RECT, f32)>>,
@@ -264,6 +271,17 @@ impl LiveShape {
                 height,
                 radius,
             } = outline;
+            // Three deviations is as far as the blur reaches.
+            let reach = 3.0 * BLUR * scale;
+            let (left, top) = (
+                (origin.0 - virtual_screen.left) as f32,
+                (origin.1 - virtual_screen.top) as f32,
+            );
+            let source = &parts.source;
+            source.SetLeft2(left + x - reach).log_err();
+            source.SetTop2(top + y - reach).log_err();
+            source.SetRight2(left + x + width + reach).log_err();
+            source.SetBottom2(top + y + height + reach).log_err();
             let clip = &parts.clip;
             clip.SetLeft2(x).log_err();
             clip.SetTop2(y).log_err();
