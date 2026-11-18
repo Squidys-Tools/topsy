@@ -11,7 +11,7 @@ use super::engines::bytes;
 use super::job::{Input, into, reserve};
 use super::options::{IMAGE_TARGETS, Options, PDF_TARGETS, PERCENTS, SIDES};
 use super::{image, pdf};
-use crate::log::LogErr;
+use crate::log::{LogErr, MissingOk};
 use crate::model::download::ModelStatus;
 use crate::model::image_geometry::{LargestSide, Resize, Rotation};
 use crate::model::image_ops::{
@@ -164,8 +164,8 @@ fn written(
     }
     let to = reserve(paths(src, action, ext)?).inspect_err(|_| drop(fs::remove_file(&out)))?;
     fs::rename(&out, &to).inspect_err(|_| {
-        fs::remove_file(&out).log_err();
-        fs::remove_file(&to).log_err();
+        fs::remove_file(&out).missing_ok().log_err();
+        fs::remove_file(&to).missing_ok().log_err();
     })?;
     Ok(vec![to])
 }
@@ -269,7 +269,7 @@ fn to_images(
         Ok(_) => Ok(made),
         Err(err) => {
             for path in made {
-                fs::remove_file(path).log_err();
+                fs::remove_file(path).missing_ok().log_err();
             }
             Err(err)
         }

@@ -253,7 +253,11 @@ unsafe fn with_bytes<T>(format: u32, f: impl FnOnce(&[u8]) -> Option<T>) -> Opti
             return None;
         }
         let result = f(std::slice::from_raw_parts(ptr as *const u8, size));
-        GlobalUnlock(global).log_err();
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the last unlock returns FALSE with no error"
+        )]
+        let _ = GlobalUnlock(global);
         result
     }
 }

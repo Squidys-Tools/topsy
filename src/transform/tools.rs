@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use super::fetch::{Pinned, Status, root};
 
-use crate::log::LogErr;
+use crate::log::{LogErr, MissingOk};
 
 /// One downloadable tool: its archive, and the program inside it.
 pub struct Tool {
@@ -65,15 +65,15 @@ impl Tool {
         let home = self.home()?;
         // Unpacked beside its final place and renamed in, so a half-unpacked tool never counts.
         let staging = home.with_extension("unpacking");
-        fs::remove_dir_all(&staging).log_err();
+        fs::remove_dir_all(&staging).missing_ok().log_err();
         let unpacked = unpack(&archive, &staging, keep, cancel);
         if let Err(err) = unpacked {
-            fs::remove_dir_all(&staging).log_err();
+            fs::remove_dir_all(&staging).missing_ok().log_err();
             return Err(err);
         }
-        fs::remove_dir_all(&home).log_err();
+        fs::remove_dir_all(&home).missing_ok().log_err();
         fs::rename(&staging, &home)?;
-        fs::remove_file(&archive).log_err();
+        fs::remove_file(&archive).missing_ok().log_err();
         if !program.is_file() {
             return Err(io::Error::new(
                 io::ErrorKind::NotFound,
@@ -313,7 +313,7 @@ mod tests {
 
     fn scratch(tag: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("topsy-tools-{}-{tag}", std::process::id()));
-        fs::remove_dir_all(&dir).log_err();
+        fs::remove_dir_all(&dir).missing_ok().log_err();
         fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -342,7 +342,7 @@ mod tests {
         assert!(!out.join("LICENSE").exists());
         assert_eq!(enclosed(Path::new("../evil")), None);
         assert_eq!(enclosed(Path::new("./a/b")), Some(PathBuf::from("a/b")));
-        fs::remove_dir_all(&dir).log_err();
+        fs::remove_dir_all(&dir).missing_ok().log_err();
     }
 
     #[test]
@@ -355,7 +355,7 @@ mod tests {
         unpack(&archive, &out, &keep, &AtomicBool::new(false)).unwrap();
         assert_eq!(fs::read(out.join("tool/bin/keep.txt")).unwrap(), b"kept");
         assert!(!out.join("tool/skip.txt").exists());
-        fs::remove_dir_all(&dir).log_err();
+        fs::remove_dir_all(&dir).missing_ok().log_err();
     }
 
     #[test]

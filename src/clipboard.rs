@@ -18,7 +18,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::autostart::RegString;
 use crate::log;
-use crate::log::LogErr;
+use crate::log::{LogErr, MissingOk};
 use crate::model::clipboard::{Added, Content, Entry, History, leftovers};
 use crate::model::dib::{self, Rgba};
 use crate::win32::clipboard::{self as watcher, Copy};
@@ -269,12 +269,12 @@ fn sweep(dir: &Path) {
         .collect();
     for name in leftovers(&names) {
         log(&format!("clipboard leftover {name}"));
-        std::fs::remove_file(dir.join(name)).log_err();
+        std::fs::remove_file(dir.join(name)).missing_ok().log_err();
     }
     let icons = std::fs::read_dir(dir.join("icons")).into_iter().flatten();
     for icon in icons.filter_map(Result::ok) {
         if icon.path().extension().is_some_and(|e| e == "tmp") {
-            std::fs::remove_file(icon.path()).log_err();
+            std::fs::remove_file(icon.path()).missing_ok().log_err();
         }
     }
 }

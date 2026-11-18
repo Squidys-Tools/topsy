@@ -4,7 +4,7 @@ use std::sync::atomic::AtomicBool;
 
 use image::{Rgba, RgbaImage};
 
-use crate::log::LogErr;
+use crate::log::{LogErr, MissingOk};
 use crate::model::jpeg::markers;
 
 mod manual;
@@ -46,7 +46,7 @@ impl Scratch {
     pub fn new(tag: &str) -> Self {
         let dir =
             std::env::temp_dir().join(format!("topsy-transform-{}-{tag}", std::process::id()));
-        std::fs::remove_dir_all(&dir).log_err();
+        std::fs::remove_dir_all(&dir).missing_ok().log_err();
         std::fs::create_dir_all(&dir).unwrap();
         Self(dir)
     }
@@ -64,7 +64,7 @@ impl Scratch {
 
 impl Drop for Scratch {
     fn drop(&mut self) {
-        std::fs::remove_dir_all(&self.0).log_err();
+        std::fs::remove_dir_all(&self.0).missing_ok().log_err();
     }
 }
 

@@ -40,11 +40,12 @@ unsafe extern "system" fn mouse_proc(code: i32, wparam: WPARAM, lparam: LPARAM) 
         if let Ok(mut guard) = HOOK_STATE.try_lock()
             && let Some(state) = guard.as_mut()
         {
+            // A full queue drops the event: the hook has no time to wait for the UI thread.
             match wparam.0 as u32 {
                 WM_LBUTTONDOWN => state.detector.button_down(now, info.pt.x),
                 WM_LBUTTONUP => {
                     state.detector.button_up();
-                    state.tx.try_send(HookEvent::ButtonUp).log_err();
+                    state.tx.try_send(HookEvent::ButtonUp).ok();
                 }
                 WM_MOUSEMOVE => {
                     if let Some(at_edge) = state
@@ -53,13 +54,10 @@ unsafe extern "system" fn mouse_proc(code: i32, wparam: WPARAM, lparam: LPARAM) 
                         .and_then(|e| e.moved(info.pt.x, info.pt.y))
                     {
                         let pressed = state.detector.pressed();
-                        state
-                            .tx
-                            .try_send(HookEvent::Edge { at_edge, pressed })
-                            .log_err();
+                        state.tx.try_send(HookEvent::Edge { at_edge, pressed }).ok();
                     }
                     if state.detector.moved(now, info.pt.x) {
-                        state.tx.try_send(HookEvent::Jiggle).log_err();
+                        state.tx.try_send(HookEvent::Jiggle).ok();
                     }
                 }
                 _ => {}

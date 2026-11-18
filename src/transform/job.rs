@@ -17,7 +17,7 @@ use windows::Win32::System::Com::COINIT_MULTITHREADED;
 use super::cards::{self, Cards};
 use super::engines::{self, Work};
 use super::{Open, Panel, State, image, video};
-use crate::log::LogErr;
+use crate::log::{LogErr, MissingOk};
 use crate::model::transform::{Action, Kind, combined_paths, name_problem, rename_targets};
 use crate::model::transform_card::{Made, Sides};
 use crate::{Island, archive, log, win32};
@@ -72,7 +72,7 @@ pub fn into(out: PathBuf, make: impl FnOnce(&Path) -> io::Result<()>) -> io::Res
     match make(&out) {
         Ok(()) => Ok(out),
         Err(err) => {
-            fs::remove_file(&out).log_err();
+            fs::remove_file(&out).missing_ok().log_err();
             Err(err)
         }
     }
@@ -327,7 +327,7 @@ fn run(
                         // All or nothing: what the earlier files made goes too.
                         Err(err) => {
                             for path in &outcome.outputs {
-                                fs::remove_file(path).log_err();
+                                fs::remove_file(path).missing_ok().log_err();
                             }
                             if inputs.len() == 1 || err.kind() == io::ErrorKind::Interrupted {
                                 return Err(err);
@@ -424,7 +424,7 @@ mod tests {
 
     fn scratch(tag: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("topsy-rename-{}-{tag}", std::process::id()));
-        fs::remove_dir_all(&dir).log_err();
+        fs::remove_dir_all(&dir).missing_ok().log_err();
         fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -462,7 +462,7 @@ mod tests {
             fs::read_to_string(dir.join("Trip 02.png")).unwrap(),
             "theirs"
         );
-        fs::remove_dir_all(&dir).log_err();
+        fs::remove_dir_all(&dir).missing_ok().log_err();
     }
 
     #[test]
@@ -476,6 +476,6 @@ mod tests {
             .map(|e| e.unwrap().file_name())
             .collect();
         assert_eq!(names, ["Trip.png"]);
-        fs::remove_dir_all(&dir).log_err();
+        fs::remove_dir_all(&dir).missing_ok().log_err();
     }
 }

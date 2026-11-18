@@ -68,13 +68,25 @@ unsafe fn set(format: u32, bytes: &[u8]) -> bool {
         };
         let ptr = GlobalLock(global);
         if ptr.is_null() {
-            GlobalFree(Some(global)).log_err();
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "a freed handle comes back NULL, which reads as failure"
+            )]
+            let _ = GlobalFree(Some(global));
             return false;
         }
         std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr as *mut u8, bytes.len());
-        GlobalUnlock(global).log_err();
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the last unlock returns FALSE with no error"
+        )]
+        let _ = GlobalUnlock(global);
         if SetClipboardData(format, Some(HANDLE(global.0))).is_err() {
-            GlobalFree(Some(global)).log_err();
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "a freed handle comes back NULL, which reads as failure"
+            )]
+            let _ = GlobalFree(Some(global));
             return false;
         }
         true

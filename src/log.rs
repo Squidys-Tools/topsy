@@ -2,6 +2,7 @@
 //! hears about.
 
 use std::fmt::Debug;
+use std::io;
 use std::panic::Location;
 
 use crate::config;
@@ -29,6 +30,20 @@ impl<T, E: Debug> LogErr<T> for Result<T, E> {
                 eprintln!("topsy: {}:{}: {err:?}", at.file(), at.line());
                 None
             }
+        }
+    }
+}
+
+/// Removing what is already gone is not a failure.
+pub trait MissingOk {
+    fn missing_ok(self) -> Self;
+}
+
+impl MissingOk for io::Result<()> {
+    fn missing_ok(self) -> Self {
+        match self {
+            Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(()),
+            result => result,
         }
     }
 }
