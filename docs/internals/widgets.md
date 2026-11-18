@@ -16,7 +16,7 @@ Decisions behind [Shelf widgets](../user/widgets.md). The row lives in `src/widg
   `Swipe` turns once a sideways scroll travels 30 px and ignores the rest until the scrolling pauses for 250 ms.
   The chips take the swipe while they can still scroll that way. The vertical wheel never turns the page.
 - **Nothing runs off screen.** A card books its next redraw (the stats' next sample, the countdown's next
-  second) from its own render, behind a `Cell` flag, and the callback redraws only while `widgets_visible()`.
+  second) from its own render as a `Booking`, and the callback redraws only while the island says the row shows.
   The weather fetches from its render when one is due, so a retry waits for the next look. Folded, the row
   costs nothing; opened again, its render books the next round. The one exception is the Pomodoro's end: a
   single timer for the moment it is due, cancelled by a generation counter, so the chime and the passing

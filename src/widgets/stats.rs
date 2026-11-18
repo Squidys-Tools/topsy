@@ -2,7 +2,6 @@
 //! gauge, its percentage and a rolling graph. It samples once a second only while it is drawn;
 //! the rules are in `model::stats`, the readings in `win32::sysinfo`.
 
-use std::cell::Cell;
 use std::f32::consts::TAU;
 use std::time::Instant;
 
@@ -12,6 +11,7 @@ use gpui::{
 };
 
 use crate::Island;
+use crate::booking::Booking;
 use crate::icons::{self, Icon};
 use crate::log::LogErr;
 use crate::win32::sysinfo;
@@ -31,8 +31,8 @@ const DIM: u32 = 0xffffff80;
 #[derive(Default)]
 pub struct State {
     stats: Stats,
-    /// The next sample is booked.
-    booked: Cell<bool>,
+    /// The next sample.
+    booked: Booking,
 }
 
 impl State {
@@ -78,25 +78,19 @@ impl State {
 
     /// Book the next sample while the card is drawn; a folded tray books nothing.
     fn book(&self, visible: bool, cx: &mut Context<Island>) {
-        if !visible || self.booked.replace(true) {
+        if !visible {
             return;
         }
         let after = self.stats.next_sample(Instant::now());
-        cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(after).await;
-            this.update(cx, |this, cx| {
-                this.update_widgets(cx, |widgets, visible, cx| {
-                    widgets.stats.sample(visible, cx);
-                    None
-                });
-            })
-            .ok();
-        })
-        .detach();
+        self.booked.book(after, cx, |island, cx| {
+            island.update_widgets(cx, |widgets, visible, cx| {
+                widgets.stats.sample(visible, cx);
+                None
+            });
+        });
     }
 
     fn sample(&mut self, visible: bool, cx: &mut Context<Island>) {
-        self.booked.set(false);
         if !visible {
             return;
         }

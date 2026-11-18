@@ -7,6 +7,7 @@ mod archive;
 mod autostart;
 mod backdrop;
 mod basket;
+mod booking;
 mod clipboard;
 mod config;
 mod frame;

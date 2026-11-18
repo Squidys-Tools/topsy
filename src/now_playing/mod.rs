@@ -15,6 +15,7 @@ use gpui::{
     rgb, rgba,
 };
 
+use crate::booking::Booking;
 use crate::icons::{self, Icon};
 use crate::now_playing::session::{self as media, Button};
 use crate::win32::meter::Meter;
@@ -43,18 +44,18 @@ pub struct Media {
     art: Option<Arc<RenderImage>>,
     /// The bars' colour, from the art.
     accent: Option<[u8; 3]>,
-    /// A redraw is booked for the progress bar's next second.
-    ticking: Cell<bool>,
+    /// The progress bar's next second.
+    ticking: Booking,
     levels: Levels,
     /// Open only while the bars move, with when it was opened.
     meter: Option<(Meter, Instant)>,
-    /// The bars' next frame is booked.
-    metering: Cell<bool>,
+    /// The bars' next frame.
+    metering: Booking,
     /// The player's title line, scrolled when the title is too long for it.
     title: ScrollHandle,
     /// When this track's title was first shown, and whether its next scroll step is booked.
     title_shown: Cell<Option<Instant>>,
-    scrolling: Cell<bool>,
+    scrolling: Booking,
 }
 
 /// What of the island is on screen, as the island decides it: Now Playing books redraws only
@@ -208,24 +209,15 @@ impl Media {
     /// Redraw when the elapsed time next reads a new second, while the player is drawn. Nothing
     /// is booked otherwise, so a closed island costs nothing however long the song.
     fn tick(&self, progress: Progress, cx: &mut Context<Island>) {
-        if self.ticking.replace(true) {
-            return;
-        }
-        let after = progress.until_next_second();
-        cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(after).await;
-            this.update(cx, |island, cx| {
-                island.update_media(cx, |media, shown, cx| {
-                    media.ticking.set(false);
+        self.ticking
+            .book(progress.until_next_second(), cx, |island, cx| {
+                island.update_media(cx, |_, shown, cx| {
                     if shown.tray {
                         cx.notify();
                     }
                     None
                 });
-            })
-            .ok();
-        })
-        .detach();
+            });
     }
 
     /// Scroll a title too long for its line to where it is now, and book the next step. The
@@ -244,26 +236,17 @@ impl Media {
             None if fresh => marquee::FRAME,
             None => return,
         };
-        if self.scrolling.replace(true) {
-            return;
-        }
-        cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(next).await;
-            this.update(cx, |island, cx| {
-                island.update_media(cx, |media, shown, cx| {
-                    media.scrolling.set(false);
-                    if shown.player {
-                        cx.notify();
-                    } else {
-                        // Shown again, it starts from the beginning.
-                        media.title_shown.set(None);
-                    }
-                    None
-                });
-            })
-            .ok();
-        })
-        .detach();
+        self.scrolling.book(next, cx, |island, cx| {
+            island.update_media(cx, |media, shown, cx| {
+                if shown.player {
+                    cx.notify();
+                } else {
+                    // Shown again, it starts from the beginning.
+                    media.title_shown.set(None);
+                }
+                None
+            });
+        });
     }
 
     /// The peek's hint while something plays: the title with its art, and how many files
@@ -312,19 +295,14 @@ impl Media {
         shown: Shown,
         cx: &mut Context<Island>,
     ) -> impl IntoElement + use<> {
-        if self.bars_live(shown) && !self.metering.replace(true) {
-            cx.spawn(async move |this, cx| {
-                let frame = Duration::from_millis(levels::FRAME_MS);
-                cx.background_executor().timer(frame).await;
-                this.update(cx, |island, cx| {
-                    island.update_media(cx, |media, shown, cx| {
-                        media.meter_frame(shown, cx);
-                        None
-                    });
-                })
-                .ok();
-            })
-            .detach();
+        if self.bars_live(shown) {
+            let frame = Duration::from_millis(levels::FRAME_MS);
+            self.metering.book(frame, cx, |island, cx| {
+                island.update_media(cx, |media, shown, cx| {
+                    media.meter_frame(shown, cx);
+                    None
+                });
+            });
         }
         let heights = self.levels.bars();
         let color = match self.accent {
@@ -353,7 +331,6 @@ impl Media {
     }
 
     fn meter_frame(&mut self, shown: Shown, cx: &mut Context<Island>) {
-        self.metering.set(false);
         if !self.bars_live(shown) {
             self.meter = None;
             let moving = self.levels.bars() != [levels::REST; BARS];

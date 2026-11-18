@@ -29,7 +29,9 @@ Walk every entry; say in the PR which applied.
 3. **State and view** in the feature's own module, with its entry point and `Effect` in `tray_view.rs`.
 4. **Room on screen.** A section of the tray is a field of `TrayCause::sections` and a term in `size_for`; a
    peek is a branch of `peek_content`.
-5. **Redraws.** Book them only while the feature shows, and test it with `scripts/count-renders.ps1`.
+5. **Redraws.** A clock or a moving bar books its next redraw from its render with a `Booking`
+   (`src/booking.rs`), which keeps one timer however often the render runs, and redraws only while the
+   feature shows. Check the idle with `scripts/count-renders.ps1`.
 6. **A switch to turn it off.** A `Setting` variant (`src/settings/mod.rs`) reaches the tray icon's menu and the
    settings window; a `TOPSY_NO_*` field in `src/config.rs` and a row in
    [Running](../operations/running.md), and the live checks that click the tray turn it off.

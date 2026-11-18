@@ -4,7 +4,6 @@
 //! card is on screen and says so with a sound and a passing Live Activity; the countdown itself
 //! is redrawn only while the card is drawn.
 
-use std::cell::Cell;
 use std::time::{Duration, Instant};
 
 use gpui::{
@@ -13,6 +12,7 @@ use gpui::{
 };
 
 use super::{Effect, keep_press};
+use crate::booking::Booking;
 use crate::icons::{self, Icon};
 use crate::{Island, log};
 use model::pomodoro::{Clock, Phase, Pomodoro, clock};
@@ -28,8 +28,8 @@ const STEP: f32 = 22.0;
 #[derive(Default)]
 pub struct State {
     timer: Pomodoro,
-    /// A redraw is booked for the countdown's next second.
-    ticking: Cell<bool>,
+    /// The countdown's next second.
+    ticking: Booking,
     /// Bumped on every change, so only the latest end timer finishes the phase.
     generation: u64,
 }
@@ -169,23 +169,14 @@ impl State {
 
     /// Redraw when the countdown next reads a new second, while the card is drawn.
     fn tick(&self, after: Duration, cx: &mut Context<Island>) {
-        if self.ticking.replace(true) {
-            return;
-        }
-        cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(after).await;
-            this.update(cx, |this, cx| {
-                this.update_widgets(cx, |widgets, visible, cx| {
-                    widgets.pomodoro.ticking.set(false);
-                    if visible {
-                        cx.notify();
-                    }
-                    None
-                });
-            })
-            .ok();
-        })
-        .detach();
+        self.ticking.book(after, cx, |island, cx| {
+            island.update_widgets(cx, |_, visible, cx| {
+                if visible {
+                    cx.notify();
+                }
+                None
+            });
+        });
     }
 }
 
