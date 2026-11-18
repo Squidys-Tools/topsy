@@ -8,10 +8,11 @@ mod pomodoro;
 mod stats;
 mod weather;
 
-use gpui::{AnyElement, Context, div, prelude::*, px, rgba};
+use gpui::{AnyElement, Context, MouseDownEvent, Window, div, prelude::*, px, rgba};
 
 use crate::autostart::RegString;
-use crate::{Island, Mode, config};
+use crate::{Island, config};
+use model::pomodoro::Phase;
 use model::widgets::{Lineup, Widget};
 
 const SETTING: RegString<'static> = RegString::new(r"Software\topsy", "Widgets");
@@ -49,68 +50,50 @@ impl Default for State {
     }
 }
 
+/// What the island must do in turn for a change the cards made.
+pub(crate) enum Effect {
+    /// A card took the left button: no chip is being pressed.
+    Pressed,
+    /// A Pomodoro phase ran out; the island says so with a passing Live Activity.
+    PhaseOver(Phase),
+    /// The lineup changed: an open tray springs to its new size.
+    Refit,
+}
+
 impl State {
     /// The tray opened: the calendar shows this month again.
     pub fn opened(&mut self) {
         self.calendar.reset();
     }
-}
 
-/// The lineup as saved, or the default one if it never was.
-pub fn saved() -> Lineup {
-    SETTING
-        .value()
-        .map_or_else(Lineup::default, |saved| Lineup::parse(&saved))
-}
-
-pub fn save(lineup: &Lineup) -> windows::core::Result<()> {
-    SETTING.set(&lineup.serialize())
-}
-
-fn width(widget: Widget) -> f32 {
-    match widget {
-        Widget::Calendar => calendar::WIDTH,
-        Widget::Pomodoro => pomodoro::WIDTH,
-        Widget::Stats => stats::WIDTH,
-        Widget::Weather => weather::WIDTH,
-    }
-}
-
-impl Island {
-    pub(crate) fn widgets_on(&self) -> bool {
-        !self.widgets.lineup.is_empty()
-    }
-
-    /// The row is on screen: a card's redraws are worth booking.
-    pub(crate) fn widgets_visible(&self) -> bool {
-        self.mode == Mode::Tray && self.sections().widgets
+    pub(crate) fn is_on(&self) -> bool {
+        !self.lineup.is_empty()
     }
 
     /// The row's width, padding included.
-    pub(crate) fn widgets_width(&self) -> f32 {
-        let widgets = self.widgets.lineup.widgets();
-        let cards: f32 = widgets.iter().map(|w| width(*w)).sum();
+    pub(crate) fn width(&self) -> f32 {
+        let widgets = self.lineup.widgets();
+        let cards: f32 = widgets.iter().map(|w| card_width(*w)).sum();
         let gaps = widgets.len().saturating_sub(1) as f32 * GAP;
         cards + gaps + 2.0 * PAD_X
     }
 
     /// The settings window changed the lineup (it is saved already).
-    pub(crate) fn set_lineup(&mut self, lineup: Lineup, cx: &mut Context<Self>) {
+    pub(crate) fn set_lineup(&mut self, lineup: Lineup) -> Option<Effect> {
         if config::get().no_widgets {
-            return;
+            return None;
         }
         if !lineup.contains(Widget::Pomodoro) {
-            self.widgets.pomodoro.stop();
+            self.pomodoro.stop();
         }
-        self.widgets.lineup = lineup;
-        if self.mode == Mode::Tray {
-            self.set_mode(Mode::Tray, cx);
-        }
+        self.lineup = lineup;
+        Some(Effect::Refit)
     }
 
-    /// The cards, side by side with a hairline between each.
-    pub(crate) fn widgets_row(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        let widgets = self.widgets.lineup.widgets();
+    /// The cards, side by side with a hairline between each. `visible`: the row is on screen, so
+    /// a card's redraws are worth booking.
+    pub(crate) fn row(&self, visible: bool, cx: &mut Context<Island>) -> impl IntoElement + use<> {
+        let widgets = self.lineup.widgets();
         let cards = widgets.iter().enumerate().flat_map(|(i, widget)| {
             let divider = (i > 0).then(|| {
                 div()
@@ -121,9 +104,9 @@ impl Island {
                     .bg(rgba(DIVIDER))
                     .into_any_element()
             });
-            let card = self.card(*widget, cx);
+            let card = self.card(*widget, visible, cx);
             divider.into_iter().chain([div()
-                .w(px(width(*widget)))
+                .w(px(card_width(*widget)))
                 .h(px(CARD))
                 .flex_shrink_0()
                 .child(card)
@@ -143,12 +126,39 @@ impl Island {
             .children(cards.collect::<Vec<_>>())
     }
 
-    fn card(&self, widget: Widget, cx: &mut Context<Self>) -> AnyElement {
+    fn card(&self, widget: Widget, visible: bool, cx: &mut Context<Island>) -> AnyElement {
         match widget {
-            Widget::Calendar => self.calendar_card(cx),
-            Widget::Pomodoro => self.pomodoro_card(cx),
-            Widget::Stats => self.stats_card(cx),
-            Widget::Weather => self.weather_card(cx),
+            Widget::Calendar => self.calendar.card(cx),
+            Widget::Pomodoro => self.pomodoro.card(cx),
+            Widget::Stats => self.stats.card(visible, cx),
+            Widget::Weather => self.weather.card(visible, cx),
         }
     }
+}
+
+/// The lineup as saved, or the default one if it never was.
+pub fn saved() -> Lineup {
+    SETTING
+        .value()
+        .map_or_else(Lineup::default, |saved| Lineup::parse(&saved))
+}
+
+pub fn save(lineup: &Lineup) -> windows::core::Result<()> {
+    SETTING.set(&lineup.serialize())
+}
+
+fn card_width(widget: Widget) -> f32 {
+    match widget {
+        Widget::Calendar => calendar::WIDTH,
+        Widget::Pomodoro => pomodoro::WIDTH,
+        Widget::Stats => stats::WIDTH,
+        Widget::Weather => weather::WIDTH,
+    }
+}
+
+/// The left button going down on a card stays there: the island under it neither starts a drag
+/// nor opens. For `cx.listener`.
+fn keep_press(island: &mut Island, _: &MouseDownEvent, _: &mut Window, cx: &mut Context<Island>) {
+    island.update_widgets(cx, |_, _, _| Some(Effect::Pressed));
+    cx.stop_propagation();
 }

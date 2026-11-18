@@ -3,7 +3,9 @@
 
 use gpui::{ClickEvent, Context, ScrollWheelEvent, div, prelude::*, px, rgb, rgba};
 
-use crate::{Island, Mode, now_playing, widgets};
+use crate::widgets::{self, Effect};
+use crate::{Island, Mode, now_playing};
+use model::activity::{Activity, Key};
 use model::tray_cause::Sections;
 
 /// Between chips.
@@ -12,7 +14,30 @@ const GAP: f32 = 8.0;
 impl Island {
     pub(crate) fn sections(&self) -> Sections {
         let playing = self.media.now.card().is_some();
-        (self.tray_cause).sections(self.pager.page(), playing, self.widgets_on())
+        (self.tray_cause).sections(self.pager.page(), playing, self.widgets.is_on())
+    }
+
+    /// The widgets' row is on screen: a card's redraws are worth booking.
+    fn widgets_visible(&self) -> bool {
+        self.mode == Mode::Tray && self.sections().widgets
+    }
+
+    /// The one way into the widgets from their listeners and tasks: `update` changes their state,
+    /// told whether the row is on screen, and the island does what it asks in turn.
+    pub(crate) fn update_widgets(
+        &mut self,
+        cx: &mut Context<Self>,
+        update: impl FnOnce(&mut widgets::State, bool, &mut Context<Self>) -> Option<Effect>,
+    ) {
+        let visible = self.widgets_visible();
+        match update(&mut self.widgets, visible, cx) {
+            Some(Effect::Pressed) => self.press = None,
+            Some(Effect::PhaseOver(ended)) => {
+                self.show_activity(Key::Timer, Activity::PhaseOver { ended }, cx);
+            }
+            Some(Effect::Refit) if self.mode == Mode::Tray => self.set_mode(Mode::Tray, cx),
+            Some(Effect::Refit) | None => {}
+        }
     }
 
     /// Fold back to rest now, cancelling any collapse already scheduled (Escape, the tray icon).
@@ -43,7 +68,7 @@ impl Island {
             0.0
         };
         let (row, w) = match sections.widgets {
-            true => (widgets::HEIGHT, w.max(self.widgets_width())),
+            true => (widgets::HEIGHT, w.max(self.widgets.width())),
             false => (0.0, w),
         };
         let shelf = if sections.shelf { h } else { 0.0 };
@@ -95,7 +120,7 @@ impl Island {
                 this.on_scroll(event, window, cx);
             }))
             .children(sections.media.then(|| self.player(cx)).flatten())
-            .children(sections.widgets.then(|| self.widgets_row(cx)))
+            .children((sections.widgets).then(|| self.widgets.row(self.widgets_visible(), cx)))
             .children(sections.shelf.then(|| self.shelf_section(cx)))
             .children(self.hud_over_tray())
     }

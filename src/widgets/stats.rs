@@ -35,17 +35,10 @@ pub struct State {
     booked: Cell<bool>,
 }
 
-/// Which half: CPU reads left to right, memory mirrors it.
-#[derive(Clone, Copy)]
-enum Side {
-    Cpu,
-    Ram,
-}
-
-impl Island {
-    pub(crate) fn stats_card(&self, cx: &mut Context<Self>) -> AnyElement {
-        self.book_stats(cx);
-        let stats = &self.widgets.stats.stats;
+impl State {
+    pub(super) fn card(&self, visible: bool, cx: &mut Context<Island>) -> AnyElement {
+        self.book(visible, cx);
+        let stats = &self.stats;
         let memory = stats.memory();
         let cpu = gauge(Side::Cpu, stats.cpu(), None);
         let ram = gauge(
@@ -84,30 +77,41 @@ impl Island {
     }
 
     /// Book the next sample while the card is drawn; a folded tray books nothing.
-    fn book_stats(&self, cx: &mut Context<Self>) {
-        if !self.widgets_visible() || self.widgets.stats.booked.replace(true) {
+    fn book(&self, visible: bool, cx: &mut Context<Island>) {
+        if !visible || self.booked.replace(true) {
             return;
         }
-        let after = self.widgets.stats.stats.next_sample(Instant::now());
+        let after = self.stats.next_sample(Instant::now());
         cx.spawn(async move |this, cx| {
             cx.background_executor().timer(after).await;
             this.update(cx, |this, cx| {
-                this.widgets.stats.booked.set(false);
-                if !this.widgets_visible() {
-                    return;
-                }
-                let times = sysinfo::cpu_times().log_err();
-                let memory = sysinfo::memory().log_err();
-                this.widgets
-                    .stats
-                    .stats
-                    .sample(times, memory, Instant::now());
-                cx.notify();
+                this.update_widgets(cx, |widgets, visible, cx| {
+                    widgets.stats.sample(visible, cx);
+                    None
+                });
             })
             .ok();
         })
         .detach();
     }
+
+    fn sample(&mut self, visible: bool, cx: &mut Context<Island>) {
+        self.booked.set(false);
+        if !visible {
+            return;
+        }
+        let times = sysinfo::cpu_times().log_err();
+        let memory = sysinfo::memory().log_err();
+        self.stats.sample(times, memory, Instant::now());
+        cx.notify();
+    }
+}
+
+/// Which half: CPU reads left to right, memory mirrors it.
+#[derive(Clone, Copy)]
+enum Side {
+    Cpu,
+    Ram,
 }
 
 /// The ring under its label with the percentage beside it, on the card's outer edge.
