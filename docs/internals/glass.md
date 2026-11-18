@@ -11,7 +11,7 @@ draws the tint and rim on top. A second such pane is the page capsule under the 
 - **Live (the default).** dwmapi's undocumented shared multi-window visual (ordinals 163 and 164, as VLC 4 uses
   them) is a live copy of every window on the virtual screen except the ones excluded (the island itself), updated
   by DWM. It sits in a DirectComposition target, shifted so the part behind the window lines up, under a saturation
-  (1.45x, Notchy's value for Droppy's look) and a Gaussian blur of our choosing (10 logical px). The host backdrop's
+  (1.45x, Notchy's value for Droppy's look) and a Gaussian blur of our choosing (4 logical px). The host backdrop's
   blur is fixed and heavier than Droppy's; this one lets what is behind stay recognisable. Grey Perlin grain, added
 centred on zero so it lightens nothing, keeps large flat areas from banding, as on acrylic. The visual must be made for
   a window with live preview turned off, so a cloaked tool window of topsy's own hosts it. Ordinal 164 lost an
@@ -58,13 +58,13 @@ the contrast beside it, in five modes:
 | `TOPSY_GLASS` | What it is | Contrast kept |
 |---|---|---|
 | `clear` | transparent fill, no blur | 1.00 (control: proves the measurement) |
-| `tint` | the same fill, no blur | 0.31 (what the dark fill alone does) |
-| *(default)* | live glass, notch-clipped | **0.06** (21% of what the tint leaves; the grain is part of it) |
-| `host` | host backdrop, notch-clipped | 0.04 (13%) |
-| `acrylic` | window-wide acrylic, the fallback | 0.06 (19%) |
+| `tint` | the same fill, no blur | 0.49 (what the dark fill alone does) |
+| *(default)* | live glass, notch-clipped | **0.14** (28% of what the tint leaves; the grain is part of it) |
+| `host` | host backdrop, notch-clipped | 0.04 (8%) |
+| `acrylic` | window-wide acrylic, the fallback | 0.05 (10%) |
 
-It samples the bottom of the tray, where the fill has faded most. Both compositor glasses flatten 6 px stripes
-completely, so the check proves there is a blur, not how light it is. The `tint` control matters: the fill is still
-about 70% opaque there, so it cuts stripe contrast by itself, and without the control that would look like blur.
+It samples the bottom of the tray, where the fill has faded most. The live glass's light blur leaves some of the
+6 px stripes and the host backdrop flattens them, so the check proves there is a blur, not how light it is. The `tint`
+control matters: the fill is still about half opaque there, so it cuts stripe contrast by itself, and without the control that would look like blur.
 A first attempt used `DwmEnableBlurBehindWindow`, which does honour an explicit blur region but is a weak blur
 (0.30 against the old, lighter tint's 0.45), with the stripes plainly visible through it. It was dropped.
