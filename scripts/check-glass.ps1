@@ -7,13 +7,14 @@
 #
 #   TOPSY_GLASS=clear    control: transparent, no blur   -> ratio ~1, proves the measurement
 #   TOPSY_GLASS=tint     control: the fill, no blur      -> ratio set by the fill's opacity alone
-#   TOPSY_GLASS=blur     the compositor glass            -> must beat the tint control
+#   TOPSY_GLASS=blur     the live compositor glass       -> must beat the tint control
+#   TOPSY_GLASS=host     the host backdrop, its fallback -> must beat the tint control too
 #   TOPSY_GLASS=acrylic  the fallback                    -> must beat the tint control too
 #
 # The tint control is what makes the verdict about the blur and not about the dark fill, which
 # would cut stripe contrast by itself.
 #
-# Shows a stripe window at the top of the screen for about 40 seconds.
+# Shows a stripe window at the top of the screen for about 50 seconds.
 # usage: check-glass.ps1 [-Exe target\debug\topsy.exe] [-MaxBlurShare 0.5]
 param(
     [string]$Exe = "$PSScriptRoot\..\target\debug\topsy.exe",
@@ -126,12 +127,13 @@ try {
     $clear = Measure-Mode 'clear' | Select-Object -Last 1
     $tint = Measure-Mode 'tint' | Select-Object -Last 1
     $blur = Measure-Mode 'blur' | Select-Object -Last 1
+    $hostBlur = Measure-Mode 'host' | Select-Object -Last 1
     $acrylic = Measure-Mode 'acrylic' | Select-Object -Last 1
-    Write-Host ("tint-only ratio {0:N2}; blurred ratio {1:N2} = {2:N0}% of it, acrylic fallback {3:N2} (limit {4:P0})" -f $tint, $blur, (100 * $blur / $tint), $acrylic, $MaxBlurShare)
+    Write-Host ("tint-only ratio {0:N2}; blurred ratio {1:N2} = {2:N0}% of it, host backdrop {3:N2}, acrylic fallback {4:N2} (limit {5:P0})" -f $tint, $blur, (100 * $blur / $tint), $hostBlur, $acrylic, $MaxBlurShare)
 
     if ($clear -lt 0.8) {
         Write-Host "FAIL: control (clear) lost stripe contrast ($clear); the measurement is not trustworthy"; $code = 1
-    } elseif ($blur -gt $tint * $MaxBlurShare -or $acrylic -gt $tint * $MaxBlurShare) {
+    } elseif ($blur -gt $tint * $MaxBlurShare -or $hostBlur -gt $tint * $MaxBlurShare -or $acrylic -gt $tint * $MaxBlurShare) {
         Write-Host "FAIL: a blurred pill keeps too much of the stripe contrast the tint alone leaves: no (strong enough) blur"; $code = 1
     } else {
         Write-Host "PASS (blurred)"

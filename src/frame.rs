@@ -8,7 +8,7 @@ use gpui::{
 };
 use windows::Win32::Foundation::HWND;
 
-use crate::backdrop::Backdrop;
+use crate::backdrop::{self, Backdrop, Outline};
 use crate::model::notch::Notch;
 use crate::{Island, log, win32};
 
@@ -40,6 +40,8 @@ pub enum Glass {
     /// The compositor's blur of whatever is behind the notch, in its own shape ([`Backdrop`]),
     /// under Droppy's black-to-glass fill.
     Blur,
+    /// The same, held to the host backdrop and its fixed blur.
+    HostBlur,
     /// Window-wide acrylic, which only takes DWM's fixed corner. The fallback where the
     /// compositor glass can't start.
     Acrylic,
@@ -52,6 +54,15 @@ pub enum Glass {
 }
 
 impl Glass {
+    /// The compositor glass to try, for the kinds drawn over one.
+    pub fn backdrop(self) -> Option<backdrop::Kind> {
+        match self {
+            Glass::Blur => Some(backdrop::Kind::Live),
+            Glass::HostBlur => Some(backdrop::Kind::Host),
+            Glass::Acrylic | Glass::Tint | Glass::Solid | Glass::Clear => None,
+        }
+    }
+
     /// The window-wide acrylic can't leave the ears' corners clear, so it goes without them.
     fn has_ears(self) -> bool {
         self != Glass::Acrylic
@@ -280,20 +291,31 @@ impl Frame {
         let shape = self.backdrop.as_ref().map(Backdrop::shape);
         let r = radius * s;
         // No blur shows as a glass of no height.
-        let blur = !hidden && self.look() == Glass::Blur;
+        let blur = !hidden && self.look().backdrop().is_some();
         let tall = |h: f32| if blur { h } else { 0.0 };
         // The notch's rounded top corners sit above the window, which squares them off.
         let glass = if floating {
-            (0.0, 0.0, size.0 as f32, tall(size.1 as f32), r)
+            Outline {
+                x: 0.0,
+                y: 0.0,
+                width: size.0 as f32,
+                height: tall(size.1 as f32),
+                radius: r,
+            }
         } else {
-            let left = notch.ear_slot * s;
-            (left, -r, notch.body_width * s, tall(size.1 as f32 + r), r)
+            Outline {
+                x: notch.ear_slot * s,
+                y: -r,
+                width: notch.body_width * s,
+                height: tall(size.1 as f32 + r),
+                radius: r,
+            }
         };
         cx.spawn(async move |_| {
             win32::move_window(hwnd, origin.0, origin.1, size.0, size.1, appearing);
             win32::set_clip(hwnd, clip);
             if let Some(shape) = shape {
-                shape.set(glass.0, glass.1, glass.2, glass.3, glass.4);
+                shape.set(origin, s, glass);
             }
         })
         .detach();
@@ -347,7 +369,7 @@ impl Frame {
             )
         };
         let fill = match look {
-            Glass::Blur | Glass::Tint => edge_fill(self.floor),
+            Glass::Blur | Glass::HostBlur | Glass::Tint => edge_fill(self.floor),
             Glass::Acrylic => edge_fill(0x00000000),
             Glass::Solid => black.into(),
             Glass::Clear => rgba(0x00000000).into(),

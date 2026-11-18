@@ -405,8 +405,8 @@ fn open_glass<V: 'static + Render>(
             let mut backdrop = None;
             if let Some(hwnd) = hwnd {
                 win32::apply_overlay_styles(hwnd);
-                if glass == Glass::Blur {
-                    match backdrop::Backdrop::new(hwnd, cx) {
+                if let Some(kind) = glass.backdrop() {
+                    match backdrop::Backdrop::new(hwnd, kind, cx) {
                         Ok(b) => backdrop = Some(b),
                         Err(e) => {
                             log(&format!("compositor glass unavailable ({e}); acrylic"));
