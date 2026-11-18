@@ -5,8 +5,7 @@ The notch is a real blur of whatever is behind it, in its own shape. The shape f
 GPUI presents through DirectComposition as the window's *topmost* visual tree. A window can carry one more,
 non-topmost tree, which DWM composes underneath GPUI's; `src/backdrop/` puts the glass there, clipped to a rounded
 rectangle whose top corners sit above the window and are cut off with it, which gives the notch its square top. GPUI
-draws the tint on top, and a lit rim (`model::rim`): a 1 px highlight and a soft inner glow, brightest where the
-edge faces a light at the top left, so the bottom-right corner catches it. Either kind of glass holds while the window is inactive, which the island always is.
+draws the tint and rim on top. Either kind of glass holds while the window is inactive, which the island always is.
 
 - **Live (the default).** dwmapi's undocumented shared multi-window visual (ordinals 163 and 164, as VLC 4 uses
   them) is a live copy of every window on the virtual screen except the ones excluded (the island itself), updated
@@ -35,8 +34,10 @@ it can't leave the ears' corners clear, so that notch has no ears and DWM's corn
 - **The window is the notch.** It is resized and re-centred every frame as the spring moves, and the
   backdrop's clip is reshaped in the same step, so nothing outside the notch draws.
 - **The window region shapes clicks.** `SetWindowRgn` (body plus ears) makes the transparent corners
-  click-through. It clips drawing too, without anti-aliasing, so its corner is a pixel tighter than the drawn one
-  and falls just outside the compositor's smooth edge.
+  click-through. It clips drawing too, without anti-aliasing, and GDI's round corners sit inside a true arc, so a
+  region rounded like the drawn corner cuts its smooth edge into steps. Its corners are rounded 4 px less, leaving
+  the edge whole; the cost is a few pixels beside each corner that take clicks. The live glass's clip also needs
+  the soft border mode, or DirectComposition draws it aliased.
 - **The resize must not happen inside `render`.** `SWP_ASYNCWINDOWPOS` only defers across threads; here it is
   synchronous, so `WM_SIZE` reaches GPUI mid-draw, where its resize callback can't update the window and GPUI
   never learns the new size. The move runs in a foreground task (what GPUI's own `Window::resize` does). The
@@ -57,9 +58,9 @@ the contrast beside it, in five modes:
 |---|---|---|
 | `clear` | transparent fill, no blur | 1.00 (control: proves the measurement) |
 | `tint` | the same fill, no blur | 0.31 (what the dark fill alone does) |
-| *(default)* | live glass, notch-clipped | **0.07** (23% of what the tint leaves; the grain is part of it) |
-| `host` | host backdrop, notch-clipped | 0.05 (16%) |
-| `acrylic` | window-wide acrylic, the fallback | 0.07 (23%) |
+| *(default)* | live glass, notch-clipped | **0.06** (21% of what the tint leaves; the grain is part of it) |
+| `host` | host backdrop, notch-clipped | 0.04 (13%) |
+| `acrylic` | window-wide acrylic, the fallback | 0.06 (19%) |
 
 It samples the bottom of the tray, where the fill has faded most. Both compositor glasses flatten 6 px stripes
 completely, so the check proves there is a blur, not how light it is. The `tint` control matters: the fill is still

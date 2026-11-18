@@ -2,8 +2,6 @@
 //! floating where a jiggle opened it, as the basket), how big it is, and what it is filled with.
 //! The OS window is always exactly the shape (docs/internals/notch.md, glass.md).
 
-mod rim;
-
 use gpui::{
     AnyElement, App, Background, Div, ExternalPaths, Pixels, Size, canvas, div, linear_color_stop,
     linear_gradient, point, prelude::*, px, rgb, rgba,
@@ -11,7 +9,7 @@ use gpui::{
 use windows::Win32::Foundation::HWND;
 
 use crate::backdrop::{self, Backdrop, Outline};
-use crate::model::{self, notch::Notch};
+use crate::model::notch::Notch;
 use crate::{Island, log, win32};
 
 /// The notch's body when it peeks down from the top edge, and when it holds the tray.
@@ -32,6 +30,8 @@ const BLACK_UNTIL: f32 = 0.62;
 const GLASS_FLOOR: u32 = 0x0000009f;
 /// The basket's floor, sampled from Droppy's: about 88% black at the bottom edge.
 pub const BASKET_FLOOR: u32 = 0x000000e0;
+/// A light rim along the bottom edge, fading out up the sides where the notch turns black.
+const RIM: u32 = 0xffffff38;
 
 /// How the notch is filled. `TOPSY_GLASS` can force one, for A/B comparison and for the
 /// automated blur check (`tint` and `clear` are its controls).
@@ -422,14 +422,24 @@ impl Frame {
                 }
                 if rim {
                     // The stroke is centred on the path: half a pixel in keeps it whole.
-                    let outline = model::rim::Outline {
-                        left: slot + 0.5,
-                        right: width - slot - 0.5,
-                        bottom: h - 0.5,
-                        top: rim_from,
-                        radius,
-                    };
-                    rim::paint(window, o, outline);
+                    let (l, r, b) = (slot + 0.5, width - slot - 0.5, h - 0.5);
+                    let c = radius.min((b - rim_from).max(0.0));
+                    let k = 0.45;
+                    let mut path = gpui::PathBuilder::stroke(px(1.0));
+                    path.move_to(p(l, rim_from));
+                    path.line_to(p(l, b - c));
+                    path.cubic_bezier_to(p(l + c, b), p(l, b - c * k), p(l + c * k, b));
+                    path.line_to(p(r - c, b));
+                    path.cubic_bezier_to(p(r, b - c), p(r - c * k, b), p(r, b - c * k));
+                    path.line_to(p(r, rim_from));
+                    if let Ok(path) = path.build() {
+                        let glow = linear_gradient(
+                            180.0,
+                            linear_color_stop(rgba(RIM & 0xffffff00), 0.0),
+                            linear_color_stop(rgba(RIM), 1.0),
+                        );
+                        window.paint_path(path, glow);
+                    }
                 }
             },
         )

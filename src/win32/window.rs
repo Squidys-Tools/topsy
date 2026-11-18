@@ -311,11 +311,14 @@ pub enum Clip {
     },
 }
 
+/// How much less the region's corners are rounded than the drawn ones.
+const REGION_SLACK: i32 = 4;
+
 /// Shape the window with a region, so the transparent corners outside the notch are
 /// click-through.
 ///
-/// The region clips drawing too, without anti-aliasing, so its corners are a pixel looser than
-/// the drawn ones: it then falls just outside the compositor's smooth edge instead of cutting it.
+/// The region clips drawing too, without anti-aliasing, so its corners are rounded less than the
+/// drawn ones: GDI's are tighter than a true arc, and a looser curve leaves the smooth edge whole.
 /// The ears get their whole strip: what lies outside their curve is a few pixels.
 pub fn set_clip(hwnd: HWND, clip: Clip) {
     unsafe {
@@ -327,7 +330,7 @@ pub fn set_clip(hwnd: HWND, clip: Clip) {
                 height,
                 radius,
             } => {
-                let d = 2 * (radius - 1).max(0);
+                let d = 2 * (radius - REGION_SLACK).max(0);
                 Some(CreateRoundRectRgn(0, 0, width + 1, height + 1, d, d))
             }
             Clip::Column {
@@ -336,7 +339,7 @@ pub fn set_clip(hwnd: HWND, clip: Clip) {
                 tops,
                 radius,
             } => {
-                let d = 2 * (radius - 1).max(0);
+                let d = 2 * (radius - REGION_SLACK).max(0);
                 let all = CreateRectRgn(0, 0, 0, 0);
                 for top in tops {
                     let card = CreateRoundRectRgn(0, top, width + 1, top + height + 1, d, d);
@@ -352,7 +355,7 @@ pub fn set_clip(hwnd: HWND, clip: Clip) {
                 ear,
                 radius,
             } => {
-                let r = (radius - 1).max(0);
+                let r = (radius - REGION_SLACK).max(0);
                 // Starting the round rectangle above the window squares off its top corners.
                 // The ellipse is given by its diameter, and the right/bottom edges are exclusive.
                 let body = CreateRoundRectRgn(

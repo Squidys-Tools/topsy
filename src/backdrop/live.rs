@@ -17,9 +17,9 @@ use windows::Win32::Graphics::Direct2D::Common::{
     D2D1_BORDER_MODE_HARD, D2D1_TURBULENCE_NOISE_FRACTAL_SUM,
 };
 use windows::Win32::Graphics::DirectComposition::{
-    DCompositionCreateDevice3, IDCompositionDesktopDevice, IDCompositionDevice3,
-    IDCompositionGaussianBlurEffect, IDCompositionRectangleClip, IDCompositionTarget,
-    IDCompositionVisual, IDCompositionVisual2,
+    DCOMPOSITION_BORDER_MODE_SOFT, DCompositionCreateDevice3, IDCompositionDesktopDevice,
+    IDCompositionDevice3, IDCompositionGaussianBlurEffect, IDCompositionRectangleClip,
+    IDCompositionTarget, IDCompositionVisual, IDCompositionVisual2,
 };
 use windows::Win32::Graphics::Dwm::{
     DWMWA_CLOAK, DWMWA_USE_HOSTBACKDROPBRUSH, DwmSetWindowAttribute, DwmUnregisterThumbnail,
@@ -211,6 +211,8 @@ impl Live {
             // the effect runs, or DWM blurs every changing pixel of every monitor.
             let source = device.CreateRectangleClip()?;
             copy.SetClip(&source)?;
+            // Clips are aliased unless asked otherwise, which steps the notch's rounded corners.
+            root.SetBorderMode(DCOMPOSITION_BORDER_MODE_SOFT)?;
             root.AddVisual(&copy, false, None::<&IDCompositionVisual>)?;
             target.SetRoot(&root)?;
 
