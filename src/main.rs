@@ -275,7 +275,10 @@ impl Island {
             HookEvent::Jiggle => {}
             HookEvent::Edge { at_edge, pressed } => {
                 self.at_edge = at_edge;
-                if at_edge && self.mode == Mode::Hidden && !self.fullscreen() {
+                // An activity holds the notch down in the peek, which a drag still opens.
+                let at_rest = self.mode == Mode::Hidden
+                    || (self.mode == Mode::Peek && self.mode == self.resting());
+                if at_edge && at_rest && !self.fullscreen() {
                     if pressed {
                         // Something is being dragged up here: give it somewhere to land.
                         if self.held.may_open_tray() {

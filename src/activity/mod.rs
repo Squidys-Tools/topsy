@@ -71,6 +71,9 @@ pub fn start(cx: &mut App, island: &Entity<Island>) {
 
 impl Island {
     fn on_activity(&mut self, event: Event, cx: &mut Context<Self>) {
+        if !ENABLED.load(Ordering::Relaxed) {
+            return;
+        }
         let now = Instant::now();
         match event {
             Event::Set(key, activity) => {
@@ -117,8 +120,8 @@ impl Island {
             self.activity.held_back = self.fullscreen();
         }
         match self.mode {
-            // Each folds back to `resting` when it is done.
-            Mode::Tray => cx.notify(),
+            // Each folds back to `resting` when it is done; the tray shows no activities.
+            Mode::Tray => {}
             _ if self.hud.is_shown() => {}
             // Being looked at: keep the peek, sized to what it now shows.
             Mode::Peek if self.hwnd.is_some_and(win32::cursor_over) => {
@@ -126,6 +129,10 @@ impl Island {
             }
             _ => {
                 let resting = self.resting();
+                if self.mode == resting && resting != Mode::Peek {
+                    // Hidden, so nothing of it is on screen to redraw.
+                    return;
+                }
                 if self.mode != resting {
                     self.collapse_generation += 1;
                 }

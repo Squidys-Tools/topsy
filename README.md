@@ -331,8 +331,8 @@ it falls below 20% and 10% (or is unplugged below 20%), and when it is full on t
 
 While something is going on, the notch stays down a little wider and shows it, after Droppy's: a browser
 download with its name and the size it has reached, then a green tick and *Done*; Bluetooth headphones or a
-speaker connecting, with the battery where Windows knows it, or leaving. A download stays for as long as it runs;
-the rest pass after 3 s. Two show side by side, newest first. A HUD takes over the notch for its moment, an open
+speaker connecting, with the battery where Windows knows it, or leaving. A download stays for as long as it runs, or
+a minute after it stops growing (paused or failed); the rest pass after 3 s. Two show side by side, newest first. A HUD takes over the notch for its moment, an open
 tray folds back to the activity, and a fullscreen app in front keeps it hidden. Clicking a finished download
 shows it in Explorer; clicking anything else opens the tray as usual. The *Live Activities* setting turns it off.
 
