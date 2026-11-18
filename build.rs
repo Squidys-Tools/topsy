@@ -5,7 +5,7 @@
 //! for trouble), copy just the missing import libraries from a system MinGW-w64 into the build
 //! output directory and add that to the link search path.
 //!
-//! It also gives the exe its icon, drawn by `src/model/app_icon.rs`, written as a binary `.res`
+//! It also gives the exe its icon, drawn by `crates/model/src/app_icon.rs`, written as a binary `.res`
 //! and turned into an object by the same MinGW's `windres`. No `.rc` script, so no preprocessor.
 
 #![expect(
@@ -16,7 +16,7 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-#[path = "src/model/app_icon.rs"]
+#[path = "crates/model/src/app_icon.rs"]
 mod app_icon;
 
 /// Import libraries GPUI's dependency tree needs that rustc's bundled MinGW doesn't have.
@@ -28,7 +28,7 @@ const ICON_SIZES: &[usize] = &[16, 20, 24, 32, 40, 48, 64, 256];
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-changed=src/model/app_icon.rs");
+    println!("cargo:rerun-if-changed=crates/model/src/app_icon.rs");
 
     let windows = std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows");
     let env = std::env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();

@@ -32,7 +32,7 @@ impl Quality {
         Quality(percent.min(100))
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn percent(self) -> u8 {
         self.0
     }
@@ -119,7 +119,7 @@ impl VideoFormat {
         VideoFormat::Mkv,
     ];
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn label(self) -> &'static str {
         match self {
             VideoFormat::Mp4H264 => "MP4 (H.264)",
@@ -190,7 +190,7 @@ impl AudioFormat {
         AudioFormat::Flac,
     ];
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn label(self) -> &'static str {
         match self {
             AudioFormat::M4a => "M4A (AAC)",
@@ -287,7 +287,7 @@ pub enum TrimMode {
 }
 
 impl TrimMode {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn label(self) -> &'static str {
         match self {
             TrimMode::Exact => "Exact",
@@ -361,7 +361,7 @@ impl Rotate {
         Rotate::FlipVertical,
     ];
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn label(self) -> &'static str {
         match self {
             Rotate::Left => "Rotate left",

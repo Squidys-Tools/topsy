@@ -14,9 +14,9 @@ use gpui::{App, Context, Entity};
 use crate::autostart::RegString;
 use crate::frame::Mode;
 use crate::log::LogErr;
-use crate::model::activity::{Activities, Activity, Key};
 use crate::win32::{self, earbuds};
 use crate::{Island, log};
+use model::activity::{Activities, Activity, Key};
 
 const SETTING: RegString<'static> = RegString::new(r"Software\topsy", "LiveActivities");
 static ENABLED: AtomicBool = AtomicBool::new(true);

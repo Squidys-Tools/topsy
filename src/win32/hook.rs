@@ -10,8 +10,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 use crate::log::LogErr;
-use crate::model::edge::{EdgeWatch, EdgeZone};
-use crate::model::jiggle::{JiggleConfig, JiggleDetector};
+use model::edge::{EdgeWatch, EdgeZone};
+use model::jiggle::{JiggleConfig, JiggleDetector};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HookEvent {

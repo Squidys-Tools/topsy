@@ -16,15 +16,15 @@ use windows::Win32::Foundation::HWND;
 use crate::basket::Basket;
 use crate::frame::{ACRYLIC_TINT, Frame, Glass, PEEK};
 use crate::log::LogErr;
-use crate::model::edge::EdgeZone;
-use crate::model::jiggle::JiggleConfig;
-use crate::model::tray_cause::TrayCause;
 use crate::settings::Setting;
 use crate::settings_window::{self, Change, OnChange};
 use crate::tray::{self, TrayEvent};
 use crate::win32::DropEvent;
 use crate::win32::sendto;
 use crate::{Island, Mode, autostart, backdrop, config, log, look, state, win32};
+use model::edge::EdgeZone;
+use model::jiggle::JiggleConfig;
+use model::tray_cause::TrayCause;
 
 impl Island {
     fn on_tray(&mut self, event: TrayEvent, cx: &mut Context<Self>) {

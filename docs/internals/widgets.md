@@ -1,7 +1,7 @@
 # Shelf widgets
 
 Decisions behind [Shelf widgets](../user/widgets.md). The row lives in `src/widgets/`, its rules in
-`src/model/` (`widgets`, `calendar`, `pomodoro`, `stats`, `weather`).
+`crates/model` (`widgets`, `calendar`, `pomodoro`, `stats`, `weather`).
 
 - **They live on Home, a page of their own.** A tray opened to look, with something for Home, has two pages,
   Home and the shelf, as Droppy's has (`src/pager.rs`, rules in `model::pager`; `TrayCause::sections` says what

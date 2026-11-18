@@ -13,9 +13,9 @@ use windows::Win32::Foundation::HWND;
 
 use crate::icons::{self, Icon};
 use crate::log::LogErr;
-use crate::model::widgets::Lineup;
 use crate::settings::Setting;
 use crate::{clipboard, widgets, win32};
+use model::widgets::Lineup;
 
 /// What the window changed, after it is saved.
 pub enum Change {

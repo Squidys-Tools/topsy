@@ -17,7 +17,6 @@ mod icons;
 mod log;
 mod look;
 mod media;
-mod model;
 mod now_playing;
 mod pager;
 mod settings;
@@ -43,10 +42,10 @@ use windows::Win32::Foundation::HWND;
 
 use crate::frame::{Frame, Glass, Mode, PEEK};
 use crate::log::log;
-use crate::model::shelf::Shelf;
-use crate::model::spring::{Spring, SpringConfig};
-use crate::model::tray_cause::{HeldDrag, TrayCause};
 use crate::win32::{DropEvent, HookEvent};
+use model::shelf::Shelf;
+use model::spring::{Spring, SpringConfig};
+use model::tray_cause::{HeldDrag, TrayCause};
 
 /// How long the cursor rests on the top edge before the notch comes down.
 const REVEAL_AFTER: Duration = Duration::from_millis(150);

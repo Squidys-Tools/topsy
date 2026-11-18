@@ -12,7 +12,7 @@ pub const DRI: u8 = 0xDD;
 pub const APP0: u8 = 0xE0;
 pub const APP1: u8 = 0xE1;
 pub const APP2: u8 = 0xE2;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub const APP13: u8 = 0xED;
 pub const APP14: u8 = 0xEE;
 pub const COM: u8 = 0xFE;
@@ -202,7 +202,7 @@ pub fn with_exif(bytes: &[u8], exif: &[u8]) -> io::Result<Vec<u8>> {
 }
 
 /// The ICC profile split into APP2 payloads.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn icc_segments(icc: &[u8]) -> Vec<Vec<u8>> {
     const MAX: usize = 65533 - 14;
     let chunks: Vec<&[u8]> = icc.chunks(MAX).collect();

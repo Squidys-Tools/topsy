@@ -3,7 +3,7 @@
 //! flipped axis; a transpose swaps each block's rows and columns, its quantisation table and the
 //! sampling factors.
 
-use crate::model::orientation::Orientation;
+use crate::orientation::Orientation;
 
 use super::coeffs::{Block, Jpeg};
 

@@ -10,7 +10,7 @@ use gpui::{
 
 use crate::icons::{Icon, icon};
 use crate::log::LogErr;
-use crate::model::shelf::{Item, Kind};
+use model::shelf::{Item, Kind};
 use windows::Win32::Foundation::HWND;
 
 use crate::win32::{self, DragOutcome, MenuEntry};

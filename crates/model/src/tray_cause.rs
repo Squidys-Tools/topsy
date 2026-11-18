@@ -5,7 +5,7 @@
 
 use std::time::Duration;
 
-use crate::model::pager::Page;
+use crate::pager::Page;
 
 /// What the tray was opened for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

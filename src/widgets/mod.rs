@@ -11,8 +11,8 @@ mod weather;
 use gpui::{AnyElement, Context, div, prelude::*, px, rgba};
 
 use crate::autostart::RegString;
-use crate::model::widgets::{Lineup, Widget};
 use crate::{Island, Mode, config};
+use model::widgets::{Lineup, Widget};
 
 const SETTING: RegString<'static> = RegString::new(r"Software\topsy", "Widgets");
 /// The row's height, padding included: what the tray grows by while it shows.

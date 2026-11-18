@@ -19,10 +19,10 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use crate::autostart::RegString;
 use crate::log;
 use crate::log::{LogErr, MissingOk};
-use crate::model::clipboard::{Added, Content, Entry, History, leftovers};
-use crate::model::dib::{self, Rgba};
 use crate::win32::clipboard::{self as watcher, Copy};
 use crate::win32::paste::Data;
+use model::clipboard::{Added, Content, Entry, History, leftovers};
+use model::dib::{self, Rgba};
 
 const ENABLED: RegString<'static> = RegString::new(r"Software\topsy", "Clipboard");
 const KEEP_DAYS: RegString<'static> = RegString::new(r"Software\topsy", "ClipboardDays");

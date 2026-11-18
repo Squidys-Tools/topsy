@@ -14,8 +14,8 @@ use gpui::{
 use crate::Island;
 use crate::icons::{self, Icon};
 use crate::log::LogErr;
-use crate::model::stats::{CAPACITY, History, Stats, percent};
 use crate::win32::sysinfo;
+use model::stats::{CAPACITY, History, Stats, percent};
 
 pub const WIDTH: f32 = 208.0;
 const HALF: f32 = (WIDTH - GUTTER) / 2.0;

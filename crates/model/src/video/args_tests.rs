@@ -1,6 +1,6 @@
 use super::*;
-use crate::model::video::options::{GifFps, GifWidth, MaxResolution, Quality};
-use crate::model::video::probe::{AudioStream, VideoStream};
+use crate::video::options::{GifFps, GifWidth, MaxResolution, Quality};
+use crate::video::probe::{AudioStream, VideoStream};
 
 const HEAD: &str = "-hide_banner -nostdin -loglevel error -y -progress pipe:1 -nostats";
 

@@ -14,11 +14,11 @@ use gpui::{
 
 use crate::icons::{self, Icon};
 use crate::media::{self, Button};
-use crate::model::levels::{self, BARS, Levels};
-use crate::model::marquee;
-use crate::model::media::{Card, Event, NowPlaying, Progress, clock};
 use crate::win32::meter::Meter;
 use crate::{Island, Mode, icon, log};
+use model::levels::{self, BARS, Levels};
+use model::marquee;
+use model::media::{Card, Event, NowPlaying, Progress, clock};
 
 /// The art's side in the player; the peek shows it smaller.
 const ART: f32 = 48.0;

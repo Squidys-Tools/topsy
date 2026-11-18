@@ -11,8 +11,8 @@ use gpui::{
 use crate::Island;
 use crate::hud::RED;
 use crate::icons::{self, Icon};
-use crate::model::calendar::{Browse, Date, Weekday, YearMonth, week_from};
 use crate::win32::clock;
+use model::calendar::{Browse, Date, Weekday, YearMonth, week_from};
 
 pub const WIDTH: f32 = 184.0;
 const HEADER: f32 = 15.0;

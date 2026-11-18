@@ -9,8 +9,8 @@ use super::Basket;
 use crate::chip::{self, ACTIONS, Action};
 use crate::log;
 use crate::log::LogErr;
-use crate::model::shelf::{Item, Kind};
 use crate::win32::{self, MenuEntry};
+use model::shelf::{Item, Kind};
 
 const TILE: [MenuEntry; 8] = [
     MenuEntry::Item(Action::Transform as usize, "&Transform…"),

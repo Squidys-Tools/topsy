@@ -19,9 +19,9 @@ use image::codecs::png::{CompressionType, FilterType, PngEncoder};
 use image::imageops::{self, FilterType as Resample};
 use image::{DynamicImage, ImageDecoder, ImageReader, RgbaImage};
 
-pub use crate::model::download::ModelStatus;
-use crate::model::matte;
 use birefnet::{BiRefNet, SIZE};
+pub use model::download::ModelStatus;
+use model::matte;
 use ops::{Map, check};
 
 /// Kept from first use for the app's life: loading parses 177 MB.

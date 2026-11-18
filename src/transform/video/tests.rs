@@ -5,7 +5,7 @@ use std::time::Instant;
 
 use super::*;
 use crate::log::{LogErr, MissingOk};
-use crate::model::video::{
+use model::video::{
     AudioFormat, GifFps, GifOptions, GifWidth, MaxResolution, Quality, VideoFormat,
 };
 

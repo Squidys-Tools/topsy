@@ -9,10 +9,10 @@ use image::codecs::ico::{IcoEncoder, IcoFrame};
 use image::codecs::png::{CompressionType, FilterType, PngEncoder};
 use image::{ExtendedColorType, ImageEncoder, ImageFormat, imageops};
 
-use crate::model::magick::{self, Info, Metadata};
 use crate::transform::Steps;
 use crate::transform::fetch::Pinned;
 use crate::transform::tools::{self, Tool};
+use model::magick::{self, Info, Metadata};
 
 /// The official portable build (ImageMagick License). It reads HEIC and AVIF itself, through
 /// libheif, so no Windows extension is needed, but has no HEVC encoder, so it can't write HEIC.

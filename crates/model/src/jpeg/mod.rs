@@ -47,7 +47,7 @@ pub fn orientation(bytes: &[u8]) -> Orientation {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::exif::sample;
+    use crate::exif::sample;
 
     /// A smooth gradient with some edges, `w` x `h` RGB.
     fn picture(w: usize, h: usize) -> Vec<u8> {

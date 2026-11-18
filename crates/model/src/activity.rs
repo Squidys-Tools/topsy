@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use crate::model::pomodoro::Phase;
+use crate::pomodoro::Phase;
 
 /// How many show at once, side by side.
 pub const SHOWN: usize = 2;

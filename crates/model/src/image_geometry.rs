@@ -1,7 +1,7 @@
 //! The shapes the image Transforms give a picture: Compress's largest side, Resize's sizes and
 //! crops, and Rotate's turns.
 
-use crate::model::orientation::Orientation;
+use crate::orientation::Orientation;
 
 /// Compress's "Largest side".
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

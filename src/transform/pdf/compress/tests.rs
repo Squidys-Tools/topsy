@@ -1,7 +1,7 @@
 use lopdf::{Document, Object, Stream, dictionary};
 
 use super::*;
-use crate::model::jpeg::markers::{APP14, EOI, SOI, write_segment};
+use model::jpeg::markers::{APP14, EOI, SOI, write_segment};
 
 fn picture(extra: lopdf::Dictionary, samples: Vec<u8>) -> Stream {
     let mut dict = dictionary! {

@@ -7,13 +7,13 @@ use lopdf::{Dictionary, Document, Object, ObjectId, Stream, dictionary};
 
 use super::{load, save};
 use crate::log::LogErr;
-use crate::model::image_ops::{Format, Kind, is_lossless_webp};
-use crate::model::jpeg;
-use crate::model::magick::{self, Job, Metadata};
-use crate::model::orientation::Orientation;
-use crate::model::pdf::{PageSize, draw, place};
 use crate::transform::Steps;
 use crate::transform::image::{Kit, Scratch};
+use model::image_ops::{Format, Kind, is_lossless_webp};
+use model::jpeg;
+use model::magick::{self, Job, Metadata};
+use model::orientation::Orientation;
+use model::pdf::{PageSize, draw, place};
 
 /// One file to combine, read and sorted by what it takes to put it in.
 pub enum Part {

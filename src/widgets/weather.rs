@@ -12,12 +12,10 @@ use gpui::{
 
 use crate::icons::{self, Icon};
 use crate::log::LogErr;
-use crate::model::weather::{
-    self, Condition, Forecast, HOST, Hour, LIMIT, Problem, Show, Unit, Weather,
-};
 use crate::win32::http::{self, Response};
 use crate::win32::location;
 use crate::{Island, log};
+use model::weather::{self, Condition, Forecast, HOST, Hour, LIMIT, Problem, Show, Unit, Weather};
 
 pub const WIDTH: f32 = 184.0;
 const RADIUS: f32 = 16.0;

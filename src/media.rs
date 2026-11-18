@@ -26,8 +26,8 @@ use windows::Media::Control::{
 use windows::Win32::System::Com::COINIT_MULTITHREADED;
 
 use crate::log::LogErr;
-use crate::model::media::{Controls, Event, Status, Timeline, Track};
 use crate::win32;
+use model::media::{Controls, Event, Status, Timeline, Track};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Button {
@@ -299,7 +299,7 @@ fn art(props: &Properties, size: u32) -> windows::core::Result<Art> {
         .DetachPixelData()?;
     // GPUI's images are BGRA with straight alpha, whatever the buffer's type says.
     let pixels = pixels.to_vec();
-    let accent = crate::model::levels::accent(&pixels);
+    let accent = model::levels::accent(&pixels);
     let buffer = RgbaImage::from_raw(w, h, pixels).ok_or_else(windows::core::Error::empty)?;
     let image = Arc::new(RenderImage::new(vec![Frame::new(buffer)]));
     Ok(Art { image, accent })

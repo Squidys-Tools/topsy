@@ -15,8 +15,8 @@ use super::rename::Rename;
 use super::{Basket, CARD, Grip, LIST, THUMB};
 use crate::chip::DRAG_OUT_THRESHOLD;
 use crate::icons::{Icon, icon};
-use crate::model::basket::{shows_content, stack_depth, summary};
-use crate::model::shelf::Item;
+use model::basket::{shows_content, stack_depth, summary};
+use model::shelf::Item;
 
 /// Sampled from Droppy's: the round buttons, the handle and the pill are white over the black,
 /// the hint and the pill's words a mid grey.

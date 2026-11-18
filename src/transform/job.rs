@@ -18,9 +18,9 @@ use super::cards::{self, Cards};
 use super::engines::{self, Work};
 use super::{Open, Panel, State, image, video};
 use crate::log::{LogErr, MissingOk};
-use crate::model::transform::{Action, Kind, combined_paths, name_problem, rename_targets};
-use crate::model::transform_card::{Made, Sides};
 use crate::{Island, archive, log, win32};
+use model::transform::{Action, Kind, combined_paths, name_problem, rename_targets};
+use model::transform_card::{Made, Sides};
 
 /// One file going in.
 #[derive(Clone)]

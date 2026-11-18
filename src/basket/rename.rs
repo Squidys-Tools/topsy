@@ -10,10 +10,10 @@ use windows::Win32::Foundation::HWND;
 
 use super::Basket;
 use crate::log::LogErr;
-use crate::model::name_field::NameField;
-use crate::model::shelf::{Item, Kind};
-use crate::model::transform::name_problem;
 use crate::{log, win32};
+use model::name_field::NameField;
+use model::shelf::{Item, Kind};
+use model::transform::name_problem;
 
 pub(super) struct Rename {
     pub path: PathBuf,

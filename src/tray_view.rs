@@ -3,8 +3,8 @@
 
 use gpui::{ClickEvent, Context, ScrollWheelEvent, div, prelude::*, px, rgb, rgba};
 
-use crate::model::tray_cause::Sections;
 use crate::{Island, Mode, now_playing, widgets};
+use model::tray_cause::Sections;
 
 /// Between chips.
 const GAP: f32 = 8.0;
@@ -121,7 +121,7 @@ impl Island {
                 .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| this.clear_shelf(cx)))
         });
         let files: Vec<_> = (self.shelf.items().iter())
-            .filter(|item| item.kind == crate::model::shelf::Kind::File)
+            .filter(|item| item.kind == model::shelf::Kind::File)
             .map(|item| item.path.clone())
             .collect();
         let transform = (!files.is_empty()).then(|| {

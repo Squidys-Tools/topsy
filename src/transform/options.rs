@@ -5,7 +5,7 @@ use gpui::{Context, Div, div, prelude::*, px, rgba};
 
 use super::widgets::{field, note, picker, row, segmented, slider};
 use super::{Field, File, Panel};
-use crate::model::transform::{Action, Kind, rename_targets};
+use model::transform::{Action, Kind, rename_targets};
 
 /// In `CompressFormat::ALL` order.
 pub const IMAGE_FORMATS: [&str; 7] = [

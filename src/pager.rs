@@ -12,9 +12,9 @@ use gpui::{
 
 use crate::frame::{CAPSULE, STRIP};
 use crate::icons::{Icon, icon};
-use crate::model::pager::{Page, Swipe};
-use crate::model::spring::{Spring, SpringConfig};
 use crate::{Island, Mode, log};
+use model::pager::{Page, Swipe};
+use model::spring::{Spring, SpringConfig};
 
 /// Inside the capsule's 1 px edge.
 const INSET: f32 = 3.0;

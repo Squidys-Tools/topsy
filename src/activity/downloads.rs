@@ -5,9 +5,9 @@ use std::time::Instant;
 
 use super::Event;
 use crate::log::LogErr;
-use crate::model::activity::{Activity, Key};
-use crate::model::browser_download::{Downloads, Update};
 use crate::win32::folder;
+use model::activity::{Activity, Key};
+use model::browser_download::{Downloads, Update};
 
 pub fn watch(events: async_channel::Sender<Event>) {
     let Some(dir) = folder::downloads() else {

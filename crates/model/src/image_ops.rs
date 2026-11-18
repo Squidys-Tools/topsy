@@ -57,7 +57,7 @@ impl Kind {
         })
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn label(self) -> &'static str {
         match self {
             Kind::Jpeg => "JPEG",
@@ -103,7 +103,7 @@ impl Format {
         Format::Pdf,
     ];
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn label(self) -> &'static str {
         match self {
             Format::Jpeg => "JPEG",

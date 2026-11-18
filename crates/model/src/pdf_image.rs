@@ -30,7 +30,7 @@ pub fn adobe_cmyk(decode: Option<&[f64]>, jpeg: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::jpeg::markers::{SOI, write_segment};
+    use crate::jpeg::markers::{SOI, write_segment};
 
     #[test]
     fn a_palette_turns_indices_into_colours_and_clamps_the_stray() {

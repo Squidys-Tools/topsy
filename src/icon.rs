@@ -22,7 +22,7 @@ use windows::Win32::UI::Shell::{
 use windows::core::HSTRING;
 
 use crate::log::LogErr;
-use crate::model::transform::Kind;
+use model::transform::Kind;
 
 /// Whether each path is a folder, and its picture about `size` physical pixels square, learnt on
 /// a worker thread of its own (the shell wants COM there) and sent back one path at a time.

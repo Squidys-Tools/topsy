@@ -8,7 +8,7 @@ The binary imports `msvcrt.dll`, with no VCRUNTIME or MSVCP to install. How to s
   libraries, and a GPUI dependency links `ktmw32`. `build.rs` asks the system MinGW-w64 `gcc` where `libktmw32.a`
   lives and copies that one file, so the build doesn't mix two MinGW runtimes.
 - **Pointing rustc's linker at the system gcc does not work.** scoop's gcc has no `libgcc_eh.a`.
-- **The icon is drawn in code and linked as a `.res`.** `build.rs` draws the icon (`src/model/app_icon.rs`),
+- **The icon is drawn in code and linked as a `.res`.** `build.rs` draws the icon (`crates/model/src/app_icon.rs`),
   writes it as a binary `.res`, and the same MinGW's `windres` turns it into an object linked into the exe, so no
   `.rc` script and no preprocessor are involved. GPUI's windows and the tray icon load it as resource 1. It is
   linked into every link, tests included, so a test can check the icon made it in.

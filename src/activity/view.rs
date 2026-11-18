@@ -7,9 +7,9 @@ use crate::Island;
 use crate::frame::PEEK;
 use crate::hud::{GREEN, RED, cell};
 use crate::icons::{self, Icon};
-use crate::model::activity::{Activity, Key};
-use crate::model::pomodoro::Phase;
-use crate::model::transform::size;
+use model::activity::{Activity, Key};
+use model::pomodoro::Phase;
+use model::transform::size;
 
 const ONE: f32 = 280.0;
 const TWO: f32 = 440.0;

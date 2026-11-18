@@ -13,9 +13,9 @@ use gpui::{
 };
 
 use crate::icons::{self, Icon};
-use crate::model::activity::{Activity, Key};
-use crate::model::pomodoro::{Clock, Phase, Pomodoro, clock};
 use crate::{Island, log};
+use model::activity::{Activity, Key};
+use model::pomodoro::{Clock, Phase, Pomodoro, clock};
 
 pub const WIDTH: f32 = 176.0;
 const ORANGE: u32 = 0xff9f0a;

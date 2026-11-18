@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet};
 use lopdf::content::{Content, Operation};
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream};
 
-use crate::model::pdf_place::{Matrix, Op, draws};
+use model::pdf_place::{Matrix, Op, draws};
 
 /// More `Do`s than this in a file and the rest are taken as page-sized, which only keeps more.
 const MAX_DRAWS: usize = 200_000;

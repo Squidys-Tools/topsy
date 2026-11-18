@@ -25,7 +25,7 @@ Ambitious ideas, simple systems. Do not keep complexity because it exists, and d
 looks architectural. Find the real constraint, then the smallest model that makes the right behaviour
 unsurprising. Measure twice, cut once, and YAGNI. Honor the developer's intent minimally and realistically.
 
-- Complexity belongs at the boundary. Win32 glue absorbs the mess, `src/model/` stays pure, views stay dumb.
+- Complexity belongs at the boundary. Win32 glue absorbs the mess, `crates/model` stays pure, views stay dumb.
 - These are good defaults, not hard rules; the developer's preferences override them. If one fights the task in
   front of you, say so plainly and get sign-off before breaking it.
 
@@ -37,8 +37,8 @@ unsurprising. Measure twice, cut once, and YAGNI. Honor the developer's intent m
   ([Notch](docs/internals/notch.md)).
 - **notch**: the island's shape, hanging from the top edge. **hidden**: folded away, the resting state. **peek**: the
   small notch revealed by resting the cursor on the top edge. **tray**: the island expanded, showing the shelf.
-- **shelf**: the files parked on the island (`src/model/shelf.rs`). **chip**: one shelf entry.
-- **jiggle**: side-to-side reversals of a held-button drag (`src/model/jiggle.rs`); it brings up the basket.
+- **shelf**: the files parked on the island (`crates/model/src/shelf.rs`). **chip**: one shelf entry.
+- **jiggle**: side-to-side reversals of a held-button drag (`crates/model/src/jiggle.rs`); it brings up the basket.
 - **basket**: the floating file tray a jiggle brings up, in a window of its own (`src/basket/`).
 - **tray icon**: the notification-area icon and its menu (`src/tray.rs`). Not the same thing as the tray.
 - **glass**: the acrylic blur behind the notch.
@@ -95,13 +95,15 @@ calling work done, walk this list and say which entries applied:
 Win32 delivers the outside world on threads of topsy's own: the low-level mouse and keyboard hooks, the tray
 icon's hidden window, the media session, the clipboard listener, power and WMI events. Each thread does only its
 Win32 part and sends a plain event to the UI thread over an `async_channel`. There a foreground task hands it to
-the pure rules in `src/model/` (the jiggle detector, the edge, the shelf, the spring), and the view renders what
+the pure rules in `crates/model` (the jiggle detector, the edge, the shelf, the spring), and the view renders what
 they decide. Work that blocks or pumps messages goes back out to a `cx.spawn` task or a thread.
 
 ## Where code lives
 
-- `src/model/`: the rules. Pure and unit tested: no `windows`, `gpui`, clock or environment. A feature's logic
-  starts here with its tests; the glue that feeds it events and draws its result stays thin.
+- `crates/model`: the rules, a crate of their own (`model::` in the app). Pure and unit tested: no `windows`,
+  `gpui`, clock or environment. A feature's logic starts here with its tests; the glue that feeds it events and
+  draws its result stays thin. `cargo test -p topsy-model` runs them in seconds, without building GPUI. A helper
+  only tests use is `#[cfg(any(test, feature = "test-support"))]`, so the app's tests can reach it too.
 - `src/win32/`: Win32 glue GPUI doesn't expose, a file per job (`window`, `dragdrop`, `hook`, `shell`, `menu`,
   `clipboard`, …).
 - `src/main.rs`: the island view. `src/app.rs`: the app's wiring. `src/config.rs`: every `TOPSY_*` switch.
@@ -112,7 +114,7 @@ they decide. Work that blocks or pumps messages goes back out to a `cx.spawn` ta
 ### Structure
 
 - No file over 500 lines. When a file nears the limit, split it by job, not by size.
-- `scripts/check-structure.ps1` (in `check.ps1` and CI) enforces that and the purity of `src/model/`. `main.rs`
+- `scripts/check-structure.ps1` (in `check.ps1` and CI) enforces that and the purity of `crates/model`. `main.rs`
   has a ceiling of its own there that only comes down: lower it when the file shrinks, never raise it.
 
 ## Rust
@@ -148,7 +150,7 @@ Rules for new and touched code. Don't sweep old code to match.
   full test suite (`scripts/check.ps1` holds the same gates if you want them locally). When CI fails, read its
   log and fix the cause. Never assume a clippy warning or failing test is pre-existing; `main` is green.
 - A cold build of GPUI takes about 10 minutes in a fresh worktree. Run long builds in the background.
-- Keep logic in `src/model/`, with no OS calls and no clock reads: take `now: Instant` or a step as an argument,
+- Keep logic in `crates/model`, with no OS calls and no clock reads: take `now: Instant` or a step as an argument,
   so tests drive time instead of sleeping.
 - Test behaviour that can break: gesture detection, spring physics, shelf rules, registry round trips, parsing.
   Leave out tests for what types already guarantee, trivial getters, and wiring. Extend an existing test before

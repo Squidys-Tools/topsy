@@ -10,9 +10,9 @@ use crate::autostart::RegString;
 use crate::frame::{Mode, PEEK};
 use crate::icons::{self, Icon};
 use crate::log::LogErr;
-use crate::model::hud::{Battery, BatteryWatch, Hud, Power, SEGMENTS, lit};
 use crate::win32::{self, battery, brightness, volume};
 use crate::{Island, PEEK_LINGER, config, log};
+use model::hud::{Battery, BatteryWatch, Hud, Power, SEGMENTS, lit};
 
 const VOLUME_KEYS: RegString<'static> = RegString::new(r"Software\topsy", "VolumeKeys");
 /// How long a HUD stays after the last change.

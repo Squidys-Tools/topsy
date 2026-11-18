@@ -1,9 +1,9 @@
 //! The rules of the island, with no Win32, no GPUI, no clock and no environment: each takes
-//! time and input as arguments, so its tests drive them directly. `scripts/check-structure.ps1`
-//! holds this folder to that.
+//! time and input as arguments, so its tests drive them directly. The crate depends on neither
+//! `gpui` nor `windows`; `scripts/check-structure.ps1` keeps the clock and the environment out.
 
-// Drawn by build.rs into the exe's icon; here only for its tests.
 pub mod activity;
+// Drawn by build.rs into the exe's icon; here only for its tests.
 #[cfg(test)]
 pub mod app_icon;
 pub mod archive;

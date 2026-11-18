@@ -5,7 +5,7 @@ use std::sync::atomic::AtomicBool;
 use image::{Rgba, RgbaImage};
 
 use crate::log::{LogErr, MissingOk};
-use crate::model::jpeg::markers;
+use model::jpeg::markers;
 
 mod manual;
 mod tools;

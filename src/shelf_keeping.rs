@@ -5,8 +5,8 @@ use std::path::PathBuf;
 
 use gpui::Context;
 
-use crate::model::shelf;
 use crate::{Island, chip, icon, log, tray};
+use model::shelf;
 
 impl Island {
     /// Files can move or vanish while parked; don't keep chips for ones that have.

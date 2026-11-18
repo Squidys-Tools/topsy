@@ -7,11 +7,11 @@ use std::io;
 use lopdf::{Document, Object, ObjectId, Stream};
 
 use super::place::{media_box, picture_sizes};
-use crate::model::magick::pdf_image_args;
-use crate::model::pdf::{Preset, downsample, worth_replacing};
-use crate::model::pdf_image::{adobe_cmyk, through_palette};
 use crate::transform::Steps;
 use crate::transform::image::{Kit, Scratch};
+use model::magick::pdf_image_args;
+use model::pdf::{Preset, downsample, worth_replacing};
+use model::pdf_image::{adobe_cmyk, through_palette};
 
 /// The pictures in `doc`, without the masks that belong to them.
 fn pictures(doc: &Document) -> Vec<ObjectId> {

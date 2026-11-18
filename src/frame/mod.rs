@@ -8,8 +8,8 @@ use gpui::{App, Pixels, Size};
 use windows::Win32::Foundation::HWND;
 
 use crate::backdrop::Backdrop;
-use crate::model::notch::Notch;
 use crate::{Island, log, win32};
+use model::notch::Notch;
 
 /// The notch's body when it peeks down from the top edge, and when it holds the tray.
 pub const PEEK: (f32, f32) = (200.0, 32.0);

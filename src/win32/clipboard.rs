@@ -35,8 +35,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::{PCWSTR, PWSTR, w};
 
 use crate::log::LogErr;
-use crate::model::clipboard::{Content, fingerprint};
-use crate::model::dib;
+use model::clipboard::{Content, fingerprint};
+use model::dib;
 
 const CF_DIB: u32 = 8;
 const CF_UNICODETEXT: u32 = 13;

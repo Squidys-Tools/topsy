@@ -4,7 +4,7 @@
 
 const ORIENTATION: u16 = 0x0112;
 const EXIF_IFD: u16 = 0x8769;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 const GPS_IFD: u16 = 0x8825;
 const PIXEL_X: u16 = 0xA002;
 const PIXEL_Y: u16 = 0xA003;
@@ -131,7 +131,7 @@ pub fn orientation_only(orientation: u16) -> Vec<u8> {
     b
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn has_gps(exif: &[u8]) -> bool {
     Tiff::new(exif).is_some_and(|t| {
         t.sub_ifd(exif, GPS_IFD)
@@ -139,7 +139,7 @@ pub fn has_gps(exif: &[u8]) -> bool {
     })
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub mod sample {
     /// A big-endian EXIF block with orientation `o`, pixel size 640x480 and a GPS IFD.
     pub fn exif(o: u16) -> Vec<u8> {

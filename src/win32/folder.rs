@@ -16,7 +16,7 @@ use windows::Win32::UI::Shell::{FOLDERID_Downloads, KF_FLAG_DEFAULT, SHGetKnownF
 use windows::core::HSTRING;
 
 use crate::log::LogErr;
-use crate::model::browser_download::Change;
+use model::browser_download::Change;
 
 /// The user's Downloads folder, wherever it has been moved.
 pub fn downloads() -> Option<PathBuf> {

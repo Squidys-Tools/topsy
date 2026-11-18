@@ -9,7 +9,7 @@ use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 use crate::log::LogErr;
-use crate::model::shelf::{self, Shelf};
+use model::shelf::{self, Shelf};
 
 /// One saved list, ready at startup: the files as they were saved, and the writer that keeps
 /// the file in step. `writer` is `None` when persistence is off.

@@ -14,7 +14,7 @@ use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
 use crate::log::{LogErr, MissingOk};
-use crate::model::archive::{entry_name, zip_paths};
+use model::archive::{entry_name, zip_paths};
 
 /// Zip `source` into a new file beside it (`report.zip`, or `report (2).zip` if that is taken)
 /// and return its path. A folder is zipped whole, under its own name, as Explorer does. On any

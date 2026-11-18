@@ -8,11 +8,11 @@ use std::path::Path;
 
 use super::Scratch;
 use super::tools::{Kit, path};
-use crate::model::heif::{self, Heic, Plane, Still};
-use crate::model::magick::{self, Job, Metadata};
 use crate::transform::Steps;
 use crate::transform::tools;
 use crate::transform::video::FFMPEG;
+use model::heif::{self, Heic, Plane, Still};
+use model::magick::{self, Job, Metadata};
 
 pub(super) fn write(kit: &Kit, steps: &Steps, src: &Path, job: &Job, out: &Path) -> io::Result<()> {
     let ffmpeg = steps.tool(&FFMPEG, &|p| !p.ends_with("ffplay.exe"))?;

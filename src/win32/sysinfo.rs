@@ -5,7 +5,7 @@ use windows::Win32::Foundation::FILETIME;
 use windows::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
 use windows::Win32::System::Threading::GetSystemTimes;
 
-use crate::model::stats::{CpuTimes, Memory};
+use model::stats::{CpuTimes, Memory};
 
 /// Idle, kernel (idle included) and user time across all processors since boot.
 pub fn cpu_times() -> windows::core::Result<CpuTimes> {

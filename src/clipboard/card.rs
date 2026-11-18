@@ -12,10 +12,10 @@ use gpui::{
 use super::pictures::{Pictures, Want};
 use super::preview::Face;
 use crate::icons::{Icon, icon};
-use crate::model::clip_kind::{self, Kind, ago, detail};
-use crate::model::clipboard::{Content, Entry};
-use crate::model::favicon::icon_host;
-use crate::model::highlight::{Token, highlight};
+use model::clip_kind::{self, Kind, ago, detail};
+use model::clipboard::{Content, Entry};
+use model::favicon::icon_host;
+use model::highlight::{Token, highlight};
 
 /// A card's side, in logical pixels.
 pub const SIZE: f32 = 208.0;

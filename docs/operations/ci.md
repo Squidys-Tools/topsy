@@ -2,8 +2,9 @@
 
 CI (`.github/workflows/build.yml`) runs on a GitHub Windows runner, which has the Windows SDK and a MinGW gcc. It
 runs the same gates as `scripts/check.ps1` (`scripts/check-structure.ps1`, `cargo fmt --check`, clippy with
-`-D warnings` on all targets, the full `cargo test`), in release, then builds the exe. When it fails, read its
-log (`gh run view <id> --log-failed`) and fix the cause. `main` is kept green, so a failure on a branch is that branch's.
+`-D warnings` on all targets, the full `cargo test`, each across the workspace), in release, then builds the exe.
+When it fails, read its log (`gh run view <id> --log-failed`) and fix the cause. `main` is kept green, so a
+failure on a branch is that branch's.
 
 ## The `topsy-windows-gnu` artifact
 
