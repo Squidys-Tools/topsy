@@ -1,10 +1,12 @@
 //! What the island shows: the peek's line, and the tray's layout (Home's player and widgets, or
 //! the shelf's header and its chips, as the page and `TrayCause::sections` say).
 
+use std::time::Instant;
+
 use gpui::{ClickEvent, Context, Div, ScrollWheelEvent, div, prelude::*, px, rgb, rgba};
 
 use crate::widgets::{self, Effect};
-use crate::{Island, Mode, PEEK_LINGER, hud, now_playing, win32};
+use crate::{Island, Mode, PEEK_LINGER, activity, frame, hud, now_playing, win32};
 use model::activity::{Activity, Key};
 use model::tray_cause::Sections;
 
@@ -33,7 +35,9 @@ impl Island {
         match update(&mut self.widgets, visible, cx) {
             Some(Effect::Pressed) => self.press = None,
             Some(Effect::PhaseOver(ended)) => {
-                self.show_activity(Key::Timer, Activity::PhaseOver { ended }, cx);
+                self.update_activities(cx, |activity| {
+                    activity.show(Key::Timer, Activity::PhaseOver { ended }, Instant::now())
+                });
             }
             Some(Effect::Refit) if self.mode == Mode::Tray => self.set_mode(Mode::Tray, cx),
             Some(Effect::Refit) | None => {}
@@ -97,13 +101,66 @@ impl Island {
         }
     }
 
+    /// The one way into the Live Activities from their listeners and tasks: `update` changes
+    /// them, and the island does what they ask in turn.
+    pub(crate) fn update_activities(
+        &mut self,
+        cx: &mut Context<Self>,
+        update: impl FnOnce(&mut activity::State) -> Option<activity::Effect>,
+    ) {
+        match update(&mut self.activity) {
+            Some(activity::Effect::Changed(now)) => self.activities_changed(now, cx),
+            None => {}
+        }
+    }
+
+    fn activities_changed(&mut self, now: Instant, cx: &mut Context<Self>) {
+        let hwnd = self.hwnd;
+        let hidden = self.rest == Mode::Hidden;
+        (self.activity).refresh(now, hidden, || frame::fullscreen(hwnd), cx);
+        match self.mode {
+            // Each folds back to `resting` when it is done; the tray shows no activities.
+            Mode::Tray => {}
+            _ if self.hud.is_shown() => {}
+            // Being looked at: keep the peek, sized to what it now shows.
+            Mode::Peek if self.hwnd.is_some_and(win32::cursor_over) => {
+                self.set_mode(Mode::Peek, cx)
+            }
+            _ => {
+                let resting = self.resting();
+                if self.mode == resting && resting != Mode::Peek {
+                    // Hidden, so nothing of it is on screen to redraw.
+                    return;
+                }
+                if self.mode != resting {
+                    self.collapse_generation += 1;
+                }
+                self.set_mode(resting, cx);
+            }
+        }
+    }
+
+    /// Folded away, or held down in the peek by an activity: either way a drag up here opens it.
+    pub(crate) fn at_rest(&self) -> bool {
+        self.mode == Mode::Hidden || (self.mode == Mode::Peek && self.mode == self.resting())
+    }
+
+    /// What the island folds back to: the peek while an activity lasts, else its rest.
+    pub(crate) fn resting(&self) -> Mode {
+        if self.rest == Mode::Hidden && self.activity.hold_peek() {
+            Mode::Peek
+        } else {
+            self.rest
+        }
+    }
+
     /// What the peek says: the HUD, the Live Activities, the playing title with its art, or what
     /// is on the shelf.
     pub(crate) fn peek_content(&self, cx: &mut Context<Self>) -> Div {
         if let Some(hud) = self.hud.peek() {
             return hud;
         }
-        if let Some(activities) = self.activity_peek(cx) {
+        if let Some(activities) = self.activity.peek(cx) {
             return activities;
         }
         let count = self.shelf.len();
@@ -131,7 +188,7 @@ impl Island {
             return crate::hud::SIZE;
         }
         if mode == Mode::Peek
-            && let Some(size) = self.activity_size()
+            && let Some(size) = self.activity.size()
         {
             return size;
         }
