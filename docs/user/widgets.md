@@ -1,7 +1,8 @@
 # Shelf widgets
 
-When you open the tray to look (click the notch or the tray icon), a row of small widgets sits across its top,
-under [Now Playing](now-playing.md) and above the [shelf](shelf.md), after Droppy's:
+When you open the tray to look (click the notch or the tray icon), a row of small widgets sits on its Home page,
+under [Now Playing](now-playing.md), after Droppy's. The [shelf](shelf.md) is the next page: switch with the
+capsule under the notch or a sideways swipe (see [The notch](notch.md)).
 
 - **Calendar**: today, its week number and the month. The arrows look at other months; click the date to come
   back to this one.
@@ -12,13 +13,13 @@ under [Now Playing](now-playing.md) and above the [shelf](shelf.md), after Dropp
   minute or so.
 - **Weather**: the temperature and conditions where you are, today's high and low, and the next few hours.
 
-A drag or a drop opens the tray for the shelf alone, without the widgets.
+A drag or a drop opens the tray on the shelf alone, without the widgets.
 
 ## Choosing them
 
 In *Settings…* (see [Tray icon and settings](settings.md)), under *Shelf widgets*, switch each widget on or off
 and move it left or right with the arrows. The tray widens to fit them. Calendar, Pomodoro and System stats are on
-to begin with; turn every one off to get the plain tray back. Saved in `HKCU\Software\topsy\Widgets`.
+to begin with; turn every one off (with nothing playing) to get the plain tray back, with no pages. Saved in `HKCU\Software\topsy\Widgets`.
 
 ## Good to know
 

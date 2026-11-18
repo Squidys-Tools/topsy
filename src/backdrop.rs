@@ -2,9 +2,10 @@
 //!
 //! GPUI presents through DirectComposition as the window's *topmost* visual tree. A window can
 //! carry a second, non-topmost tree from Windows.UI.Composition, which DWM composes underneath
-//! GPUI's. That tree holds one visual: the host backdrop (the blurred desktop behind the window)
-//! clipped to a rounded rectangle whose radius we choose, so the glass can be a true capsule
-//! rather than DWM's fixed window corner. Tint and rim are drawn by GPUI on top.
+//! GPUI's. That tree holds the host backdrop (the blurred desktop behind the window) clipped to
+//! a rounded rectangle whose radius we choose, so the glass can be a true capsule rather than
+//! DWM's fixed window corner, and a second such pane for the page capsule under the notch. Tint
+//! and rim are drawn by GPUI on top.
 
 use std::ffi::c_void;
 
@@ -59,6 +60,7 @@ fn compositor(cx: &mut gpui::App) -> windows::core::Result<Compositor> {
 pub struct Backdrop {
     _target: DesktopWindowTarget,
     shape: CompositionRoundedRectangleGeometry,
+    capsule: CompositionRoundedRectangleGeometry,
 }
 
 impl Backdrop {
@@ -79,16 +81,25 @@ impl Backdrop {
                 .cast::<ICompositorDesktopInterop>()?
                 .CreateDesktopWindowTarget(hwnd, false)?;
 
-            let glass = compositor.CreateSpriteVisual()?;
-            glass.SetRelativeSizeAdjustment(Vector2 { X: 1.0, Y: 1.0 })?;
-            glass.SetBrush(&compositor.CreateHostBackdropBrush()?)?;
-            let shape = compositor.CreateRoundedRectangleGeometry()?;
-            glass.SetClip(&compositor.CreateGeometricClipWithGeometry(&shape)?)?;
-            target.SetRoot(&glass)?;
+            let root = compositor.CreateContainerVisual()?;
+            root.SetRelativeSizeAdjustment(Vector2 { X: 1.0, Y: 1.0 })?;
+            let pane = || -> windows::core::Result<CompositionRoundedRectangleGeometry> {
+                let glass = compositor.CreateSpriteVisual()?;
+                glass.SetRelativeSizeAdjustment(Vector2 { X: 1.0, Y: 1.0 })?;
+                glass.SetBrush(&compositor.CreateHostBackdropBrush()?)?;
+                let shape = compositor.CreateRoundedRectangleGeometry()?;
+                glass.SetClip(&compositor.CreateGeometricClipWithGeometry(&shape)?)?;
+                root.Children()?.InsertAtTop(&glass)?;
+                Ok(shape)
+            };
+            let shape = pane()?;
+            let capsule = pane()?;
+            target.SetRoot(&root)?;
 
             Ok(Self {
                 _target: target,
                 shape,
+                capsule,
             })
         }
     }
@@ -96,6 +107,11 @@ impl Backdrop {
     /// The handle to reshape the glass from a task; cheap to clone.
     pub fn shape(&self) -> Shape {
         Shape(self.shape.clone())
+    }
+
+    /// The page capsule's pane, the same kind of handle.
+    pub fn capsule(&self) -> Shape {
+        Shape(self.capsule.clone())
     }
 }
 

@@ -62,6 +62,9 @@ Keep this honest: remove a gap you close, add one you find and leave.
   *Live Activities* off only the chime says so; quitting topsy forgets a running timer. The row can't be
   reordered by dragging on the notch, only with the settings window's arrows. With all four on the tray is about
   850 px wide and isn't narrowed for a smaller monitor.
+- **Tray pages.** Droppy's third page, a grid of every widget, isn't there. With the acrylic fallback (before
+  Windows 11) the gap between the notch and its page capsule is glass too and takes clicks, since that glass
+  fills the whole window. A swipe turns the page once it has travelled, rather than following the fingers.
 - **Transform.** ImageMagick's and oxipng's builds link the Visual C++ runtime (`vcruntime140.dll`,
   `vcomp140.dll`), so a PC without it can't run the image actions (FFmpeg and pdfium don't need it). Writing HEIC
   needs FFmpeg too. A video keeps its main picture and its sound: subtitles, data tracks and cover art are

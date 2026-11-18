@@ -1,7 +1,7 @@
-//! The tray's layout: Now Playing's player and the widgets when the tray was opened to look, then
-//! the shelf's header and its chips (see `TrayCause::sections` for which show when).
+//! The tray's layout: Home's player and widgets, or the shelf's header and its chips, as the page
+//! and `TrayCause::sections` say.
 
-use gpui::{ClickEvent, Context, ScrollHandle, Window, div, prelude::*, px, rgb, rgba};
+use gpui::{ClickEvent, Context, ScrollWheelEvent, div, prelude::*, px, rgb, rgba};
 
 use crate::model::tray_cause::Sections;
 use crate::{Island, Mode, now_playing, widgets};
@@ -12,7 +12,7 @@ const GAP: f32 = 8.0;
 impl Island {
     pub(crate) fn sections(&self) -> Sections {
         let playing = self.media.now.card().is_some();
-        (self.tray_cause).sections(playing, self.widgets_on(), self.shelf.is_empty())
+        (self.tray_cause).sections(self.pager.page(), playing, self.widgets_on())
     }
 
     /// Fold back to rest now, cancelling any collapse already scheduled (Escape, the tray icon).
@@ -50,45 +50,58 @@ impl Island {
         (w, player + row + shelf)
     }
 
+    /// Spring to the size the mode and its sections want, and the page capsule out or away.
+    pub(crate) fn retarget(&mut self) {
+        let (w, h) = self.size_for(self.mode);
+        self.width.set_target(w);
+        self.height.set_target(h);
+        let capsule = self.mode == Mode::Tray && self.sections().pager;
+        self.pager.show_capsule(capsule);
+    }
+
+    /// The tray has just opened: Home, this month's calendar.
+    pub(crate) fn opened(&mut self) {
+        self.pager.opened();
+        self.widgets.opened();
+    }
+
     /// The open tray springs to its sections' size when they change under it: the track stops,
     /// the first file lands.
     pub(crate) fn fit_tray(&mut self) {
         if self.mode == Mode::Tray {
-            let (w, h) = self.size_for(Mode::Tray);
-            self.width.set_target(w);
-            self.height.set_target(h);
+            self.retarget();
         }
     }
 
-    /// The expanded tray: the player, the widgets and the shelf, as its sections say.
-    pub(crate) fn tray_content(
-        &self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement + use<> {
+    /// The expanded tray: the player and the widgets, or the shelf, as its sections say. After a
+    /// page turn it slides in from the page's side.
+    pub(crate) fn tray_content(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let sections = self.sections();
         // Fixed size and centred in the window, so it is revealed (not squashed) while the
         // pill springs open.
         let (w, h) = self.size_for(Mode::Tray);
+        let slide = self.pager.slide();
         div()
+            .id("tray")
             .w(px(w))
             .h(px(h))
             .flex_shrink_0()
             .flex()
             .flex_col()
             .relative()
+            .left(px(slide))
+            .opacity(1.0 - (slide.abs() / 60.0).min(0.7))
+            .on_scroll_wheel(cx.listener(|this, event: &ScrollWheelEvent, window, cx| {
+                this.on_scroll(event, window, cx);
+            }))
             .children(sections.media.then(|| self.player(cx)).flatten())
             .children(sections.widgets.then(|| self.widgets_row(cx)))
-            .children(sections.shelf.then(|| self.shelf_section(window, cx)))
+            .children(sections.shelf.then(|| self.shelf_section(cx)))
             .children(self.hud_over_tray())
     }
 
     /// The shelf's header and its chips, or the hint when it is empty.
-    fn shelf_section(
-        &self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement + use<> {
+    fn shelf_section(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let count = self.shelf.len();
         let title = if count == 0 {
             "Shelf".to_string()
@@ -137,9 +150,7 @@ impl Island {
                 .child("Drop files to park them")
                 .into_any_element()
         } else {
-            let scroll = (window.use_keyed_state("chips", cx, |_, _| ScrollHandle::new()))
-                .read(cx)
-                .clone();
+            let scroll = self.pager.chips.clone();
             // A chip cut by the row's edge fades with how much of it is out of sight, so a full
             // shelf shows there is more past the edge. Scrolling re-renders the tray.
             let (x, row) = (

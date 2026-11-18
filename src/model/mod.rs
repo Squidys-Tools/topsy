@@ -34,6 +34,7 @@ pub mod media;
 pub mod name_field;
 pub mod notch;
 pub mod orientation;
+pub mod pager;
 pub mod pdf;
 pub mod pdf_image;
 pub mod pdf_place;

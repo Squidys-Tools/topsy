@@ -2,10 +2,9 @@
 //! floating where a jiggle opened it, as the basket), how big it is, and what it is filled with.
 //! The OS window is always exactly the shape (docs/internals/notch.md, glass.md).
 
-use gpui::{
-    AnyElement, App, Background, Div, ExternalPaths, Pixels, Size, canvas, div, linear_color_stop,
-    linear_gradient, point, prelude::*, px, rgb, rgba,
-};
+mod paint;
+
+use gpui::{App, Pixels, Size};
 use windows::Win32::Foundation::HWND;
 
 use crate::backdrop::Backdrop;
@@ -15,6 +14,13 @@ use crate::{Island, log, win32};
 /// The notch's body when it peeks down from the top edge, and when it holds the tray.
 pub const PEEK: (f32, f32) = (200.0, 32.0);
 pub const TRAY: (f32, f32) = (400.0, 118.0);
+/// The page capsule under the open tray, and the strip of window it hangs in: Droppy's, a gap
+/// below the notch.
+pub const CAPSULE: (f32, f32) = (94.0, 32.0);
+pub const STRIP: f32 = 8.0 + CAPSULE.1;
+/// The capsule's fill and edge on the glass.
+const CAPSULE_FILL: u32 = 0x000000b3;
+const CAPSULE_EDGE: u32 = 0xffffff24;
 
 /// DWM's fixed window corner, which clips the window-wide acrylic of [`Glass::Acrylic`].
 const DWM_RADIUS: f32 = 8.0;
@@ -109,6 +115,9 @@ pub struct Frame {
     applied: Option<Applied>,
     /// How dark the glass is at the bottom edge (0xRRGGBBAA).
     floor: u32,
+    /// The capsule strip each recent window height (physical) was made with. The window takes
+    /// its new size a frame after it is asked for, so a frame is split by the size it has.
+    strips: Vec<(i32, f32)>,
 }
 
 impl Frame {
@@ -130,6 +139,7 @@ impl Frame {
             drawn_scale: scale,
             applied: None,
             floor: GLASS_FLOOR,
+            strips: Vec::new(),
         }
     }
 
@@ -199,10 +209,18 @@ impl Frame {
         }
     }
 
-    /// The outline that fills a window of `viewport`'s size.
-    pub fn outline(&self, viewport: Size<Pixels>) -> Notch {
+    /// The notch in a window of `viewport`'s size, and the capsule strip under it.
+    pub fn outline(&self, viewport: Size<Pixels>) -> (Notch, f32) {
         let ears = !self.is_floating() && self.look().has_ears();
-        Notch::fitting(viewport.width.into(), viewport.height.into(), ears)
+        let height = f32::from(viewport.height);
+        let tall = (height * self.drawn_scale).round() as i32;
+        let strip = (self.strips.iter().rev())
+            .find(|(made, _)| *made == tall)
+            .or(self.strips.last())
+            .map_or(0.0, |(_, strip)| *strip)
+            .min(height);
+        let notch = Notch::fitting(viewport.width.into(), height - strip, ears);
+        (notch, strip)
     }
 
     fn float_radius(&self, height: f32) -> f32 {
@@ -223,7 +241,8 @@ impl Frame {
     /// The resize runs in a foreground task rather than here: this is called from `render`,
     /// and a resize mid-draw would reach GPUI's window handler where it cannot update the
     /// window (see [`win32::move_window`]).
-    pub fn sync(&mut self, width: f32, height: f32, drawn_scale: f32, cx: &mut App) {
+    /// `strip` is the room under the notch for the page capsule, as it springs out.
+    pub fn sync(&mut self, width: f32, height: f32, strip: f32, drawn_scale: f32, cx: &mut App) {
         if drawn_scale != self.drawn_scale {
             // GPUI has moved the window to the size Windows suggested for the new DPI.
             self.drawn_scale = drawn_scale;
@@ -239,7 +258,36 @@ impl Frame {
         let notch = Notch::new(width.max(1.0), height, !floating && self.look().has_ears());
         let px = |v: f32| (v * s).round() as i32;
         let (w, h) = notch.window_size();
-        let size = (px(w).max(1), px(h).max(1));
+        let strip = if notch.is_hidden() || floating {
+            0.0
+        } else {
+            strip.max(0.0)
+        };
+        let size = (px(w).max(1), px(h + strip).max(1));
+        if self
+            .strips
+            .last()
+            .is_none_or(|last| *last != (size.1, strip))
+        {
+            self.strips.push((size.1, strip));
+            let stale = self.strips.len().saturating_sub(8);
+            self.strips.drain(..stale);
+        }
+        // The capsule springs out from under the notch: its glass is whole, its clicks only
+        // below the notch.
+        let capsule = (strip >= 0.5).then(|| {
+            let top = h + strip - CAPSULE.1;
+            win32::Capsule {
+                left: px((w - CAPSULE.0) / 2.0),
+                top: px(top.max(h)),
+                width: px(CAPSULE.0),
+                height: px(CAPSULE.1 - (h - top).max(0.0)),
+            }
+        });
+        let capsule_glass = (strip >= 0.5).then(|| {
+            let top = (h + strip - CAPSULE.1) * s;
+            ((w - CAPSULE.0) / 2.0 * s, top, CAPSULE.0 * s, CAPSULE.1 * s)
+        });
         let origin = match self.place {
             Place::Notch => match self.anchor {
                 Some((center_x, top)) => (center_x - size.0 / 2, top),
@@ -271,13 +319,15 @@ impl Frame {
         } else {
             win32::Clip::Notch {
                 width: size.0,
-                height: size.1,
+                height: px(h),
                 ear_slot: px(notch.ear_slot),
                 ear: px(notch.ear),
                 radius: px(radius),
+                capsule,
             }
         };
         let shape = self.backdrop.as_ref().map(Backdrop::shape);
+        let capsule_shape = self.backdrop.as_ref().map(Backdrop::capsule);
         let r = radius * s;
         // No blur shows as a glass of no height.
         let blur = !hidden && self.look() == Glass::Blur;
@@ -287,7 +337,7 @@ impl Frame {
             (0.0, 0.0, size.0 as f32, tall(size.1 as f32), r)
         } else {
             let left = notch.ear_slot * s;
-            (left, -r, notch.body_width * s, tall(size.1 as f32 + r), r)
+            (left, -r, notch.body_width * s, tall(h * s + r), r)
         };
         cx.spawn(async move |_| {
             win32::move_window(hwnd, origin.0, origin.1, size.0, size.1, appearing);
@@ -295,122 +345,12 @@ impl Frame {
             if let Some(shape) = shape {
                 shape.set(glass.0, glass.1, glass.2, glass.3, glass.4);
             }
+            if let Some(shape) = capsule_shape {
+                let (x, y, w, h) = capsule_glass.filter(|_| blur).unwrap_or_default();
+                shape.set(x, y, w, h, h / 2.0);
+            }
         })
         .detach();
-    }
-
-    /// The body holding `content`, then the ears and rim drawn over it, for a window of
-    /// `viewport`'s size.
-    pub fn draw(&self, viewport: Size<Pixels>, content: AnyElement) -> [AnyElement; 2] {
-        let notch = self.outline(viewport);
-        let look = self.look();
-        let black = rgba(0x000000ff);
-        let body = |fill: Background| -> Div {
-            div()
-                .absolute()
-                .top_0()
-                .bg(fill)
-                .overflow_hidden()
-                .flex()
-                .flex_col()
-                .items_center()
-                .justify_center()
-                .drag_over::<ExternalPaths>(|style, _, _, _| style.bg(rgb(0x14213d)))
-                .child(content)
-        };
-
-        // Black at the top, giving way to glass near the bottom: Droppy's dynamic glass, on the
-        // basket as on the notch. The closed notch is black all the way down, like the
-        // real one.
-        let h = notch.height.max(1.0);
-        let black_until = (h * BLACK_UNTIL).max(PEEK.1).min(h) / h;
-        let edge_fill = |floor: u32| {
-            linear_gradient(
-                180.0,
-                linear_color_stop(black, black_until),
-                linear_color_stop(rgba(floor), 1.0),
-            )
-        };
-        let fill = match look {
-            Glass::Blur | Glass::Tint => edge_fill(self.floor),
-            Glass::Acrylic => edge_fill(0x00000000),
-            Glass::Solid => black.into(),
-            Glass::Clear => rgba(0x00000000).into(),
-        };
-        let (body, radius) = if self.is_floating() {
-            let radius = self.float_radius(h);
-            (body(fill).left_0().size_full().rounded(px(radius)), radius)
-        } else {
-            let radius = if look.has_ears() {
-                notch.radius
-            } else {
-                DWM_RADIUS
-            };
-            let body = body(fill)
-                .left(px(notch.ear_slot))
-                .w(px(notch.body_width))
-                .h(viewport.height)
-                .rounded_bl(px(radius))
-                .rounded_br(px(radius));
-            (body, radius)
-        };
-
-        // The ears, black like the edge they join, and the rim along the bottom. The ears are
-        // softer than a circle, as Droppy's are: a cubic with its handles halfway in.
-        let ear = notch.ear;
-        let slot = notch.ear_slot;
-        let rim_from = h * black_until;
-        let rim = look != Glass::Solid && notch.height >= PEEK.1;
-        let shapes = canvas(
-            |_, _, _| {},
-            move |bounds, (), window, _| {
-                let o = bounds.origin;
-                let width: f32 = bounds.size.width.into();
-                let p = |x: f32, y: f32| point(o.x + px(x), o.y + px(y));
-                if ear >= 0.5 {
-                    for (edge, out) in [(slot, -1.0f32), (width - slot, 1.0)] {
-                        let mut path = gpui::PathBuilder::fill();
-                        path.move_to(p(edge + out * ear, 0.0));
-                        path.line_to(p(edge, 0.0));
-                        path.line_to(p(edge, ear));
-                        path.cubic_bezier_to(
-                            p(edge + out * ear, 0.0),
-                            p(edge, ear * 0.5),
-                            p(edge + out * ear * 0.5, 0.0),
-                        );
-                        if let Ok(path) = path.build() {
-                            window.paint_path(path, black);
-                        }
-                    }
-                }
-                if rim {
-                    // The stroke is centred on the path: half a pixel in keeps it whole.
-                    let (l, r, b) = (slot + 0.5, width - slot - 0.5, h - 0.5);
-                    let c = radius.min((b - rim_from).max(0.0));
-                    let k = 0.45;
-                    let mut path = gpui::PathBuilder::stroke(px(1.0));
-                    path.move_to(p(l, rim_from));
-                    path.line_to(p(l, b - c));
-                    path.cubic_bezier_to(p(l + c, b), p(l, b - c * k), p(l + c * k, b));
-                    path.line_to(p(r - c, b));
-                    path.cubic_bezier_to(p(r, b - c), p(r - c * k, b), p(r, b - c * k));
-                    path.line_to(p(r, rim_from));
-                    if let Ok(path) = path.build() {
-                        let glow = linear_gradient(
-                            180.0,
-                            linear_color_stop(rgba(RIM & 0xffffff00), 0.0),
-                            linear_color_stop(rgba(RIM), 1.0),
-                        );
-                        window.paint_path(path, glow);
-                    }
-                }
-            },
-        )
-        .absolute()
-        .top_0()
-        .left_0()
-        .size_full();
-        [body.into_any_element(), shapes.into_any_element()]
     }
 }
 

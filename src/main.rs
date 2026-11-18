@@ -19,8 +19,10 @@ mod look;
 mod media;
 mod model;
 mod now_playing;
+mod pager;
 mod settings;
 mod settings_window;
+mod shelf_keeping;
 mod state;
 mod transform;
 mod tray;
@@ -41,7 +43,7 @@ use windows::Win32::Foundation::HWND;
 
 use crate::frame::{Frame, Glass, Mode, PEEK};
 use crate::log::log;
-use crate::model::shelf::{self, Shelf};
+use crate::model::shelf::Shelf;
 use crate::model::spring::{Spring, SpringConfig};
 use crate::model::tray_cause::{HeldDrag, TrayCause};
 use crate::win32::{DropEvent, HookEvent};
@@ -86,6 +88,7 @@ struct Island {
     hud: hud::State,
     activity: activity::State,
     widgets: widgets::State,
+    pager: pager::State,
     basket: Option<Entity<basket::Basket>>,
 }
 
@@ -115,122 +118,22 @@ impl Island {
             hud: Default::default(),
             activity: Default::default(),
             widgets: Default::default(),
+            pager: Default::default(),
             basket: None,
         }
     }
 
     fn set_mode(&mut self, mode: Mode, cx: &mut Context<Self>) {
+        if mode == Mode::Tray && self.mode != Mode::Tray {
+            self.opened();
+        }
         self.mode = mode;
         win32::escape::take(mode == Mode::Tray && self.tray_cause == TrayCause::Opened);
-        let (w, h) = self.size_for(mode);
-        self.width.set_target(w);
-        self.height.set_target(h);
+        self.retarget();
         if mode == Mode::Tray {
             self.prune_missing(cx);
-            self.widgets.opened();
         }
         cx.notify();
-    }
-
-    /// Files can move or vanish while parked; don't keep chips for ones that have.
-    ///
-    /// Looking asks the disk, which can take seconds for a share that has gone away, so it
-    /// happens off the UI thread and the chips are dropped when the answer comes back.
-    fn prune_missing(&mut self, cx: &mut Context<Self>) {
-        let paths: Vec<PathBuf> = self.shelf.items().iter().map(|i| i.path.clone()).collect();
-        if paths.is_empty() {
-            return;
-        }
-        cx.spawn(async move |this, cx| {
-            let gone: Vec<PathBuf> = cx
-                .background_executor()
-                .spawn(async move { paths.into_iter().filter(|p| !p.exists()).collect() })
-                .await;
-            if gone.is_empty() {
-                return;
-            }
-            this.update(cx, |this, cx| {
-                let pruned = this.shelf.prune(|p| !gone.iter().any(|g| g == p));
-                if pruned > 0 {
-                    log(&format!("pruned {pruned} missing"));
-                    this.shelf_changed(cx);
-                }
-            })
-            .ok();
-        })
-        .detach();
-    }
-
-    fn shelf_changed(&mut self, cx: &mut Context<Self>) {
-        log(&format!("shelf now {}", self.shelf.len()));
-        let gone: Vec<PathBuf> = (self.icons.keys())
-            .filter(|path| !self.shelf.items().iter().any(|item| &item.path == *path))
-            .cloned()
-            .collect();
-        let icons = gone
-            .iter()
-            .filter_map(|path| self.icons.remove(path))
-            .collect();
-        icon::forget(icons, cx);
-        tray::set_shelf_count(self.shelf.len());
-        self.fit_tray();
-        if let Some(writer) = &self.writer {
-            writer.send(shelf::serialize(self.shelf.items()));
-        }
-        cx.notify();
-    }
-
-    /// Park dropped paths on the shelf; returns how many were new.
-    ///
-    /// Chips go up right away: telling a folder from a file asks the disk, and a dead network
-    /// share could stall the UI thread for its timeout, so the stat runs in the background
-    /// (chips show `Kind::Unknown` meanwhile). Answers are merged back by path, so a chip
-    /// removed or cleared before they arrive stays gone.
-    fn add_paths(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) -> usize {
-        let added = self.shelf.add(paths);
-        self.shelf_changed(cx);
-        if added.is_empty() {
-            return 0;
-        }
-        let count = added.len();
-        self.resolve_kinds(added, cx);
-        count
-    }
-
-    /// Learn whether each chip is a folder or a file, and fetch its picture, off the UI thread.
-    /// Each chip updates as its answer arrives.
-    fn resolve_kinds(&mut self, added: Vec<PathBuf>, cx: &mut Context<Self>) {
-        let rx = icon::resolve(added, (chip::ICON * self.scale).round() as i32);
-        cx.spawn(async move |this, cx| {
-            while let Ok((path, is_dir, icon)) = rx.recv().await {
-                let updated = this.update(cx, |this, cx| {
-                    if this.shelf.resolve_kinds([(path.clone(), is_dir)]) == 0 {
-                        return;
-                    }
-                    if let Some(icon) = icon
-                        && let Some(old) = this.icons.insert(path, icon)
-                    {
-                        icon::forget(vec![old], cx);
-                    }
-                    cx.notify();
-                });
-                if updated.is_err() {
-                    break;
-                }
-            }
-        })
-        .detach();
-    }
-
-    /// The shelf was restored from disk without looking at its files: learn their kinds and
-    /// drop the ones that went away while the app was off, both off the UI thread.
-    fn settle_restored(&mut self, cx: &mut Context<Self>) {
-        let paths: Vec<PathBuf> = self.shelf.items().iter().map(|i| i.path.clone()).collect();
-        if paths.is_empty() {
-            return;
-        }
-        self.resolve_kinds(paths, cx);
-        self.prune_missing(cx);
     }
 
     /// Open the tray. `cause` is what it is waiting for: a `Timed` one folds on its
@@ -350,21 +253,22 @@ impl Render for Island {
             .last_frame
             .map(|t| now.duration_since(t).as_secs_f32())
             .unwrap_or(1.0 / 120.0);
-        let moving = self.width.step(dt) | self.height.step(dt);
+        let moving = self.width.step(dt) | self.height.step(dt) | self.pager.step(dt);
         self.last_frame = moving.then_some(now);
         if moving {
             window.request_animation_frame();
         }
         let (width, height) = (self.width.value, self.height.value);
-        self.frame.sync(width, height, window.scale_factor(), cx);
+        self.frame
+            .sync(width, height, self.pager.strip(), window.scale_factor(), cx);
         // The window resizes asynchronously, a moment after this frame. Draw to the size it
         // really has, so the notch's edge always lines up with the window's (and the blur's).
         let viewport = window.viewport_size();
-        let notch = self.frame.outline(viewport);
+        let (notch, _) = self.frame.outline(viewport);
         let show_tray = notch.body_width > 260.0 && notch.height > 70.0;
 
         let content = if show_tray {
-            self.tray_content(window, cx).into_any_element()
+            self.tray_content(cx).into_any_element()
         } else if notch.height >= 20.0 {
             self.peek_content(cx).into_any_element()
         } else {
@@ -377,7 +281,7 @@ impl Render for Island {
             .w(viewport.width)
             .h(viewport.height)
             .text_color(rgb(0xffffff))
-            .children(self.frame.draw(viewport, content))
+            .children(self.frame.draw(viewport, content, self.capsule(cx)))
             .on_drop(cx.listener(|this, paths: &ExternalPaths, _window, cx| {
                 let names: Vec<String> = paths
                     .paths()
