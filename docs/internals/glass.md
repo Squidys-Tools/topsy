@@ -5,13 +5,15 @@ The notch is a real blur of whatever is behind it, in its own shape. The shape f
 GPUI presents through DirectComposition as the window's *topmost* visual tree. A window can carry one more,
 non-topmost tree, which DWM composes underneath GPUI's; `src/backdrop/` puts the glass there, clipped to a rounded
 rectangle whose top corners sit above the window and are cut off with it, which gives the notch its square top. GPUI
-draws the tint and rim on top. Either kind of glass holds while the window is inactive, which the island always is.
+draws the tint on top, and a lit rim (`model::rim`): a 1 px highlight and a soft inner glow, brightest where the
+edge faces a light at the top left, so the bottom-right corner catches it. Either kind of glass holds while the window is inactive, which the island always is.
 
 - **Live (the default).** dwmapi's undocumented shared multi-window visual (ordinals 163 and 164, as VLC 4 uses
   them) is a live copy of every window on the virtual screen except the ones excluded (the island itself), updated
   by DWM. It sits in a DirectComposition target, shifted so the part behind the window lines up, under a saturation
   (1.45x, Notchy's value for Droppy's look) and a Gaussian blur of our choosing (10 logical px). The host backdrop's
-  blur is fixed and heavier than Droppy's; this one lets what is behind stay recognisable. The visual must be made for
+  blur is fixed and heavier than Droppy's; this one lets what is behind stay recognisable. Grey Perlin grain, added
+centred on zero so it lightens nothing, keeps large flat areas from banding, as on acrylic. The visual must be made for
   a window with live preview turned off, so a cloaked tool window of topsy's own hosts it. Ordinal 164 lost an
   argument before build 20000, so the path is only tried where the Windows 11 host backdrop attribute is accepted. The copy
   spans every monitor, so it is clipped to the notch plus the blur's reach *before* the blur: blurring it whole cost
@@ -55,9 +57,9 @@ the contrast beside it, in five modes:
 |---|---|---|
 | `clear` | transparent fill, no blur | 1.00 (control: proves the measurement) |
 | `tint` | the same fill, no blur | 0.31 (what the dark fill alone does) |
-| *(default)* | live glass, notch-clipped | **0.04** (13% of what the tint leaves) |
-| `host` | host backdrop, notch-clipped | 0.04 (13%) |
-| `acrylic` | window-wide acrylic, the fallback | 0.06 (19%) |
+| *(default)* | live glass, notch-clipped | **0.07** (23% of what the tint leaves; the grain is part of it) |
+| `host` | host backdrop, notch-clipped | 0.05 (16%) |
+| `acrylic` | window-wide acrylic, the fallback | 0.07 (23%) |
 
 It samples the bottom of the tray, where the fill has faded most. Both compositor glasses flatten 6 px stripes
 completely, so the check proves there is a blur, not how light it is. The `tint` control matters: the fill is still
