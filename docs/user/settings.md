@@ -12,7 +12,8 @@ visible.
 ## Settings window
 
 *Settings…* opens *topsy settings*, a small window with a switch for each setting, how long
-[clipboard history](clipboard-history.md) is kept, the version and *Quit topsy*. Asking again brings the open
+[clipboard history](clipboard-history.md) is kept, which [shelf widgets](widgets.md) show and in what order, the
+version and *Quit topsy*. Asking again brings the open
 one to the front. Closing it leaves topsy running. A switch changed in the menu shows in the window, and the
 other way round.
 

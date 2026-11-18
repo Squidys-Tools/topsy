@@ -9,8 +9,8 @@ from the app you are working in.
 - **Rest the cursor on the top edge** of the screen, above where the notch lives, for a moment. It comes down
   as a small **peek** showing what is on the shelf (or what is playing). A quick sweep across the top doesn't
   bring it down.
-- **Click the peek** to open the **tray**: the [Now Playing](now-playing.md) player and the
-  [shelf](shelf.md).
+- **Click the peek** to open the **tray**: the [Now Playing](now-playing.md) player, the
+  [widgets](widgets.md) and the [shelf](shelf.md).
 - **Drag something up to the top edge** to open the tray straight away and drop it on the shelf.
 - **Left-click the tray icon** in the notification area to open or close the tray (see
   [Tray icon and settings](settings.md)).

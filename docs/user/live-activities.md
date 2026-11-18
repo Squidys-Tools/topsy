@@ -7,6 +7,7 @@ While something is going on, the notch stays down a little wider and shows it, a
   finishes. Clicking a finished download shows it in Explorer.
 - **Bluetooth headphones or a speaker** connecting, with the battery where Windows knows it, or leaving. Each
   shows for 3 s.
+- **A [Pomodoro](widgets.md) session ending**, with what comes next, for 3 s.
 
 Two show side by side, newest first. Clicking anything but a finished download opens the tray as usual, and an
 open tray folds back to the activity. A HUD takes over the notch for its moment, and a fullscreen app in front

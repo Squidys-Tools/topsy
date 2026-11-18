@@ -20,6 +20,8 @@ that holds your files, shows what is playing and keeps your clipboard. Native Ru
   Windows' flyouts.
 - **[Live Activities.](./docs/user/live-activities.md)** A running download or Bluetooth headphones coming and
   going hold the notch down while they last.
+- **[Shelf widgets.](./docs/user/widgets.md)** A calendar, a Pomodoro timer, system stats and the weather
+  across the top of the tray.
 - **[Transform.](./docs/user/transform.md)** Compress, convert, resize, trim, turn into a GIF or a PDF, strip
   metadata or cut out the background, all on your PC.
 - **[Tray icon and settings.](./docs/user/settings.md)** Start with Windows, a *Send to* entry in Explorer, and

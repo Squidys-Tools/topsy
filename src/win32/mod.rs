@@ -4,6 +4,7 @@
 pub mod battery;
 pub mod brightness;
 pub mod clipboard;
+pub mod clock;
 mod dialog;
 mod dragdrop;
 pub mod earbuds;
@@ -12,6 +13,7 @@ pub mod folder;
 mod hook;
 pub mod http;
 pub mod inbox;
+pub mod location;
 mod menu;
 pub mod meter;
 pub mod paste;
@@ -19,6 +21,8 @@ mod picker;
 pub mod sendto;
 pub mod share;
 mod shell;
+pub mod sound;
+pub mod sysinfo;
 pub mod volume;
 mod window;
 

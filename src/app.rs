@@ -20,7 +20,7 @@ use crate::model::edge::EdgeZone;
 use crate::model::jiggle::JiggleConfig;
 use crate::model::tray_cause::TrayCause;
 use crate::settings::Setting;
-use crate::settings_window::{self, OnChange};
+use crate::settings_window::{self, Change, OnChange};
 use crate::tray::{self, TrayEvent};
 use crate::win32::DropEvent;
 use crate::win32::sendto;
@@ -38,9 +38,12 @@ impl Island {
             }
             TrayEvent::OpenSettings(previous) => {
                 let island = cx.entity().downgrade();
-                let on_change: OnChange = Rc::new(move |setting, on, cx| {
+                let on_change: OnChange = Rc::new(move |change, cx| {
                     island
-                        .update(cx, |island, cx| island.on_setting(setting, on, cx))
+                        .update(cx, |island, cx| match change {
+                            Change::Setting(setting, on) => island.on_setting(setting, on, cx),
+                            Change::Widgets(lineup) => island.set_lineup(lineup, cx),
+                        })
                         .log_err();
                 });
                 // Out of the island's update: a new window must not be made while it is leased.
@@ -226,6 +229,8 @@ pub fn run() {
         // The restored count reaches the tray icon's menu before the first shelf change.
         island.update(cx, |island, cx| {
             tray::set_shelf_count(island.shelf.len());
+            // A tray it rests in (`TOPSY_IDLE=tray`) starts at the plain tray's size.
+            island.fit_tray();
             island.settle_restored(cx);
         });
         basket.update(cx, |basket, cx| basket.settle_restored(cx));

@@ -25,6 +25,7 @@ mod state;
 mod transform;
 mod tray;
 mod tray_view;
+mod widgets;
 mod win32;
 
 use std::collections::HashMap;
@@ -84,6 +85,7 @@ struct Island {
     media: now_playing::Media,
     hud: hud::State,
     activity: activity::State,
+    widgets: widgets::State,
     basket: Option<Entity<basket::Basket>>,
 }
 
@@ -112,6 +114,7 @@ impl Island {
             media: Default::default(),
             hud: Default::default(),
             activity: Default::default(),
+            widgets: Default::default(),
             basket: None,
         }
     }
@@ -124,6 +127,7 @@ impl Island {
         self.height.set_target(h);
         if mode == Mode::Tray {
             self.prune_missing(cx);
+            self.widgets.opened();
         }
         cx.notify();
     }
@@ -319,12 +323,6 @@ impl Island {
         {
             self.fold(cx);
         }
-    }
-
-    /// Fold back to rest now, cancelling any collapse already scheduled (Escape, the tray icon).
-    fn fold(&mut self, cx: &mut Context<Self>) {
-        self.collapse_generation += 1;
-        self.set_mode(self.resting(), cx);
     }
 
     fn on_hover(&mut self, hovered: bool, cx: &mut Context<Self>) {

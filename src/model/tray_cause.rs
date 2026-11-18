@@ -35,14 +35,18 @@ impl TrayCause {
         }
     }
 
-    /// What the tray shows, given whether something is playing and whether the shelf is empty.
-    /// A drag or a drop is about the shelf, so Now Playing stays out of its way; opened to look,
-    /// the player leads, and an empty shelf has nothing to add under it.
-    pub fn sections(self, playing: bool, shelf_empty: bool) -> Sections {
-        let media = playing && self == TrayCause::Opened;
+    /// What the tray shows, given whether something is playing, whether any widgets are on and
+    /// whether the shelf is empty. A drag or a drop is about the shelf, so Now Playing and the
+    /// widgets stay out of its way; opened to look, they lead, and an empty shelf has nothing to
+    /// add under them.
+    pub fn sections(self, playing: bool, widgets: bool, shelf_empty: bool) -> Sections {
+        let looking = self == TrayCause::Opened;
+        let media = playing && looking;
+        let widgets = widgets && looking;
         Sections {
             media,
-            shelf: !(media && shelf_empty),
+            widgets,
+            shelf: !((media || widgets) && shelf_empty),
         }
     }
 }
@@ -51,6 +55,7 @@ impl TrayCause {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Sections {
     pub media: bool,
+    pub widgets: bool,
     pub shelf: bool,
 }
 
@@ -100,28 +105,38 @@ mod tests {
     }
 
     #[test]
-    fn now_playing_shows_only_in_a_tray_opened_to_look() {
-        let both = Sections {
-            media: true,
-            shelf: true,
+    fn now_playing_and_widgets_show_only_in_a_tray_opened_to_look() {
+        let sections = |media, widgets, shelf| Sections {
+            media,
+            widgets,
+            shelf,
         };
-        let shelf = Sections {
-            media: false,
-            shelf: true,
-        };
-        // Dragging a file in: the drop zone, never the player.
-        assert_eq!(TrayCause::Drag.sections(true, true), shelf);
-        assert_eq!(TrayCause::Drag.sections(true, false), shelf);
+        let shelf = sections(false, false, true);
+        // Dragging a file in: the drop zone, never the player or the widgets.
+        assert_eq!(TrayCause::Drag.sections(true, true, true), shelf);
+        assert_eq!(TrayCause::Drag.sections(true, true, false), shelf);
         // The file just landed: the shelf it landed on.
-        assert_eq!(TrayCause::Dropped.sections(true, false), shelf);
-        // Opened to look: the player, and the shelf under it once it holds something.
-        let player = Sections {
-            media: true,
-            shelf: false,
-        };
-        assert_eq!(TrayCause::Opened.sections(true, true), player);
-        assert_eq!(TrayCause::Opened.sections(true, false), both);
-        assert_eq!(TrayCause::Opened.sections(false, true), shelf);
+        assert_eq!(TrayCause::Dropped.sections(true, true, false), shelf);
+        // Opened to look: the player and the widgets, and the shelf under them once it holds
+        // something.
+        let opened = TrayCause::Opened;
+        assert_eq!(
+            opened.sections(true, false, true),
+            sections(true, false, false)
+        );
+        assert_eq!(
+            opened.sections(true, false, false),
+            sections(true, false, true)
+        );
+        assert_eq!(
+            opened.sections(false, true, true),
+            sections(false, true, false)
+        );
+        assert_eq!(
+            opened.sections(true, true, false),
+            sections(true, true, true)
+        );
+        assert_eq!(opened.sections(false, false, true), shelf);
     }
 
     #[test]

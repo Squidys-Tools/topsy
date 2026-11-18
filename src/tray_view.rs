@@ -1,10 +1,10 @@
-//! The tray's layout: Now Playing's player when the tray was opened to look, then the shelf's
-//! header and its chips (see `TrayCause::sections` for which show when).
+//! The tray's layout: Now Playing's player and the widgets when the tray was opened to look, then
+//! the shelf's header and its chips (see `TrayCause::sections` for which show when).
 
 use gpui::{ClickEvent, Context, ScrollHandle, Window, div, prelude::*, px, rgb, rgba};
 
 use crate::model::tray_cause::Sections;
-use crate::{Island, Mode, now_playing};
+use crate::{Island, Mode, now_playing, widgets};
 
 /// Between chips.
 const GAP: f32 = 8.0;
@@ -12,10 +12,17 @@ const GAP: f32 = 8.0;
 impl Island {
     pub(crate) fn sections(&self) -> Sections {
         let playing = self.media.now.card().is_some();
-        self.tray_cause.sections(playing, self.shelf.is_empty())
+        (self.tray_cause).sections(playing, self.widgets_on(), self.shelf.is_empty())
     }
 
-    /// The notch body's size for `mode`; the tray's height is its sections'.
+    /// Fold back to rest now, cancelling any collapse already scheduled (Escape, the tray icon).
+    pub(crate) fn fold(&mut self, cx: &mut Context<Self>) {
+        self.collapse_generation += 1;
+        self.set_mode(self.resting(), cx);
+    }
+
+    /// The notch body's size for `mode`; the tray's height is its sections', and it widens to fit
+    /// the widgets.
     pub(crate) fn size_for(&self, mode: Mode) -> (f32, f32) {
         let (w, h) = mode.size();
         if mode == Mode::Peek && self.hud.is_shown() {
@@ -35,19 +42,25 @@ impl Island {
         } else {
             0.0
         };
+        let (row, w) = match sections.widgets {
+            true => (widgets::HEIGHT, w.max(self.widgets_width())),
+            false => (0.0, w),
+        };
         let shelf = if sections.shelf { h } else { 0.0 };
-        (w, player + shelf)
+        (w, player + row + shelf)
     }
 
-    /// The open tray springs to its sections' height when they change under it: the track
-    /// stops, the first file lands.
+    /// The open tray springs to its sections' size when they change under it: the track stops,
+    /// the first file lands.
     pub(crate) fn fit_tray(&mut self) {
         if self.mode == Mode::Tray {
-            self.height.set_target(self.size_for(Mode::Tray).1);
+            let (w, h) = self.size_for(Mode::Tray);
+            self.width.set_target(w);
+            self.height.set_target(h);
         }
     }
 
-    /// The expanded tray: the player and the shelf, as its sections say.
+    /// The expanded tray: the player, the widgets and the shelf, as its sections say.
     pub(crate) fn tray_content(
         &self,
         window: &mut Window,
@@ -65,6 +78,7 @@ impl Island {
             .flex_col()
             .relative()
             .children(sections.media.then(|| self.player(cx)).flatten())
+            .children(sections.widgets.then(|| self.widgets_row(cx)))
             .children(sections.shelf.then(|| self.shelf_section(window, cx)))
             .children(self.hud_over_tray())
     }

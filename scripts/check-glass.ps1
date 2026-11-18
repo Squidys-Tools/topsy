@@ -67,6 +67,7 @@ function Measure-Mode($mode) {
     $env:TOPSY_STATE = Join-Path $env:TEMP 'topsy-glass-state.txt'
     # A playing song puts its row where the glass is measured.
     $env:TOPSY_NO_MEDIA = '1'
+    $env:TOPSY_NO_WIDGETS = '1'
     $app = Start-Process $Exe -PassThru
     try {
         # Wait for the pill: its window answers hit-tests at the pill's centre.
@@ -107,7 +108,7 @@ function Measure-Mode($mode) {
     } finally {
         Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
         $app.WaitForExit(3000) | Out-Null
-        Remove-Item Env:TOPSY_GLASS, Env:\TOPSY_IDLE, Env:\TOPSY_STATE, Env:\TOPSY_NO_MEDIA -ErrorAction SilentlyContinue
+        Remove-Item Env:TOPSY_GLASS, Env:\TOPSY_IDLE, Env:\TOPSY_STATE, Env:\TOPSY_NO_MEDIA, Env:\TOPSY_NO_WIDGETS -ErrorAction SilentlyContinue
     }
 }
 

@@ -1,0 +1,34 @@
+# Shelf widgets
+
+When you open the tray to look (click the notch or the tray icon), a row of small widgets sits across its top,
+under [Now Playing](now-playing.md) and above the [shelf](shelf.md), after Droppy's:
+
+- **Calendar**: today, its week number and the month. The arrows look at other months; click the date to come
+  back to this one.
+- **Pomodoro**: a focus or break timer. Pick *Focus* or *Break*, set the minutes with − and + while it is
+  stopped, then play. When the time is up you hear a chime and the notch says so for a moment, even with the
+  tray folded away; the timer is then ready for the other one.
+- **System stats**: how busy the processor is and how much memory is in use, each with a graph of the last
+  minute or so.
+- **Weather**: the temperature and conditions where you are, today's high and low, and the next few hours.
+
+A drag or a drop opens the tray for the shelf alone, without the widgets.
+
+## Choosing them
+
+In *Settings…* (see [Tray icon and settings](settings.md)), under *Shelf widgets*, switch each widget on or off
+and move it left or right with the arrows. The tray widens to fit them. Calendar, Pomodoro and System stats are on
+to begin with; turn every one off to get the plain tray back. Saved in `HKCU\Software\topsy\Widgets`.
+
+## Good to know
+
+- Widgets only do anything while you are looking at them: the stats are sampled once a second and the weather is
+  fetched while the tray is open, never in the background. The graphs start where you last left them.
+- **Weather** asks Windows where you are, so it is off until you turn it on. Windows needs *Location services*
+  and *Let desktop apps access your location* on (Settings › Privacy & security › Location); if they are off the
+  widget says so and clicking it opens that page. It shows the weather for your position, without a town name.
+  Forecasts come from [Open-Meteo](https://open-meteo.com) (data CC BY 4.0), at most every 30 minutes,
+  sending your position rounded to about a kilometre. Fahrenheit or Celsius follows your region's measurement
+  system.
+- The Pomodoro's chime and message come from a timer set for the end of the session, so nothing ticks while the
+  tray is folded. Quitting topsy stops the timer.
