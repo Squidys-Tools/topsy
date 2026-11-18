@@ -242,7 +242,7 @@ impl Render for Island {
         if moving {
             window.request_animation_frame();
         }
-        let (width, height) = (self.width.value, self.height.value);
+        let (width, height, target) = (self.width.value, self.height.value, self.height.target);
         self.frame
             .sync(width, height, self.pager.strip(), window.scale_factor(), cx);
         // The window resizes asynchronously, a moment after this frame. Draw to the size it
@@ -265,7 +265,7 @@ impl Render for Island {
             .w(viewport.width)
             .h(viewport.height)
             .text_color(rgb(0xffffff))
-            .children(self.frame.draw(viewport, content, self.capsule(cx)))
+            .children(self.frame.draw(viewport, target, content, self.capsule(cx)))
             .on_drop(cx.listener(|this, paths: &ExternalPaths, _window, cx| {
                 let names: Vec<String> = paths
                     .paths()
