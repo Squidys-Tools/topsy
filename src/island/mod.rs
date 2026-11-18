@@ -242,12 +242,12 @@ impl Render for Island {
         if moving {
             window.request_animation_frame();
         }
-        let (width, height, target) = (self.width.value, self.height.value, self.height.target);
-        self.frame
-            .sync(width, height, self.pager.strip(), window.scale_factor(), cx);
+        let (width, height, scale) = (self.width.value, self.height.value, window.scale_factor());
+        let (strip, open) = (self.pager.strip(), self.mode == Mode::Tray);
+        self.frame.sync(width, height, strip, scale, open, cx);
         // The window resizes asynchronously, a moment after this frame. Draw to the size it
         // really has, so the notch's edge always lines up with the window's (and the blur's).
-        let viewport = window.viewport_size();
+        let (viewport, target) = (window.viewport_size(), self.height.target);
         let (notch, _) = self.frame.outline(viewport);
         let show_tray = notch.body_width > 260.0 && notch.height > 70.0;
 

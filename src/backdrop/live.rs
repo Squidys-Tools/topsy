@@ -32,12 +32,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::{BOOL, Error, HRESULT, IUnknown, Interface, PCSTR, s, w};
 use windows_numerics::{Vector2, Vector4};
 
+use super::BLUR;
 use super::{Outline, SATURATION};
 use crate::log::LogErr;
 
-/// The blur's standard deviation in logical pixels: light enough that what is behind stays
-/// recognisable through the glass, as it does through Droppy's.
-const BLUR: f32 = 4.0;
 /// The grain: how much of the noise is added, how fine (cycles per physical pixel), and how
 /// far it reaches, which only has to cover the largest window.
 const GRAIN: f32 = 0.3;
@@ -50,9 +48,9 @@ const CLOAKED_APP: u32 = 2;
 /// `WCA_EXCLUDED_FROM_LIVEPREVIEW`, for `SetWindowCompositionAttribute`.
 const WCA_EXCLUDED_FROM_LIVEPREVIEW: u32 = 13;
 
-type CreateSharedMultiWindowVisual =
+pub(super) type CreateSharedMultiWindowVisual =
     unsafe extern "system" fn(HWND, *mut c_void, *mut *mut c_void, *mut isize) -> HRESULT;
-type UpdateSharedMultiWindowVisual = unsafe extern "system" fn(
+pub(super) type UpdateSharedMultiWindowVisual = unsafe extern "system" fn(
     isize,
     *const HWND,
     u32,
@@ -74,13 +72,13 @@ type SetWindowCompositionAttribute =
 
 /// The device and the entry points every window's glass shares, made on first use.
 #[derive(Clone)]
-struct Shared {
-    device: IDCompositionDesktopDevice,
-    create: CreateSharedMultiWindowVisual,
-    update: UpdateSharedMultiWindowVisual,
+pub(super) struct Shared {
+    pub(super) device: IDCompositionDesktopDevice,
+    pub(super) create: CreateSharedMultiWindowVisual,
+    pub(super) update: UpdateSharedMultiWindowVisual,
     /// The visual must be made for a window with live preview turned off; a cloaked window of
     /// its own keeps that off the island.
-    host: HWND,
+    pub(super) host: HWND,
 }
 
 impl gpui::Global for Shared {}
@@ -93,6 +91,11 @@ unsafe fn export<F: Copy>(module: HMODULE, name: PCSTR) -> windows::core::Result
     let found = unsafe { GetProcAddress(module, name) }.ok_or_else(Error::from_thread)?;
     // SAFETY: a function pointer to a function pointer of the caller's stated signature.
     Ok(unsafe { std::mem::transmute_copy(&found) })
+}
+
+/// What the live glass made, if any window has it.
+pub(super) fn made(cx: &gpui::App) -> Option<Shared> {
+    cx.try_global::<Shared>().cloned()
 }
 
 fn shared(hwnd: HWND, cx: &mut gpui::App) -> windows::core::Result<Shared> {

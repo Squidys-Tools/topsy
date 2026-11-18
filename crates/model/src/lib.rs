@@ -26,6 +26,7 @@ pub mod image_geometry;
 pub mod image_ops;
 pub mod jiggle;
 pub mod jpeg;
+pub mod lens;
 pub mod levels;
 pub mod magick;
 pub mod marquee;

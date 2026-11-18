@@ -20,6 +20,8 @@ other way round.
 ## Settings
 
 - **Black notch** draws the notch plain black instead of glass. Saved in `HKCU\Software\topsy\Look`.
+- **Live glass** keeps what the open tray bends up to date as the screen behind it changes. Without it the glass
+  shows what was there when the tray opened. It uses a little graphics power while the tray is open. Saved in `HKCU\Software\topsy\Lens`.
 - **Start with Windows** starts topsy when you sign in. It is off until you turn it on, needs no admin rights,
   and writes `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\topsy`. If you move `topsy.exe`, the entry
   follows it the next time you start it.

@@ -52,6 +52,7 @@ impl Render for Basket {
             self.height.value,
             0.0,
             window.scale_factor(),
+            false,
             cx,
         );
         let viewport = window.viewport_size();
