@@ -23,6 +23,7 @@ take the foreground (AGENTS.md, rule 2 of what we never compromise on), and thes
 - **The share sheet only comes up over the foreground window.** Otherwise it reports success and never asks for
   the files, so *Share…* brings the basket (or the island) to the front first.
 - **`SetCursorPos` does not reliably reach `WH_MOUSE_LL`**; test input must be `mouse_event`/`SendInput`.
-- **Windows that are typed into take focus.** The settings window, the Transform panel, the clipboard strip and
-  the basket's rename field are ordinary focusable windows; each remembers the window that was in front and
-  hands focus back when it goes. The island and the result cards never take focus.
+- **Windows that are typed into take focus.** The settings window, the clipboard strip and the basket's rename
+  field are ordinary focusable windows; each remembers the window that was in front and hands focus back when it
+  goes. The Transform panel takes focus too but doesn't hand it back. The island and the result cards never take
+  focus.

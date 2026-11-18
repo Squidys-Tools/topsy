@@ -136,7 +136,8 @@ Rules for new and touched code. Don't sweep old code to match.
 - Write for the reader: comments, docs and PR text never mention the conversation, earlier attempts or session
   history.
 - Dependency changes one at a time with `cargo update --precise`; never update everything (GPUI breaks easily).
-- Scripts live in `scripts/`, never a temp folder, and each states its usage in its header.
+- Committed scripts live in `scripts/` and each states its usage in its header; one-off scratch scripts stay
+  outside the worktree.
 
 ## Verifying
 

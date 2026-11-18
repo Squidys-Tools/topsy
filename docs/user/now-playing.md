@@ -6,8 +6,8 @@ and artist with level bars beside them, the elapsed time, a progress bar and the
 play/pause and next. A button the app doesn't take is greyed. The [shelf](shelf.md) follows under it once it
 holds something.
 
-While something is playing (not paused), the peek shows its art, title and level bars instead of the shelf
-count. A tray opened by dragging up to the edge or by a drop shows only the shelf.
+While something is playing (not paused), the peek shows its art, title and level bars, with the shelf
+count beside it. Stopped, or no session, shows nothing. A tray opened by dragging up to the edge or by a drop shows only the shelf.
 
 ## Good to know
 
@@ -15,4 +15,3 @@ count. A tray opened by dragging up to the edge or by a drop shows only the shel
   shown. A player routed to another output (per-app output in Sound settings) shows resting bars.
 - topsy follows the session Windows picks as current; there is no way to switch between several.
 - A long title scrolls slowly side to side in the player; the peek cuts it short.
-- Set `TOPSY_NO_MEDIA=1` to turn Now Playing off (see [Running](../operations/running.md)).
