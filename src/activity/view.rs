@@ -8,11 +8,13 @@ use crate::frame::PEEK;
 use crate::hud::{GREEN, RED, cell};
 use crate::icons::{self, Icon};
 use crate::model::activity::{Activity, Key};
+use crate::model::pomodoro::Phase;
 use crate::model::transform::size;
 
 const ONE: f32 = 280.0;
 const TWO: f32 = 440.0;
 const DIM: u32 = 0xffffff99;
+const ORANGE: u32 = 0xff9f0a;
 
 impl Island {
     /// The peek's size while it shows activities.
@@ -74,19 +76,19 @@ fn row(activity: &Activity) -> Div {
         Activity::Downloading { name, bytes } => (
             Icon::Download,
             rgb(0xffffff),
-            name,
+            name.as_str(),
             div().text_color(rgba(DIM)).child(size(*bytes)),
         ),
         Activity::Downloaded { name, .. } => (
             Icon::Tick,
             rgb(GREEN),
-            name,
+            name.as_str(),
             div().text_color(rgba(DIM)).child("Done"),
         ),
         Activity::Connected { name, battery } => (
             Icon::Headphones,
             rgb(0xffffff),
-            name,
+            name.as_str(),
             match battery {
                 Some(p) => div()
                     .flex()
@@ -101,9 +103,21 @@ fn row(activity: &Activity) -> Div {
         Activity::Disconnected { name } => (
             Icon::Headphones,
             rgba(DIM),
-            name,
+            name.as_str(),
             div().text_color(rgba(DIM)).child("Disconnected"),
         ),
+        Activity::PhaseOver { ended } => {
+            let (name, next) = match ended {
+                Phase::Focus => ("Focus done", "Take a break"),
+                Phase::Break => ("Break over", "Back to focus"),
+            };
+            (
+                Icon::Timer,
+                rgb(ORANGE),
+                name,
+                div().text_color(rgba(DIM)).child(next),
+            )
+        }
     };
     div()
         .flex_1()
@@ -113,6 +127,12 @@ fn row(activity: &Activity) -> Div {
         .items_center()
         .gap(px(8.0))
         .child(icons::icon(glyph, 16.0, color).flex_shrink_0())
-        .child(div().flex_1().min_w(px(0.0)).truncate().child(name.clone()))
+        .child(
+            div()
+                .flex_1()
+                .min_w(px(0.0))
+                .truncate()
+                .child(name.to_owned()),
+        )
         .child(trailing.flex_shrink_0())
 }

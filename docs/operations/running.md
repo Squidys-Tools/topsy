@@ -11,6 +11,7 @@ row here.
 | `TOPSY_NO_HOOK=1` | Don't install the mouse hook. The notch then rests peeking, as nothing could reveal it. |
 | `TOPSY_NO_TRAY=1` | No tray icon and no menu, so right-clicking the notch quits. Start with Windows is left alone. |
 | `TOPSY_NO_MEDIA=1` | Don't watch the system's media session: no Now Playing. |
+| `TOPSY_NO_WIDGETS=1` | No shelf widgets in the tray, whatever the settings say (the live checks click the shelf). |
 | `TOPSY_NO_KEYS=1` | Leave the volume keys to Windows, whatever the *Volume HUD* setting says. |
 | `TOPSY_IDLE=peek\|tray` | What the notch rests as, instead of hidden. The live checks use it. |
 | `TOPSY_SEED=<path;path>` | Start with these files on the shelf. |

@@ -1,10 +1,12 @@
 //! Live Activities: what is going on right now, held in a small notch while it lasts. A download
 //! stays while it grows, or [`STALL`] after it stops (paused or failed); a finished one, or earbuds
-//! coming and going, passes after [`LINGER`].
+//! coming and going, or a Pomodoro phase running out, passes after [`LINGER`].
 //! The notch shows the [`SHOWN`] at the front, newest first.
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
+
+use crate::model::pomodoro::Phase;
 
 /// How many show at once, side by side.
 pub const SHOWN: usize = 2;
@@ -19,6 +21,7 @@ pub enum Key {
     Download(u64),
     /// An audio device, by its container id, so its several endpoints count once.
     Device(String),
+    Timer,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -27,6 +30,7 @@ pub enum Activity {
     Downloaded { name: String, path: PathBuf },
     Connected { name: String, battery: Option<u8> },
     Disconnected { name: String },
+    PhaseOver { ended: Phase },
 }
 
 impl Activity {
@@ -34,7 +38,10 @@ impl Activity {
     fn lasts(&self) -> Duration {
         match self {
             Activity::Downloading { .. } => STALL,
-            _ => LINGER,
+            Activity::Downloaded { .. }
+            | Activity::Connected { .. }
+            | Activity::Disconnected { .. }
+            | Activity::PhaseOver { .. } => LINGER,
         }
     }
 }
@@ -124,6 +131,7 @@ mod tests {
                 | Activity::Downloaded { name, .. }
                 | Activity::Connected { name, .. }
                 | Activity::Disconnected { name } => name.clone(),
+                Activity::PhaseOver { ended } => format!("{ended:?}"),
             })
             .collect()
     }
@@ -198,5 +206,17 @@ mod tests {
         assert_eq!(names(&a), ["Buds"]);
         assert!(!a.expire(t + LINGER));
         assert!(a.expire(later + LINGER));
+    }
+
+    #[test]
+    fn a_phase_over_passes_and_the_next_replaces_it() {
+        let t = Instant::now();
+        let mut a = Activities::default();
+        let over = |ended| Activity::PhaseOver { ended };
+        a.set(Key::Timer, over(Phase::Focus), t);
+        a.set(Key::Timer, over(Phase::Break), t + LINGER / 2);
+        assert_eq!(names(&a), ["Break"]);
+        assert!(!a.expire(t + LINGER));
+        assert!(a.expire(t + LINGER / 2 + LINGER));
     }
 }

@@ -89,6 +89,11 @@ impl Island {
         self.activities_changed(now, cx);
     }
 
+    /// Show an activity of topsy's own, as if a watcher had heard it.
+    pub(crate) fn show_activity(&mut self, key: Key, activity: Activity, cx: &mut Context<Self>) {
+        self.on_activity(Event::Set(key, activity), cx);
+    }
+
     fn show_download(&mut self, key: &Key, path: PathBuf, cx: &mut Context<Self>) {
         log(&format!("activity {key:?} shown in folder"));
         crate::chip::show_in_folder(path);

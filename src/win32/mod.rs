@@ -4,6 +4,7 @@
 pub mod battery;
 pub mod brightness;
 pub mod clipboard;
+pub mod clock;
 mod dialog;
 mod dragdrop;
 pub mod earbuds;
@@ -12,6 +13,7 @@ pub mod folder;
 mod hook;
 pub mod http;
 pub mod inbox;
+pub mod location;
 mod menu;
 pub mod meter;
 pub mod paste;
@@ -19,6 +21,8 @@ mod picker;
 pub mod sendto;
 pub mod share;
 mod shell;
+pub mod sound;
+pub mod sysinfo;
 pub mod volume;
 mod window;
 
@@ -29,9 +33,9 @@ pub use menu::{Entry as MenuEntry, popup as popup_menu};
 pub use picker::pick_files;
 pub use shell::{move_new, open_path, show_in_folder};
 pub use window::{
-    Clip, apply_overlay_styles, apply_strip_styles, cursor_monitor, cursor_over, foreground_window,
-    fullscreen_over, monitor_top_center, move_window, restore_foreground, round_corners,
-    set_acrylic, set_clip, set_visible, window_rect,
+    Capsule, Clip, apply_overlay_styles, apply_strip_styles, cursor_monitor, cursor_over,
+    foreground_window, fullscreen_over, monitor_top_center, move_window, restore_foreground,
+    round_corners, set_acrylic, set_clip, set_visible, window_rect,
 };
 
 use std::ffi::c_void;

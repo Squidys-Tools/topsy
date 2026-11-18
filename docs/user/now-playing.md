@@ -1,10 +1,11 @@
 # Now Playing
 
-A tray opened to look (a click on the notch, the tray icon) leads with a player for what Windows is playing:
+A tray opened to look (a click on the notch, the tray icon) opens on its Home page, which leads with a player for
+what Windows is playing:
 the session the volume flyout shows, such as Spotify, a browser tab or the Media Player. It has the art, title
 and artist with level bars beside them, the elapsed time, a progress bar and the time left, then previous,
-play/pause and next. A button the app doesn't take is greyed. The [shelf](shelf.md) follows under it once it
-holds something.
+play/pause and next. A button the app doesn't take is greyed. The [shelf](shelf.md) is the next page (see
+[The notch](notch.md)).
 
 While something is playing (not paused), the peek shows its art, title and level bars, with the shelf
 count beside it. Stopped, or no session, shows nothing. A tray opened by dragging up to the edge or by a drop shows only the shelf.

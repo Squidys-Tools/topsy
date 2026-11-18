@@ -5,6 +5,8 @@
 
 use std::time::Duration;
 
+use crate::model::pager::Page;
+
 /// What the tray was opened for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TrayCause {
@@ -35,23 +37,29 @@ impl TrayCause {
         }
     }
 
-    /// What the tray shows, given whether something is playing and whether the shelf is empty.
-    /// A drag or a drop is about the shelf, so Now Playing stays out of its way; opened to look,
-    /// the player leads, and an empty shelf has nothing to add under it.
-    pub fn sections(self, playing: bool, shelf_empty: bool) -> Sections {
-        let media = playing && self == TrayCause::Opened;
+    /// What the tray shows on `page`, given whether something is playing and whether any widgets
+    /// are on. Opened to look, with Now Playing or the widgets to show, the tray has two pages:
+    /// Home holds them, the shelf the files. A drag or a drop is about the shelf, so it shows the
+    /// shelf alone, as does a tray with nothing for Home.
+    pub fn sections(self, page: Page, playing: bool, widgets: bool) -> Sections {
+        let pager = self == TrayCause::Opened && (playing || widgets);
+        let home = pager && page == Page::Home;
         Sections {
-            media,
-            shelf: !(media && shelf_empty),
+            media: home && playing,
+            widgets: home && widgets,
+            shelf: !home,
+            pager,
         }
     }
 }
 
-/// The parts of the open tray, top to bottom.
+/// The parts of the open tray, top to bottom, and whether the page capsule hangs under it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Sections {
     pub media: bool,
+    pub widgets: bool,
     pub shelf: bool,
+    pub pager: bool,
 }
 
 /// The held drag, as far as the tray or the basket is concerned. Once the drop target has refused
@@ -100,28 +108,34 @@ mod tests {
     }
 
     #[test]
-    fn now_playing_shows_only_in_a_tray_opened_to_look() {
-        let both = Sections {
-            media: true,
-            shelf: true,
+    fn home_and_its_pager_show_only_in_a_tray_opened_to_look() {
+        let sections = |media, widgets, shelf, pager| Sections {
+            media,
+            widgets,
+            shelf,
+            pager,
         };
-        let shelf = Sections {
-            media: false,
-            shelf: true,
-        };
-        // Dragging a file in: the drop zone, never the player.
-        assert_eq!(TrayCause::Drag.sections(true, true), shelf);
-        assert_eq!(TrayCause::Drag.sections(true, false), shelf);
-        // The file just landed: the shelf it landed on.
-        assert_eq!(TrayCause::Dropped.sections(true, false), shelf);
-        // Opened to look: the player, and the shelf under it once it holds something.
-        let player = Sections {
-            media: true,
-            shelf: false,
-        };
-        assert_eq!(TrayCause::Opened.sections(true, true), player);
-        assert_eq!(TrayCause::Opened.sections(true, false), both);
-        assert_eq!(TrayCause::Opened.sections(false, true), shelf);
+        let shelf = sections(false, false, true, false);
+        // Dragging a file in, or one just landed: the shelf alone, whatever the page.
+        for cause in [TrayCause::Drag, TrayCause::Dropped] {
+            assert_eq!(cause.sections(Page::Home, true, true), shelf);
+        }
+        // Opened to look: Home holds the player and the widgets, the shelf its own page.
+        let opened = TrayCause::Opened;
+        assert_eq!(
+            opened.sections(Page::Home, true, true),
+            sections(true, true, false, true)
+        );
+        assert_eq!(
+            opened.sections(Page::Home, false, true),
+            sections(false, true, false, true)
+        );
+        assert_eq!(
+            opened.sections(Page::Shelf, true, true),
+            sections(false, false, true, true)
+        );
+        // Nothing for Home: the shelf, with no pages to switch between.
+        assert_eq!(opened.sections(Page::Home, false, false), shelf);
     }
 
     #[test]

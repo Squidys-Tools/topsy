@@ -9,8 +9,11 @@ from the app you are working in.
 - **Rest the cursor on the top edge** of the screen, above where the notch lives, for a moment. It comes down
   as a small **peek** showing what is on the shelf (or what is playing). A quick sweep across the top doesn't
   bring it down.
-- **Click the peek** to open the **tray**: the [Now Playing](now-playing.md) player and the
-  [shelf](shelf.md).
+- **Click the peek** to open the **tray**. When something is playing or a widget is on, it has two pages:
+  **Home**, with the [Now Playing](now-playing.md) player and the [widgets](widgets.md), and the
+  [shelf](shelf.md). It opens on Home. The small capsule under the notch shows which page is up and how many
+  files the shelf holds; click its icons, or swipe sideways on a touchpad (Shift and the wheel, or a tilt
+  wheel, do the same), to switch. A swipe over the shelf's files scrolls them first, then turns the page.
 - **Drag something up to the top edge** to open the tray straight away and drop it on the shelf.
 - **Left-click the tray icon** in the notification area to open or close the tray (see
   [Tray icon and settings](settings.md)).

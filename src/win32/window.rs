@@ -301,14 +301,25 @@ pub enum Clip {
         tops: Vec<i32>,
         radius: i32,
     },
-    /// A notch body with square top, rounded bottom and an ear strip along the top edge.
+    /// A notch body `height` tall with square top, rounded bottom and an ear strip along the top
+    /// edge, and the page capsule hanging under it when it shows.
     Notch {
         width: i32,
         height: i32,
         ear_slot: i32,
         ear: i32,
         radius: i32,
+        capsule: Option<Capsule>,
     },
+}
+
+/// A fully rounded rectangle, in physical pixels of the window.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Capsule {
+    pub left: i32,
+    pub top: i32,
+    pub width: i32,
+    pub height: i32,
 }
 
 /// Shape the window with a region, so the transparent corners outside the notch are
@@ -351,6 +362,7 @@ pub fn set_clip(hwnd: HWND, clip: Clip) {
                 ear_slot,
                 ear,
                 radius,
+                capsule,
             } => {
                 let r = (radius - 1).max(0);
                 // Starting the round rectangle above the window squares off its top corners.
@@ -366,6 +378,19 @@ pub fn set_clip(hwnd: HWND, clip: Clip) {
                 let ears = CreateRectRgn(ear_slot - ear, 0, width - ear_slot + ear, ear);
                 CombineRgn(Some(body), Some(body), Some(ears), RGN_OR);
                 DeleteObject(ears.into()).ok().log_err();
+                if let Some(Capsule {
+                    left,
+                    top,
+                    width,
+                    height,
+                }) = capsule
+                {
+                    let d = (height - 2).max(0);
+                    let pill =
+                        CreateRoundRectRgn(left, top, left + width + 1, top + height + 1, d, d);
+                    CombineRgn(Some(body), Some(body), Some(pill), RGN_OR);
+                    DeleteObject(pill.into()).ok().log_err();
+                }
                 Some(body)
             }
         };

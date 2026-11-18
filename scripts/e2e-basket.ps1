@@ -136,6 +136,7 @@ $env:TOPSY_LOG = '1'
 $env:TOPSY_STATE = $state
 $env:TOPSY_IDLE = 'peek'
 $env:TOPSY_NO_MEDIA = '1'
+$env:TOPSY_NO_WIDGETS = '1'
 if ([Native]::ShareSheet()) { throw 'a share sheet is already on screen; close it first' }
 $failed = $null; $app = $null
 $log = ''
@@ -204,7 +205,7 @@ try {
 } finally {
     Start-Sleep -Milliseconds 200
     if ($app) { Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue }
-    Remove-Item Env:\TOPSY_LOG, Env:\TOPSY_STATE, Env:\TOPSY_IDLE, Env:\TOPSY_NO_MEDIA -ErrorAction SilentlyContinue
+    Remove-Item Env:\TOPSY_LOG, Env:\TOPSY_STATE, Env:\TOPSY_IDLE, Env:\TOPSY_NO_MEDIA, Env:\TOPSY_NO_WIDGETS -ErrorAction SilentlyContinue
 }
 "--- app log"; $log; if (Test-Path $appLog) { Get-Content $appLog }
 if ($failed) { "FAIL: $($failed.Exception.Message) (line $($failed.InvocationInfo.ScriptLineNumber))"; exit 1 }

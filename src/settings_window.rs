@@ -1,24 +1,32 @@
-//! The settings window: an ordinary, focusable window with a switch for each [`Setting`].
-//! There is at most one; asking for it again raises the one that is open.
+//! The settings window: an ordinary, focusable window with a switch for each [`Setting`], and the
+//! shelf widgets' lineup. There is at most one; asking for it again raises the one that is open.
 
 use std::rc::Rc;
 
 use gpui::{
-    App, Bounds, Context, Global, SharedString, TitlebarOptions, Window,
+    App, Bounds, Context, Div, Global, SharedString, TitlebarOptions, Window,
     WindowBackgroundAppearance, WindowBounds, WindowHandle, WindowKind, WindowOptions, div,
     prelude::*, px, rgb, rgba, size,
 };
 use raw_window_handle::HasWindowHandle;
 use windows::Win32::Foundation::HWND;
 
+use crate::icons::{self, Icon};
 use crate::log::LogErr;
+use crate::model::widgets::Lineup;
 use crate::settings::Setting;
-use crate::{clipboard, win32};
+use crate::{clipboard, widgets, win32};
 
-/// Told about every switch the window makes, after it is saved, so the app can apply it.
-pub type OnChange = Rc<dyn Fn(Setting, bool, &mut App)>;
+/// What the window changed, after it is saved.
+pub enum Change {
+    Setting(Setting, bool),
+    Widgets(Lineup),
+}
 
-const SIZE: (f32, f32) = (340.0, 304.0);
+/// Told about every change the window makes, so the app can apply it.
+pub type OnChange = Rc<dyn Fn(Change, &mut App)>;
+
+const SIZE: (f32, f32) = (340.0, 560.0);
 const BACKGROUND: u32 = 0x202020;
 const ACCENT: u32 = 0x4c8dff;
 
@@ -29,6 +37,7 @@ impl Global for Open {}
 pub struct SettingsWindow {
     on: [bool; Setting::ALL.len()],
     keep_days: u32,
+    lineup: Lineup,
     on_change: OnChange,
     /// The system draws Mica behind it, so it paints no fill of its own.
     mica: bool,
@@ -38,6 +47,86 @@ impl SettingsWindow {
     fn reload(&mut self) {
         self.on = Setting::ALL.map(Setting::is_on);
         self.keep_days = clipboard::keep_days();
+        self.lineup = widgets::saved();
+    }
+
+    fn change_lineup(&mut self, change: impl FnOnce(&mut Lineup), cx: &mut Context<Self>) {
+        let mut lineup = self.lineup.clone();
+        change(&mut lineup);
+        if let Err(err) = widgets::save(&lineup) {
+            eprintln!("topsy: could not change the shelf widgets: {err}");
+            return;
+        }
+        self.lineup = lineup.clone();
+        cx.notify();
+        (self.on_change.clone())(Change::Widgets(lineup), cx);
+    }
+
+    /// A row per widget, those on first in their order: a switch, and arrows to move it.
+    fn widget_rows(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let rows = self.lineup.rows();
+        let count = self.lineup.widgets().len();
+        let rows = rows.into_iter().enumerate().map(|(i, (widget, on))| {
+            let arrow = |glyph, by: isize, enabled: bool| {
+                let base = div()
+                    .id(("move", i * 2 + usize::from(by > 0)))
+                    .size(px(24.0))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(px(6.0))
+                    .child(icons::icon(glyph, 16.0, rgb(0xffffff)));
+                if !enabled {
+                    return base.opacity(0.25);
+                }
+                base.hover(|arrow| arrow.bg(rgba(0xffffff1a)))
+                    .on_click(cx.listener(move |view, _, _, cx| {
+                        view.change_lineup(|lineup| lineup.shift(widget, by), cx);
+                    }))
+            };
+            let arrows = on.then(|| {
+                div()
+                    .flex()
+                    .gap(px(2.0))
+                    .child(arrow(Icon::ArrowUp, -1, i > 0))
+                    .child(arrow(Icon::ArrowDown, 1, i + 1 < count))
+            });
+            // The label and the switch toggle; the arrows sit between them, outside either.
+            let toggle = |id: &'static str, element: Div| {
+                element
+                    .id((id, i))
+                    .on_click(cx.listener(move |view, _, _, cx| {
+                        view.change_lineup(|lineup| lineup.set(widget, !on), cx);
+                    }))
+            };
+            div()
+                .flex()
+                .items_center()
+                .gap(px(8.0))
+                .px(px(12.0))
+                .py(px(6.0))
+                .rounded(px(6.0))
+                .hover(|row| row.bg(rgba(0xffffff0d)))
+                .child(toggle(
+                    "widget-label",
+                    div().flex_1().py(px(4.0)).child(widget.label()),
+                ))
+                .children(arrows)
+                .child(toggle("widget-switch", div().child(switch(on))))
+        });
+        div()
+            .flex()
+            .flex_col()
+            .child(
+                div()
+                    .px(px(12.0))
+                    .pt(px(10.0))
+                    .pb(px(4.0))
+                    .text_xs()
+                    .text_color(rgba(0xffffff80))
+                    .child("Shelf widgets"),
+            )
+            .children(rows.collect::<Vec<_>>())
     }
 }
 
@@ -99,6 +188,7 @@ pub fn open(cx: &mut App, on_change: OnChange, previous: usize) {
             let mut view = SettingsWindow {
                 on: [false; Setting::ALL.len()],
                 keep_days: 0,
+                lineup: Lineup::default(),
                 on_change,
                 mica,
             };
@@ -177,7 +267,7 @@ impl Render for SettingsWindow {
                     if let Some(on) = setting.toggle() {
                         view.on[i] = on;
                         cx.notify();
-                        (view.on_change.clone())(setting, on, cx);
+                        (view.on_change.clone())(Change::Setting(setting, on), cx);
                     }
                 }))
         });
@@ -211,7 +301,14 @@ impl Render for SettingsWindow {
             .when(!self.mica, |window| window.bg(rgb(BACKGROUND)))
             .text_color(rgb(0xffffff))
             .text_sm()
-            .child(div().flex().flex_col().children(rows).child(retention))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .children(rows)
+                    .child(retention)
+                    .child(self.widget_rows(cx)),
+            )
             .child(
                 div()
                     .flex()

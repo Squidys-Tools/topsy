@@ -4,9 +4,10 @@ The notch is a real blur of whatever is behind it, in its own shape. The shape f
 
 GPUI presents through DirectComposition as the window's *topmost* visual tree. A window can also carry one
 non-topmost tree from Windows.UI.Composition, and DWM composes it underneath GPUI's. `src/backdrop.rs` puts a
-single visual there: the compositor's host backdrop brush (the blurred desktop behind the window, enabled by
+visual there: the compositor's host backdrop brush (the blurred desktop behind the window, enabled by
 `DWMWA_USE_HOSTBACKDROPBRUSH`) clipped to a rounded rectangle whose radius we choose. Its top corners sit above
-the window and are cut off with it, which gives the notch its square top. GPUI draws the tint and rim on top.
+the window and are cut off with it, which gives the notch its square top. A second such pane is the page capsule
+under the open tray (see [Shelf widgets](widgets.md)). GPUI draws the tint and rim on top.
 The blur holds while the window is inactive, which the island always is.
 
 The window-wide alternative, `SetWindowCompositionAttribute` with `ACCENT_ENABLE_ACRYLICBLURBEHIND` (what

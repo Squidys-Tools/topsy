@@ -25,6 +25,9 @@ pub struct Config {
     pub no_media: bool,
     /// `TOPSY_NO_KEYS`: leave the volume keys to Windows, whatever the setting says.
     pub no_keys: bool,
+    /// `TOPSY_NO_WIDGETS`: no shelf widgets in the tray, whatever the lineup says, so the live
+    /// checks find the shelf where they expect it.
+    pub no_widgets: bool,
     /// `TOPSY_DEMO`: open and fold on a timer, to watch the motion without a mouse.
     pub demo: bool,
     /// `TOPSY_SEED=path;path`: files put on the shelf at startup.
@@ -64,6 +67,7 @@ impl Config {
             no_tray: var("TOPSY_NO_TRAY").is_some(),
             no_media: var("TOPSY_NO_MEDIA").is_some(),
             no_keys: var("TOPSY_NO_KEYS").is_some(),
+            no_widgets: var("TOPSY_NO_WIDGETS").is_some(),
             demo: var("TOPSY_DEMO").is_some(),
             seed: var("TOPSY_SEED").map(|s| std::env::split_paths(&s).collect()),
             transform: var("TOPSY_TRANSFORM").map(|s| std::env::split_paths(&s).collect()),
@@ -103,6 +107,7 @@ mod tests {
         assert_eq!(c.rest, Mode::Hidden);
         assert_eq!(c.glass, None);
         assert!(!c.no_hook && !c.no_tray && !c.no_media && !c.no_keys && !c.demo && !c.log);
+        assert!(!c.no_widgets && config(&[("TOPSY_NO_WIDGETS", "1")]).no_widgets);
         assert!(config(&[("TOPSY_NO_MEDIA", "1")]).no_media);
         assert!(c.seed.is_none() && c.exit_after.is_none() && c.state.is_none());
         assert!(c.transform.is_none());
