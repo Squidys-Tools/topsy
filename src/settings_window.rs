@@ -29,6 +29,8 @@ pub struct SettingsWindow {
     on: [bool; Setting::ALL.len()],
     keep_days: u32,
     on_change: OnChange,
+    /// The system draws Mica behind it, so it paints no fill of its own.
+    mica: bool,
 }
 
 impl SettingsWindow {
@@ -78,8 +80,10 @@ pub fn open(cx: &mut App, on_change: OnChange, previous: usize) {
         ..Default::default()
     };
     let opened = cx.open_window(options, |window, cx| {
+        let mut mica = false;
         if let Some(hwnd) = hwnd(window) {
             win32::dark_title_bar(hwnd);
+            mica = win32::mica(hwnd);
             win32::bring_to_front(hwnd);
             // Closing it would otherwise activate the tray icon's hidden window, the last one
             // active before it. Only while it is in front, so a close from elsewhere steals nothing.
@@ -95,6 +99,7 @@ pub fn open(cx: &mut App, on_change: OnChange, previous: usize) {
                 on: [false; Setting::ALL.len()],
                 keep_days: 0,
                 on_change,
+                mica,
             };
             view.reload();
             view
@@ -200,7 +205,7 @@ impl Render for SettingsWindow {
             .flex_col()
             .justify_between()
             .p(px(8.0))
-            .bg(rgb(BACKGROUND))
+            .when(!self.mica, |window| window.bg(rgb(BACKGROUND)))
             .text_color(rgb(0xffffff))
             .text_sm()
             .child(div().flex().flex_col().children(rows).child(retention))

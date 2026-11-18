@@ -3,7 +3,11 @@
 use std::ffi::c_void;
 
 use windows::Win32::Foundation::{HWND, TRUE};
-use windows::Win32::Graphics::Dwm::{DWMWA_USE_IMMERSIVE_DARK_MODE, DwmSetWindowAttribute};
+use windows::Win32::Graphics::Dwm::{
+    DWMSBT_MAINWINDOW, DWMWA_SYSTEMBACKDROP_TYPE, DWMWA_USE_IMMERSIVE_DARK_MODE,
+    DwmExtendFrameIntoClientArea, DwmSetWindowAttribute,
+};
+use windows::Win32::UI::Controls::MARGINS;
 use windows::Win32::UI::WindowsAndMessaging::{
     IsIconic, SW_RESTORE, SetForegroundWindow, ShowWindow,
 };
@@ -17,6 +21,28 @@ pub fn dark_title_bar(hwnd: HWND) {
             (&TRUE as *const _) as *const c_void,
             size_of_val(&TRUE) as u32,
         );
+    }
+}
+
+/// Mica behind the whole window, caption included. False before Windows 11 22H2, which has no
+/// system backdrop; the caller then paints its own fill. Mica only shows through where the
+/// content is transparent, so the frame is extended over the client area.
+pub fn mica(hwnd: HWND) -> bool {
+    unsafe {
+        let backdrop = DWMSBT_MAINWINDOW;
+        let set = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_SYSTEMBACKDROP_TYPE,
+            (&backdrop as *const _) as *const c_void,
+            size_of_val(&backdrop) as u32,
+        );
+        let whole = MARGINS {
+            cxLeftWidth: -1,
+            cxRightWidth: -1,
+            cyTopHeight: -1,
+            cyBottomHeight: -1,
+        };
+        set.is_ok() && DwmExtendFrameIntoClientArea(hwnd, &whole).is_ok()
     }
 }
 
