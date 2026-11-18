@@ -2,8 +2,6 @@
 //! each is a pinned release archive, downloaded on first use (see `fetch`), unpacked under
 //! `%LOCALAPPDATA%\topsy\tools`, and run as a process of its own, without a window.
 
-#![allow(dead_code)] // Used once the engines that run tools are wired in.
-
 use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader, Read};
 use std::os::windows::process::CommandExt;
@@ -13,6 +11,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use super::fetch::{Pinned, Status, root};
+
+use crate::log::{LogErr, MissingOk};
 
 /// One downloadable tool: its archive, and the program inside it.
 pub struct Tool {
@@ -65,15 +65,15 @@ impl Tool {
         let home = self.home()?;
         // Unpacked beside its final place and renamed in, so a half-unpacked tool never counts.
         let staging = home.with_extension("unpacking");
-        let _ = fs::remove_dir_all(&staging);
+        fs::remove_dir_all(&staging).missing_ok().log_err();
         let unpacked = unpack(&archive, &staging, keep, cancel);
         if let Err(err) = unpacked {
-            let _ = fs::remove_dir_all(&staging);
+            fs::remove_dir_all(&staging).missing_ok().log_err();
             return Err(err);
         }
-        let _ = fs::remove_dir_all(&home);
+        fs::remove_dir_all(&home).missing_ok().log_err();
         fs::rename(&staging, &home)?;
-        let _ = fs::remove_file(&archive);
+        fs::remove_file(&archive).missing_ok().log_err();
         if !program.is_file() {
             return Err(io::Error::new(
                 io::ErrorKind::NotFound,
@@ -226,7 +226,7 @@ pub fn run(
 pub fn read(program: &Path, args: &[&std::ffi::OsStr], cancel: &AtomicBool) -> io::Result<Vec<u8>> {
     let mut out = Vec::new();
     run_with(program, args, cancel, &mut |mut stdout| {
-        let _ = stdout.read_to_end(&mut out);
+        stdout.read_to_end(&mut out).log_err();
     })?;
     Ok(out)
 }
@@ -244,11 +244,12 @@ fn run_with(
         .stderr(Stdio::piped())
         .creation_flags(CREATE_NO_WINDOW | BELOW_NORMAL_PRIORITY_CLASS)
         .spawn()?;
-    let stdout = child.stdout.take().expect("piped");
-    let mut stderr = child.stderr.take().expect("piped");
+    let (Some(stdout), Some(mut stderr)) = (child.stdout.take(), child.stderr.take()) else {
+        return Err(io::Error::other("the tool's output isn't piped"));
+    };
     let errors = std::thread::spawn(move || {
         let mut text = String::new();
-        let _ = stderr.read_to_string(&mut text);
+        stderr.read_to_string(&mut text).log_err();
         text
     });
     // The process may print nothing for a long while, so a watcher ends it on cancel rather
@@ -260,15 +261,17 @@ fn run_with(
                     return Ok(status);
                 }
                 if cancel.load(Ordering::Relaxed) {
-                    let _ = child.kill();
-                    let _ = child.wait();
+                    child.kill().log_err();
+                    child.wait().log_err();
                     return Err(io::Error::from(io::ErrorKind::Interrupted));
                 }
                 std::thread::sleep(Duration::from_millis(50));
             }
         });
         stdout_to(stdout);
-        watcher.join().expect("watcher panicked")
+        watcher
+            .join()
+            .unwrap_or_else(|_| Err(io::Error::other("the cancel watcher panicked")))
     });
     let errors = errors.join().unwrap_or_default();
     let status = watcher?;
@@ -310,7 +313,7 @@ mod tests {
 
     fn scratch(tag: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("topsy-tools-{}-{tag}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
+        fs::remove_dir_all(&dir).missing_ok().log_err();
         fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -339,7 +342,7 @@ mod tests {
         assert!(!out.join("LICENSE").exists());
         assert_eq!(enclosed(Path::new("../evil")), None);
         assert_eq!(enclosed(Path::new("./a/b")), Some(PathBuf::from("a/b")));
-        let _ = fs::remove_dir_all(&dir);
+        fs::remove_dir_all(&dir).missing_ok().log_err();
     }
 
     #[test]
@@ -352,7 +355,7 @@ mod tests {
         unpack(&archive, &out, &keep, &AtomicBool::new(false)).unwrap();
         assert_eq!(fs::read(out.join("tool/bin/keep.txt")).unwrap(), b"kept");
         assert!(!out.join("tool/skip.txt").exists());
-        let _ = fs::remove_dir_all(&dir);
+        fs::remove_dir_all(&dir).missing_ok().log_err();
     }
 
     #[test]

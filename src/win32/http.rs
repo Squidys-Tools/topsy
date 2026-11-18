@@ -14,6 +14,8 @@ use windows::Win32::Networking::WinHttp::{
 };
 use windows::core::{HSTRING, PCWSTR, w};
 
+use crate::log::LogErr;
+
 /// Each step (resolve, connect, send, receive) gives up after this many milliseconds.
 const TIMEOUT_MS: i32 = 5_000;
 /// The same for a large download, which may wait longer on a slow line between pieces.
@@ -34,7 +36,7 @@ struct Handle(*mut c_void);
 impl Drop for Handle {
     fn drop(&mut self) {
         if !self.0.is_null() {
-            let _ = unsafe { WinHttpCloseHandle(self.0) };
+            unsafe { WinHttpCloseHandle(self.0) }.log_err();
         }
     }
 }

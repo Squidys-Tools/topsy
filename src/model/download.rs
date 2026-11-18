@@ -1,8 +1,6 @@
 //! The rules of fetching a large model file once: whether it's there, where a broken download
 //! picks up again, what to make of the server's answer, and when to tell the panel.
 
-#![allow(dead_code)]
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ModelStatus {
     /// Not on disk: the panel offers "Get".
@@ -12,14 +10,6 @@ pub enum ModelStatus {
 }
 
 impl ModelStatus {
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Missing => "Get",
-            Self::Downloading => "Getting…",
-            Self::Ready => "Ready",
-        }
-    }
-
     /// A finished file counts only at its exact size: it's renamed into place after its hash
     /// checks out, so anything else is foreign or truncated.
     pub fn of(downloading: bool, file_len: Option<u64>, expected: u64) -> Self {

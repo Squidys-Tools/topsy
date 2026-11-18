@@ -10,6 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use sha2::{Digest, Sha256};
 
+use crate::log::{LogErr, MissingOk};
 pub use crate::model::download::ModelStatus as Status;
 use crate::model::download::{self, Reply, Start, Ticker};
 use crate::win32::http::{self, Streamed};
@@ -85,7 +86,7 @@ impl Pinned {
         report(self.size);
         let digest = download::hex(&hash(&part, cancel)?);
         if digest != self.sha256 {
-            let _ = fs::remove_file(&part);
+            fs::remove_file(&part).missing_ok().log_err();
             crate::log(&format!(
                 "{}: sha-256 {digest} != {}",
                 self.label, self.sha256
@@ -133,7 +134,9 @@ impl Pinned {
                     return Err(io::ErrorKind::Interrupted.into());
                 }
                 let mut sink = sink.borrow_mut();
-                let (file, done) = sink.as_mut().expect("head opens the file");
+                let (file, done) = sink
+                    .as_mut()
+                    .ok_or_else(|| io::Error::other("a body before its head"))?;
                 file.write_all(chunk)?;
                 *done += chunk.len() as u64;
                 if *done > self.size {

@@ -11,6 +11,13 @@ repository = "https://github.com/Squidys-Tools/topsy"
 dbg_macro = "warn"
 todo = "warn"
 unimplemented = "warn"
+# A panic takes the whole island down: outside tests, propagate, log or encode the invariant.
+unwrap_used = "warn"
+expect_used = "warn"
+# A discarded Result is an error nobody hears about: log it, propagate it, or say why not.
+let_underscore_must_use = "warn"
+redundant_clone = "warn"
+ignore_without_reason = "warn"
 
 [dependencies]
 async-channel = "2"

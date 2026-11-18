@@ -18,6 +18,7 @@ use super::pictures::Pictures;
 use super::{Command, Event};
 use crate::icons::{Icon, icon};
 use crate::log;
+use crate::log::LogErr;
 use crate::model::clip_kind::{Kind, matches};
 use crate::model::clipboard::Entry;
 use crate::win32::{self, MenuEntry, paste};
@@ -57,10 +58,11 @@ pub struct Strip {
 pub fn listen(cx: &mut App, events: async_channel::Receiver<Event>) {
     cx.spawn(async move |cx| {
         while let Ok(event) = events.recv().await {
-            let _ = cx.update(|cx| match event {
+            cx.update(|cx| match event {
                 Event::Hotkey(previous) => toggle(cx, previous),
                 Event::Changed => refresh(cx),
-            });
+            })
+            .log_err();
         }
     })
     .detach();
@@ -157,7 +159,7 @@ fn toggle(cx: &mut App, previous: usize) {
 
 fn refresh(cx: &mut App) {
     if let Some(handle) = cx.try_global::<Open>().map(|open| open.0) {
-        let _ = handle.update(cx, |strip, _, cx| strip.reload(cx));
+        handle.update(cx, |strip, _, cx| strip.reload(cx)).log_err();
     }
 }
 
@@ -307,7 +309,7 @@ impl Strip {
         let spawned = std::thread::Builder::new()
             .name("topsy-clip-menu".into())
             .spawn(move || {
-                let _ = tx.send_blocking(win32::popup_menu(&entries));
+                tx.send_blocking(win32::popup_menu(&entries)).log_err();
             });
         if spawned.is_err() {
             return;
@@ -315,7 +317,7 @@ impl Strip {
         self.menu = true;
         cx.spawn_in(window, async move |this, cx| {
             let choice = rx.recv().await.ok().flatten();
-            let _ = this.update_in(cx, |this, window, _| {
+            this.update_in(cx, |this, window, _| {
                 this.menu = false;
                 // The history may have moved on while the menu was up.
                 let Some(at) =
@@ -330,7 +332,8 @@ impl Strip {
                     Some(4) => this.remove(at),
                     _ => {}
                 }
-            });
+            })
+            .log_err();
         })
         .detach();
     }

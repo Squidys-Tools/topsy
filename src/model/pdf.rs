@@ -11,14 +11,6 @@ pub enum PageSize {
 
 impl PageSize {
     pub const ALL: [PageSize; 3] = [PageSize::Image, PageSize::A4, PageSize::Letter];
-
-    pub fn label(self) -> &'static str {
-        match self {
-            PageSize::Image => "Fit to image",
-            PageSize::A4 => "A4",
-            PageSize::Letter => "US Letter",
-        }
-    }
 }
 
 /// What PDF to images writes.
@@ -30,13 +22,6 @@ pub enum PageFormat {
 
 impl PageFormat {
     pub const ALL: [PageFormat; 2] = [PageFormat::Png, PageFormat::Jpeg];
-
-    pub fn label(self) -> &'static str {
-        match self {
-            PageFormat::Png => "PNG",
-            PageFormat::Jpeg => "JPEG",
-        }
-    }
 
     pub fn extension(self) -> &'static str {
         match self {
@@ -108,14 +93,6 @@ pub enum PdfQuality {
 
 impl PdfQuality {
     pub const ALL: [PdfQuality; 3] = [PdfQuality::High, PdfQuality::Balanced, PdfQuality::Small];
-
-    pub fn label(self) -> &'static str {
-        match self {
-            PdfQuality::High => "High quality",
-            PdfQuality::Balanced => "Balanced",
-            PdfQuality::Small => "Smallest",
-        }
-    }
 
     pub fn preset(self) -> Preset {
         match self {

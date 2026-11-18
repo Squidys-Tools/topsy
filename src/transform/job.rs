@@ -17,6 +17,7 @@ use windows::Win32::System::Com::COINIT_MULTITHREADED;
 use super::cards::{self, Cards};
 use super::engines::{self, Work};
 use super::{Open, Panel, State, image, video};
+use crate::log::{LogErr, MissingOk};
 use crate::model::transform::{Action, Kind, combined_paths, name_problem, rename_targets};
 use crate::model::transform_card::{Made, Sides};
 use crate::{Island, archive, log, win32};
@@ -71,7 +72,7 @@ pub fn into(out: PathBuf, make: impl FnOnce(&Path) -> io::Result<()>) -> io::Res
     match make(&out) {
         Ok(()) => Ok(out),
         Err(err) => {
-            let _ = fs::remove_file(&out);
+            fs::remove_file(&out).missing_ok().log_err();
             Err(err)
         }
     }
@@ -138,12 +139,12 @@ impl Panel {
             .name("topsy-transform".into())
             .spawn(move || {
                 let tell = |report: Report| {
-                    let _ = tx.try_send(report);
+                    tx.try_send(report).log_err();
                 };
                 let result = win32::with_com(COINIT_MULTITHREADED, || {
                     run(action, &work, &inputs, &tell, &worker_cancel)
                 });
-                let _ = tx.send_blocking(Report::Done(result));
+                tx.send_blocking(Report::Done(result)).log_err();
             });
         if let Err(err) = spawned {
             self.state = State::Failed(format!("Could not start: {err}"));
@@ -326,7 +327,7 @@ fn run(
                         // All or nothing: what the earlier files made goes too.
                         Err(err) => {
                             for path in &outcome.outputs {
-                                let _ = fs::remove_file(path);
+                                fs::remove_file(path).missing_ok().log_err();
                             }
                             if inputs.len() == 1 || err.kind() == io::ErrorKind::Interrupted {
                                 return Err(err);
@@ -408,7 +409,7 @@ fn rename(inputs: &[Input], names: &[String]) -> io::Result<Vec<(PathBuf, PathBu
         if let Err(err) = win32::move_new(&from, &to) {
             // Put back what already moved, so a half-done rename doesn't scatter names.
             for (from, to) in done.iter().rev() {
-                let _ = win32::move_new(to, from);
+                win32::move_new(to, from).log_err();
             }
             return Err(err);
         }
@@ -423,7 +424,7 @@ mod tests {
 
     fn scratch(tag: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("topsy-rename-{}-{tag}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
+        fs::remove_dir_all(&dir).missing_ok().log_err();
         fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -461,7 +462,7 @@ mod tests {
             fs::read_to_string(dir.join("Trip 02.png")).unwrap(),
             "theirs"
         );
-        let _ = fs::remove_dir_all(&dir);
+        fs::remove_dir_all(&dir).missing_ok().log_err();
     }
 
     #[test]
@@ -475,6 +476,6 @@ mod tests {
             .map(|e| e.unwrap().file_name())
             .collect();
         assert_eq!(names, ["Trip.png"]);
-        let _ = fs::remove_dir_all(&dir);
+        fs::remove_dir_all(&dir).missing_ok().log_err();
     }
 }

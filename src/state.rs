@@ -8,6 +8,7 @@
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
+use crate::log::LogErr;
 use crate::model::shelf::{self, Shelf};
 
 /// One saved list, ready at startup: the files as they were saved, and the writer that keeps
@@ -104,7 +105,7 @@ impl Writer {
     /// writer thread's problem, never the caller's.
     pub fn send(&self, text: String) {
         if let Some(tx) = &self.tx {
-            let _ = tx.send(text);
+            tx.send(text).log_err();
         }
     }
 
@@ -113,7 +114,7 @@ impl Writer {
     pub fn drain(mut self) {
         drop(self.tx.take());
         if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
+            thread.join().log_err();
         }
     }
 }
@@ -133,6 +134,7 @@ fn write_file(path: &Path, text: &str) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::log::MissingOk;
 
     /// A scratch directory under %TEMP%, removed on drop.
     struct Scratch(PathBuf);
@@ -140,7 +142,7 @@ mod tests {
     impl Scratch {
         fn new(tag: &str) -> Self {
             let dir = std::env::temp_dir().join(format!("topsy-test-{}-{tag}", std::process::id()));
-            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::remove_dir_all(&dir).missing_ok().log_err();
             std::fs::create_dir_all(&dir).unwrap();
             Self(dir)
         }
@@ -158,7 +160,7 @@ mod tests {
 
     impl Drop for Scratch {
         fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
+            std::fs::remove_dir_all(&self.0).missing_ok().log_err();
         }
     }
 

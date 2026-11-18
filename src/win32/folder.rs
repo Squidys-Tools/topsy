@@ -15,6 +15,7 @@ use windows::Win32::System::Com::CoTaskMemFree;
 use windows::Win32::UI::Shell::{FOLDERID_Downloads, KF_FLAG_DEFAULT, SHGetKnownFolderPath};
 use windows::core::HSTRING;
 
+use crate::log::LogErr;
 use crate::model::browser_download::Change;
 
 /// The user's Downloads folder, wherever it has been moved.
@@ -105,7 +106,7 @@ unsafe fn run(dir: &std::path::Path, mut report: impl FnMut(Change)) -> windows:
                 at += info.NextEntryOffset as usize;
             }
         };
-        let _ = CloseHandle(handle);
+        CloseHandle(handle).log_err();
         result
     }
 }

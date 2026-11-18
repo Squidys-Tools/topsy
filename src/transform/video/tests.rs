@@ -4,11 +4,14 @@
 use std::time::Instant;
 
 use super::*;
-use crate::model::video::{GifOptions, Quality};
+use crate::log::{LogErr, MissingOk};
+use crate::model::video::{
+    AudioFormat, GifFps, GifOptions, GifWidth, MaxResolution, Quality, VideoFormat,
+};
 
 fn scratch(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("topsy-video-{}-{name}", std::process::id()));
-    let _ = fs::remove_dir_all(&dir);
+    fs::remove_dir_all(&dir).missing_ok().log_err();
     fs::create_dir_all(&dir).unwrap();
     dir
 }

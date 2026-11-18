@@ -9,6 +9,7 @@ use gpui::{App, Context, Div, Entity, FontWeight, div, prelude::*, px, rgb, rgba
 use crate::autostart::RegString;
 use crate::frame::{Mode, PEEK};
 use crate::icons::{self, Icon};
+use crate::log::LogErr;
 use crate::model::hud::{Battery, BatteryWatch, Hud, Power, SEGMENTS, lit};
 use crate::win32::{self, battery, brightness, volume};
 use crate::{Island, PEEK_LINGER, config, log};
@@ -62,15 +63,15 @@ pub fn start(cx: &mut App, island: &Entity<Island>) {
     let (events, heard) = async_channel::unbounded();
     let sound = events.clone();
     volume::start(move |level, muted| {
-        let _ = sound.try_send(Event::Volume { level, muted });
+        sound.try_send(Event::Volume { level, muted }).log_err();
     });
     volume::take_keys(takes_volume_keys() && !config::get().no_keys);
     let light = events.clone();
     brightness::watch(move |percent| {
-        let _ = light.try_send(Event::Brightness(percent));
+        light.try_send(Event::Brightness(percent)).log_err();
     });
     battery::watch(move |power| {
-        let _ = events.try_send(Event::Power(power));
+        events.try_send(Event::Power(power)).log_err();
     });
     crate::app::forward(cx, island, heard, Island::on_hud);
 }

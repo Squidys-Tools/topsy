@@ -19,6 +19,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WH_KEYBOARD_LL, WM_KEYDOWN, WM_QUIT,
 };
 
+use crate::log::LogErr;
+
 static PRESSED: OnceLock<async_channel::Sender<()>> = OnceLock::new();
 /// The hook thread's id while Escape is taken.
 static HOOK: Mutex<Option<u32>> = Mutex::new(None);
@@ -26,7 +28,7 @@ static HOOK: Mutex<Option<u32>> = Mutex::new(None);
 /// Each Escape taken while [`take`] has it.
 pub fn presses() -> async_channel::Receiver<()> {
     let (tx, rx) = async_channel::unbounded();
-    let _ = PRESSED.set(tx);
+    PRESSED.set(tx).log_err();
     rx
 }
 
@@ -37,7 +39,7 @@ pub fn take(on: bool) {
         (true, None) => *hook = spawn_hook(),
         (false, Some(thread)) => {
             // SAFETY: posting to a thread of ours; it unhooks and ends on WM_QUIT.
-            let _ = unsafe { PostThreadMessageW(thread, WM_QUIT, WPARAM(0), LPARAM(0)) };
+            unsafe { PostThreadMessageW(thread, WM_QUIT, WPARAM(0), LPARAM(0)) }.log_err();
             *hook = None;
         }
         _ => {}
@@ -54,16 +56,16 @@ fn spawn_hook() -> Option<u32> {
                 Ok(hook) => hook,
                 Err(err) => {
                     eprintln!("topsy: could not watch for Escape: {err}");
-                    let _ = ready.send(None);
+                    ready.send(None).log_err();
                     return;
                 }
             };
-            let _ = ready.send(Some(GetCurrentThreadId()));
+            ready.send(Some(GetCurrentThreadId())).log_err();
             let mut msg = MSG::default();
             while GetMessageW(&mut msg, None, 0, 0).as_bool() {
                 DispatchMessageW(&msg);
             }
-            let _ = UnhookWindowsHookEx(hook);
+            UnhookWindowsHookEx(hook).log_err();
         });
     spawned.ok()?;
     installed.recv().ok().flatten()
@@ -97,7 +99,7 @@ unsafe extern "system" fn key_proc(code: i32, wparam: WPARAM, lparam: LPARAM) ->
         let info = unsafe { &*(lparam.0 as *const KBDLLHOOKSTRUCT) };
         if VIRTUAL_KEY(info.vkCode as u16) == VK_ESCAPE && !busy() {
             if wparam.0 as u32 == WM_KEYDOWN {
-                let _ = pressed.try_send(());
+                pressed.try_send(()).log_err();
             }
             return LRESULT(1);
         }

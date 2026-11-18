@@ -2,8 +2,6 @@
 //! as a process without a window. The command lines and the rules behind them are in
 //! `crate::model::video`; this is the glue that runs them.
 
-#![allow(dead_code, unused_imports)] // Called once the panel wires the engine in.
-
 use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io;
@@ -15,13 +13,10 @@ use image::RgbaImage;
 
 use super::fetch::{Pinned, Status};
 use super::tools::{self, Tool};
+use crate::log::{LogErr, MissingOk};
 use crate::model::video::{
     self as rules, CompressBy, CompressVideo, ConvertTarget, GifOptions, Probe, Progress, Rate,
     Rotate, TrimMode, TrimRange, megabytes, retry_bitrate,
-};
-
-pub use crate::model::video::{
-    AudioFormat, GifFps, GifWidth, MaxResolution, Quality, VideoFormat, edited_extension,
 };
 
 /// Gyan Doshi's "essentials" build of the FFmpeg 9.0.2 release, GPL v3, statically linked:
@@ -51,7 +46,9 @@ pub fn prepare(progress: &dyn Fn(f32), cancel: &AtomicBool) -> io::Result<()> {
 fn ffmpeg(progress: &dyn Fn(f32), cancel: &AtomicBool) -> io::Result<PathBuf> {
     let program = FFMPEG.get(progress, cancel)?;
     // The build ships a player too, a 100 MB file nothing here runs.
-    let _ = fs::remove_file(program.with_file_name("ffplay.exe"));
+    fs::remove_file(program.with_file_name("ffplay.exe"))
+        .missing_ok()
+        .log_err();
     Ok(program)
 }
 

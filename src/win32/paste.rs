@@ -17,6 +17,8 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 use super::clipboard::{WINDOW, open};
 use super::{foreground_window, restore_foreground};
 
+use crate::log::LogErr;
+
 const CF_DIB: u32 = 8;
 const CF_UNICODETEXT: u32 = 13;
 const CF_HDROP: u32 = 15;
@@ -53,7 +55,7 @@ pub fn put_owned(data: &Data, fallback: HWND) -> bool {
             return false;
         }
         let set = EmptyClipboard().is_ok() && set(format, &bytes);
-        let _ = CloseClipboard();
+        CloseClipboard().log_err();
         set
     }
 }
@@ -66,12 +68,24 @@ unsafe fn set(format: u32, bytes: &[u8]) -> bool {
         };
         let ptr = GlobalLock(global);
         if ptr.is_null() {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "a freed handle comes back NULL, which reads as failure"
+            )]
             let _ = GlobalFree(Some(global));
             return false;
         }
         std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr as *mut u8, bytes.len());
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the last unlock returns FALSE with no error"
+        )]
         let _ = GlobalUnlock(global);
         if SetClipboardData(format, Some(HANDLE(global.0))).is_err() {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "a freed handle comes back NULL, which reads as failure"
+            )]
             let _ = GlobalFree(Some(global));
             return false;
         }

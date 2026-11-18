@@ -20,16 +20,22 @@ use windows::Win32::System::WinRT::{
 use windows::core::{BOOL, Interface};
 use windows_numerics::Vector2;
 
+use crate::log::LogErr;
+
 /// The UI thread's compositor and the dispatcher queue it needs. A thread can have one queue, so
 /// the island's glass and the basket's share them, for the life of the app.
-struct Shared(#[allow(dead_code)] DispatcherQueueController, Compositor);
+struct Shared {
+    /// Never read: it only has to live as long as the compositor.
+    _queue: DispatcherQueueController,
+    compositor: Compositor,
+}
 
 impl gpui::Global for Shared {}
 
 /// The UI thread's compositor, made with its dispatcher queue the first time it is asked for.
 fn compositor(cx: &mut gpui::App) -> windows::core::Result<Compositor> {
-    if let Some(Shared(_, compositor)) = cx.try_global::<Shared>() {
-        return Ok(compositor.clone());
+    if let Some(shared) = cx.try_global::<Shared>() {
+        return Ok(shared.compositor.clone());
     }
     // GPUI's thread already runs COM (OLE) and its own message loop; the queue only
     // needs to exist for the compositor to be created on this thread.
@@ -41,7 +47,10 @@ fn compositor(cx: &mut gpui::App) -> windows::core::Result<Compositor> {
         })?
     };
     let compositor = Compositor::new()?;
-    cx.set_global(Shared(queue, compositor.clone()));
+    cx.set_global(Shared {
+        _queue: queue,
+        compositor: compositor.clone(),
+    });
     Ok(compositor)
 }
 
@@ -98,14 +107,18 @@ impl Shape {
     /// A rounded rectangle at `(x, y)`. Parts outside the window are cut off with it, which is
     /// how the notch gets a square top: its rounded top corners sit above the window.
     pub fn set(&self, x: f32, y: f32, width: f32, height: f32, radius: f32) {
-        let _ = self.0.SetOffset(Vector2 { X: x, Y: y });
-        let _ = self.0.SetSize(Vector2 {
-            X: width,
-            Y: height,
-        });
-        let _ = self.0.SetCornerRadius(Vector2 {
-            X: radius,
-            Y: radius,
-        });
+        self.0.SetOffset(Vector2 { X: x, Y: y }).log_err();
+        self.0
+            .SetSize(Vector2 {
+                X: width,
+                Y: height,
+            })
+            .log_err();
+        self.0
+            .SetCornerRadius(Vector2 {
+                X: radius,
+                Y: radius,
+            })
+            .log_err();
     }
 }

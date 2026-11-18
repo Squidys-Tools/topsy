@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream, dictionary};
 
 use super::{load, save};
+use crate::log::LogErr;
 use crate::model::image_ops::{Format, Kind, is_lossless_webp};
 use crate::model::jpeg;
 use crate::model::magick::{self, Job, Metadata};
@@ -179,7 +180,7 @@ impl Builder {
             return;
         };
         let mut profile = Stream::new(dictionary! { "N" => n }, icc.to_vec());
-        let _ = profile.compress();
+        profile.compress().log_err();
         let id = self.doc.add_object(profile);
         image.dict.set(
             "ColorSpace",
@@ -191,7 +192,7 @@ impl Builder {
         let image = self.doc.add_object(image);
         let at = place(w, h, size);
         let mut content = Stream::new(dictionary! {}, draw(&at));
-        let _ = content.compress();
+        content.compress().log_err();
         let content = self.doc.add_object(content);
         let page = self.doc.add_object(dictionary! {
             "Type" => "Page",
@@ -306,7 +307,7 @@ fn embeddable_jpeg(original: &[u8]) -> Option<Embeddable> {
 fn flate_stream(samples: Vec<u8>, w: u32, h: u32, n: usize) -> Stream {
     let space = if n == 1 { "DeviceGray" } else { "DeviceRGB" };
     let mut s = Stream::new(image_dict(w, h, space), samples);
-    let _ = s.compress();
+    s.compress().log_err();
     s
 }
 

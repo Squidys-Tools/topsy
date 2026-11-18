@@ -38,7 +38,7 @@ fn jpeg_exif(path: &std::path::Path) -> Option<Vec<u8>> {
 }
 
 #[test]
-#[ignore]
+#[ignore = "downloads ImageMagick, oxipng and pdfium"]
 fn compress_turns_upright_keeps_metadata_and_never_grows() {
     let dir = Scratch::new("t-compress");
     let src = dir.file(
@@ -80,7 +80,7 @@ fn compress_turns_upright_keeps_metadata_and_never_grows() {
 }
 
 #[test]
-#[ignore]
+#[ignore = "downloads ImageMagick, oxipng and pdfium"]
 fn transparency_stays_and_pngs_lose_their_text_chunks() {
     let dir = Scratch::new("t-alpha");
     let src = dir.file("a.png", &png_of(&photo(300, 200, true)));
@@ -124,7 +124,7 @@ fn transparency_stays_and_pngs_lose_their_text_chunks() {
 }
 
 #[test]
-#[ignore]
+#[ignore = "downloads ImageMagick, oxipng and pdfium"]
 fn every_format_converts_and_reads_back() {
     let dir = Scratch::new("t-convert");
     let src = dir.file("p.jpg", &jpeg_of(&photo(120, 80, false), None, None));
@@ -160,7 +160,7 @@ fn every_format_converts_and_reads_back() {
 }
 
 #[test]
-#[ignore]
+#[ignore = "downloads ImageMagick, oxipng and pdfium"]
 fn heic_keeps_odd_sizes_transparency_and_exif() {
     let dir = Scratch::new("t-heic");
     let clear = photo(121, 81, true);
@@ -194,7 +194,7 @@ fn heic_keeps_odd_sizes_transparency_and_exif() {
 }
 
 #[test]
-#[ignore]
+#[ignore = "downloads ImageMagick, oxipng and pdfium"]
 fn turns_sizes_and_strips() {
     let dir = Scratch::new("t-edit");
     let gps = dir.file(
@@ -227,7 +227,7 @@ fn turns_sizes_and_strips() {
 }
 
 #[test]
-#[ignore]
+#[ignore = "downloads ImageMagick, oxipng and pdfium"]
 fn a_cancelled_run_is_interrupted() {
     let dir = Scratch::new("t-cancel");
     let src = dir.file("p.png", &png_of(&photo(64, 48, false)));
@@ -243,7 +243,7 @@ fn a_cancelled_run_is_interrupted() {
 }
 
 #[test]
-#[ignore]
+#[ignore = "downloads ImageMagick, oxipng and pdfium"]
 fn pdfs_combine_compress_and_render() {
     let dir = Scratch::new("t-pdf");
     let alpha = dir.file("a.png", &png_of(&photo(40, 30, true)));

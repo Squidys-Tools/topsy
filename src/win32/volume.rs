@@ -22,6 +22,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WM_KEYDOWN, WM_QUIT, WM_SYSKEYDOWN,
 };
 
+use crate::log::LogErr;
+
 #[derive(Clone, Copy, Debug)]
 enum Key {
     Up,
@@ -42,7 +44,7 @@ pub fn start(report: impl Fn(f32, bool) + Send + 'static) {
         .spawn(move || {
             // SAFETY: COM for this thread only.
             let devices = unsafe {
-                let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+                CoInitializeEx(None, COINIT_MULTITHREADED).ok().log_err();
                 CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL)
             };
             let devices = match devices {
@@ -50,7 +52,7 @@ pub fn start(report: impl Fn(f32, bool) + Send + 'static) {
                 Err(err) => return eprintln!("topsy: no volume control: {err}"),
             };
             // Only now does the hook take the keys; without a volume control Windows keeps them.
-            let _ = KEYS.set(tx);
+            KEYS.set(tx).log_err();
             for key in rx {
                 // SAFETY: COM calls on the thread that created `devices`.
                 match unsafe { press(&devices, key) } {
@@ -96,7 +98,7 @@ pub fn take_keys(on: bool) {
         (true, None) => *hook = spawn_hook(),
         (false, Some(thread)) => {
             // SAFETY: posting to a thread of ours; it unhooks and ends on WM_QUIT.
-            let _ = unsafe { PostThreadMessageW(thread, WM_QUIT, WPARAM(0), LPARAM(0)) };
+            unsafe { PostThreadMessageW(thread, WM_QUIT, WPARAM(0), LPARAM(0)) }.log_err();
             *hook = None;
         }
         _ => {}
@@ -113,17 +115,21 @@ fn spawn_hook() -> Option<u32> {
                 Ok(hook) => hook,
                 Err(err) => {
                     eprintln!("topsy: could not take the volume keys: {err}");
-                    let _ = ready.send(None);
+                    ready.send(None).log_err();
                     return;
                 }
             };
-            let _ = ready.send(Some(GetCurrentThreadId()));
+            ready.send(Some(GetCurrentThreadId())).log_err();
             let mut msg = MSG::default();
             while GetMessageW(&mut msg, None, 0, 0).as_bool() {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "says whether a character message was posted, not an error"
+                )]
                 let _ = TranslateMessage(&msg);
                 DispatchMessageW(&msg);
             }
-            let _ = UnhookWindowsHookEx(hook);
+            UnhookWindowsHookEx(hook).log_err();
         });
     spawned.ok()?;
     installed.recv().ok().flatten()
@@ -144,7 +150,7 @@ unsafe extern "system" fn key_proc(code: i32, wparam: WPARAM, lparam: LPARAM) ->
         if let Some(key) = key {
             // Held keys repeat their key-down, and each one is a step, as in Windows.
             if matches!(wparam.0 as u32, WM_KEYDOWN | WM_SYSKEYDOWN) {
-                let _ = keys.send(key);
+                keys.send(key).log_err();
             }
             // Both halves of the press are swallowed, so Windows never sees it.
             return LRESULT(1);

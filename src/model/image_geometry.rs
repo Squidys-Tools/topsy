@@ -22,13 +22,6 @@ impl LargestSide {
         LargestSide::Px(640),
     ];
 
-    pub fn label(self) -> String {
-        match self {
-            LargestSide::Original => "Original".into(),
-            LargestSide::Px(px) => format!("{px} px"),
-        }
-    }
-
     pub fn fit(self, w: u32, h: u32) -> (u32, u32) {
         match self {
             LargestSide::Original => (w, h),
@@ -53,23 +46,6 @@ pub enum Resize {
 }
 
 impl Resize {
-    pub fn label(self) -> String {
-        match self {
-            Resize::LargestSide(px) => format!("Largest side {px} px"),
-            Resize::Percent(p) => format!("{p} %"),
-            Resize::Exact {
-                width,
-                height,
-                fill,
-            } => {
-                format!(
-                    "{width} × {height}{}",
-                    if fill { ", crop to fill" } else { "" }
-                )
-            }
-        }
-    }
-
     /// The size to scale to, then the centred crop to take from it, if any.
     pub fn plan(self, w: u32, h: u32) -> ((u32, u32), Option<Crop>) {
         match self {
@@ -118,16 +94,6 @@ impl Rotation {
         Rotation::FlipHorizontal,
         Rotation::FlipVertical,
     ];
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Rotation::Left => "Rotate left",
-            Rotation::Right => "Rotate right",
-            Rotation::Half => "Rotate 180°",
-            Rotation::FlipHorizontal => "Flip horizontal",
-            Rotation::FlipVertical => "Flip vertical",
-        }
-    }
 
     pub fn orientation(self) -> Orientation {
         match self {

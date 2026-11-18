@@ -34,6 +34,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows::core::{PCWSTR, PWSTR, w};
 
+use crate::log::LogErr;
 use crate::model::clipboard::{Content, fingerprint};
 use crate::model::dib;
 
@@ -201,7 +202,7 @@ unsafe fn read(hwnd: HWND) -> Option<Copy> {
             });
             (content, image)
         };
-        let _ = CloseClipboard();
+        CloseClipboard().log_err();
         content.map(|content| Copy {
             content,
             pixels,
@@ -252,6 +253,10 @@ unsafe fn with_bytes<T>(format: u32, f: impl FnOnce(&[u8]) -> Option<T>) -> Opti
             return None;
         }
         let result = f(std::slice::from_raw_parts(ptr as *const u8, size));
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the last unlock returns FALSE with no error"
+        )]
         let _ = GlobalUnlock(global);
         result
     }
@@ -315,7 +320,7 @@ unsafe fn owner_exe() -> Option<PathBuf> {
             PWSTR(buf.as_mut_ptr()),
             &mut len,
         );
-        let _ = CloseHandle(process);
+        CloseHandle(process).log_err();
         named.ok()?;
         Some(PathBuf::from(OsString::from_wide(&buf[..len as usize])))
     }

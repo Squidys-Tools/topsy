@@ -29,13 +29,8 @@ fn bad(what: impl std::fmt::Display) -> io::Error {
 
 impl Weights {
     pub fn parse(bytes: &[u8]) -> io::Result<Self> {
-        let len = u64::from_le_bytes(
-            bytes
-                .get(..8)
-                .ok_or_else(|| bad("short"))?
-                .try_into()
-                .unwrap(),
-        ) as usize;
+        let len =
+            u64::from_le_bytes(*bytes.first_chunk::<8>().ok_or_else(|| bad("short"))?) as usize;
         let header = bytes.get(8..8 + len).ok_or_else(|| bad("header"))?;
         let entries: HashMap<String, serde_json::Value> =
             serde_json::from_slice(header).map_err(bad)?;

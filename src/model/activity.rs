@@ -194,7 +194,7 @@ mod tests {
         };
         a.set(key.clone(), connected.clone(), t);
         let later = t + Duration::from_secs(2);
-        a.set(key.clone(), connected, later);
+        a.set(key, connected, later);
         assert_eq!(names(&a), ["Buds"]);
         assert!(!a.expire(t + LINGER));
         assert!(a.expire(later + LINGER));

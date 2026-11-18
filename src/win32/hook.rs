@@ -1,6 +1,6 @@
 //! The global low-level mouse hook that watches for the jiggle gesture and the top edge.
 
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock, PoisonError};
 use std::time::Instant;
 
 use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
@@ -9,6 +9,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     TranslateMessage, WH_MOUSE_LL, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
 };
 
+use crate::log::LogErr;
 use crate::model::edge::{EdgeWatch, EdgeZone};
 use crate::model::jiggle::{JiggleConfig, JiggleDetector};
 
@@ -39,11 +40,12 @@ unsafe extern "system" fn mouse_proc(code: i32, wparam: WPARAM, lparam: LPARAM) 
         if let Ok(mut guard) = HOOK_STATE.try_lock()
             && let Some(state) = guard.as_mut()
         {
+            // A full queue drops the event: the hook has no time to wait for the UI thread.
             match wparam.0 as u32 {
                 WM_LBUTTONDOWN => state.detector.button_down(now, info.pt.x),
                 WM_LBUTTONUP => {
                     state.detector.button_up();
-                    let _ = state.tx.try_send(HookEvent::ButtonUp);
+                    state.tx.try_send(HookEvent::ButtonUp).ok();
                 }
                 WM_MOUSEMOVE => {
                     if let Some(at_edge) = state
@@ -52,10 +54,10 @@ unsafe extern "system" fn mouse_proc(code: i32, wparam: WPARAM, lparam: LPARAM) 
                         .and_then(|e| e.moved(info.pt.x, info.pt.y))
                     {
                         let pressed = state.detector.pressed();
-                        let _ = state.tx.try_send(HookEvent::Edge { at_edge, pressed });
+                        state.tx.try_send(HookEvent::Edge { at_edge, pressed }).ok();
                     }
                     if state.detector.moved(now, info.pt.x) {
-                        let _ = state.tx.try_send(HookEvent::Jiggle);
+                        state.tx.try_send(HookEvent::Jiggle).ok();
                     }
                 }
                 _ => {}
@@ -75,7 +77,7 @@ pub fn spawn_mouse_hook(
     if STARTED.set(()).is_err() {
         return rx;
     }
-    *HOOK_STATE.lock().unwrap() = Some(HookState {
+    *HOOK_STATE.lock().unwrap_or_else(PoisonError::into_inner) = Some(HookState {
         detector: JiggleDetector::new(config),
         edge: edge.map(EdgeWatch::new),
         tx,
@@ -93,10 +95,14 @@ pub fn spawn_mouse_hook(
             let _keep_alive = hook;
             let mut msg = MSG::default();
             while GetMessageW(&mut msg, None, 0, 0).as_bool() {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "says whether a character message was posted, not an error"
+                )]
                 let _ = TranslateMessage(&msg);
                 DispatchMessageW(&msg);
             }
         })
-        .expect("spawn mouse hook thread");
+        .log_err();
     rx
 }

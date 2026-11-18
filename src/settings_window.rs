@@ -11,6 +11,7 @@ use gpui::{
 use raw_window_handle::HasWindowHandle;
 use windows::Win32::Foundation::HWND;
 
+use crate::log::LogErr;
 use crate::settings::Setting;
 use crate::{clipboard, win32};
 
@@ -114,10 +115,12 @@ pub fn open(cx: &mut App, on_change: OnChange, previous: usize) {
 /// A setting changed elsewhere (the menu): show it, if the window is open.
 pub fn refresh(cx: &mut App) {
     if let Some(handle) = cx.try_global::<Open>().map(|open| open.0) {
-        let _ = handle.update(cx, |view, _, cx| {
-            view.reload();
-            cx.notify();
-        });
+        handle
+            .update(cx, |view, _, cx| {
+                view.reload();
+                cx.notify();
+            })
+            .log_err();
     }
 }
 

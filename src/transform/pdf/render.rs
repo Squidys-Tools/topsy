@@ -10,6 +10,7 @@ use image::codecs::png::{CompressionType, FilterType, PngEncoder};
 use image::{ExtendedColorType, ImageEncoder};
 use pdfium_render::prelude::{PdfRenderConfig, Pdfium, PdfiumError, PdfiumInternalError};
 
+use crate::log::LogErr;
 use crate::model::pdf::{PageFormat, fit_square};
 use crate::transform::Steps;
 use crate::transform::fetch::Pinned;
@@ -76,7 +77,7 @@ pub fn fetch(progress: &dyn Fn(f32), cancel: &AtomicBool) -> io::Result<()> {
 /// only leaves the PDF with its icon.
 pub fn ensure_renderer() {
     if PDFIUM.status() == crate::transform::fetch::Status::Missing {
-        let _ = fetch(&|_| {}, &AtomicBool::new(false));
+        fetch(&|_| {}, &AtomicBool::new(false)).log_err();
     }
 }
 

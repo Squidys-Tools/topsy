@@ -12,15 +12,18 @@ use windows::Win32::UI::WindowsAndMessaging::{
     IsIconic, SW_RESTORE, SetForegroundWindow, ShowWindow,
 };
 
+use crate::log::LogErr;
+
 /// A dark caption whatever the system theme, to match the dark content under it.
 pub fn dark_title_bar(hwnd: HWND) {
     unsafe {
-        let _ = DwmSetWindowAttribute(
+        DwmSetWindowAttribute(
             hwnd,
             DWMWA_USE_IMMERSIVE_DARK_MODE,
             (&TRUE as *const _) as *const c_void,
             size_of_val(&TRUE) as u32,
-        );
+        )
+        .log_err();
     }
 }
 
@@ -52,8 +55,16 @@ pub fn mica(hwnd: HWND) -> bool {
 pub fn bring_to_front(hwnd: HWND) {
     unsafe {
         if IsIconic(hwnd).as_bool() {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "returns whether it was visible before, not an error"
+            )]
             let _ = ShowWindow(hwnd, SW_RESTORE);
         }
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "Windows may refuse the foreground; nothing to do then"
+        )]
         let _ = SetForegroundWindow(hwnd);
     }
 }

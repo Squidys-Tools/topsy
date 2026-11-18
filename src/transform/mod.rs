@@ -34,6 +34,7 @@ use raw_window_handle::HasWindowHandle;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::System::Com::COINIT_MULTITHREADED;
 
+use crate::log::LogErr;
 use crate::model::transform::{Action, Kind, actions};
 use crate::win32::{self, MenuEntry};
 use crate::{Island, icon, log};
@@ -338,7 +339,7 @@ impl Panel {
                         enabled,
                     })
                     .collect();
-                let _ = tx.send_blocking(win32::popup_menu(&entries));
+                tx.send_blocking(win32::popup_menu(&entries)).log_err();
             });
         if spawned.is_err() {
             return;
@@ -422,7 +423,7 @@ impl Panel {
         let spawned = std::thread::Builder::new()
             .name("topsy-transform-add".into())
             .spawn(move || {
-                let _ = tx.send_blocking(win32::pick_files());
+                tx.send_blocking(win32::pick_files()).log_err();
             });
         if spawned.is_err() {
             return;

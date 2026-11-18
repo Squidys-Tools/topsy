@@ -93,6 +93,7 @@ fn target(link: &Path) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::log::{LogErr, MissingOk};
 
     #[test]
     fn a_shortcut_round_trips_its_target() {
@@ -102,7 +103,7 @@ mod tests {
         let exe = dir.join("topsy.exe");
         write(&link, &exe).unwrap();
         let read = target(&link);
-        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::remove_dir_all(&dir).missing_ok().log_err();
         assert_eq!(read, Some(exe));
     }
 }

@@ -9,6 +9,7 @@ use gpui::{AsyncWindowContext, ClipboardItem, Context, KeyDownEvent, WeakEntity,
 use windows::Win32::Foundation::HWND;
 
 use super::Basket;
+use crate::log::LogErr;
 use crate::model::name_field::NameField;
 use crate::model::shelf::{Item, Kind};
 use crate::model::transform::name_problem;
@@ -48,7 +49,8 @@ impl Basket {
         if let Ok(Some(hwnd)) = hwnd {
             win32::bring_to_front(hwnd);
         }
-        let _ = this.update_in(cx, |this, window, _| window.focus(&this.focus));
+        this.update_in(cx, |this, window, _| window.focus(&this.focus))
+            .log_err();
     }
 
     /// Put the field away, and give the focus back if the basket still has it.

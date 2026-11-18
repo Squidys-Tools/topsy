@@ -23,6 +23,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows::core::{s, w};
 
+use crate::log::LogErr;
 use crate::model::edge::fills_monitor;
 use crate::model::float::Rect;
 
@@ -48,7 +49,7 @@ pub fn cursor_monitor() -> Option<((i32, i32), Rect, f32)> {
         if !GetMonitorInfoW(monitor, &mut info).as_bool() {
             return None;
         }
-        let _ = GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi, &mut _dpi_y);
+        GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi, &mut _dpi_y).log_err();
     }
     let w = info.rcWork;
     let work = Rect {
@@ -118,7 +119,7 @@ pub fn apply_overlay_styles(hwnd: HWND) {
         let ex = ex | (WS_EX_NOACTIVATE.0 | WS_EX_TOOLWINDOW.0) as isize;
         SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex);
         SetWindowLongPtrW(hwnd, GWL_STYLE, (WS_POPUP.0 | WS_VISIBLE.0) as isize);
-        let _ = SetWindowPos(
+        SetWindowPos(
             hwnd,
             Some(HWND_TOPMOST),
             0,
@@ -126,8 +127,11 @@ pub fn apply_overlay_styles(hwnd: HWND) {
             0,
             0,
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED,
-        );
-        let _ = SetWindowSubclass(hwnd, Some(no_mouse_activate), 1, 0);
+        )
+        .log_err();
+        SetWindowSubclass(hwnd, Some(no_mouse_activate), 1, 0)
+            .ok()
+            .log_err();
     }
 }
 
@@ -136,7 +140,7 @@ pub fn apply_overlay_styles(hwnd: HWND) {
 pub fn apply_strip_styles(hwnd: HWND) {
     unsafe {
         SetWindowLongPtrW(hwnd, GWL_STYLE, (WS_POPUP.0 | WS_VISIBLE.0) as isize);
-        let _ = SetWindowPos(
+        SetWindowPos(
             hwnd,
             Some(HWND_TOPMOST),
             0,
@@ -144,7 +148,8 @@ pub fn apply_strip_styles(hwnd: HWND) {
             0,
             0,
             SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED,
-        );
+        )
+        .log_err();
     }
 }
 
@@ -231,12 +236,13 @@ pub fn set_acrylic(hwnd: HWND, tint: Option<u32>) {
 pub fn round_corners(hwnd: HWND) {
     let preference = DWMWCP_ROUND;
     unsafe {
-        let _ = DwmSetWindowAttribute(
+        DwmSetWindowAttribute(
             hwnd,
             DWMWA_WINDOW_CORNER_PREFERENCE,
             &preference as *const _ as *const c_void,
             std::mem::size_of_val(&preference) as u32,
-        );
+        )
+        .log_err();
     }
 }
 
@@ -272,7 +278,7 @@ pub fn move_window(hwnd: HWND, x: i32, y: i32, w: i32, h: i32, raise: bool) {
         (None, SWP_NOZORDER)
     };
     unsafe {
-        let _ = SetWindowPos(hwnd, after, x, y, w, h, SWP_NOACTIVATE | order);
+        SetWindowPos(hwnd, after, x, y, w, h, SWP_NOACTIVATE | order).log_err();
     }
 }
 
@@ -335,7 +341,7 @@ pub fn set_clip(hwnd: HWND, clip: Clip) {
                 for top in tops {
                     let card = CreateRoundRectRgn(0, top, width + 1, top + height + 1, d, d);
                     CombineRgn(Some(all), Some(all), Some(card), RGN_OR);
-                    let _ = DeleteObject(card.into());
+                    DeleteObject(card.into()).ok().log_err();
                 }
                 Some(all)
             }
@@ -359,7 +365,7 @@ pub fn set_clip(hwnd: HWND, clip: Clip) {
                 );
                 let ears = CreateRectRgn(ear_slot - ear, 0, width - ear_slot + ear, ear);
                 CombineRgn(Some(body), Some(body), Some(ears), RGN_OR);
-                let _ = DeleteObject(ears.into());
+                DeleteObject(ears.into()).ok().log_err();
                 Some(body)
             }
         };
@@ -397,6 +403,10 @@ pub fn window_rect(hwnd: HWND) -> Option<Rect> {
 pub fn set_visible(hwnd: HWND, visible: bool) {
     let how = if visible { SW_SHOWNA } else { SW_HIDE };
     unsafe {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "returns whether it was visible before, not an error"
+        )]
         let _ = ShowWindow(hwnd, how);
     }
 }
@@ -409,6 +419,10 @@ pub fn foreground_window() -> HWND {
 pub fn restore_foreground(previous: HWND) {
     if !previous.0.is_null() {
         unsafe {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "Windows may refuse the foreground; nothing to do then"
+            )]
             let _ = SetForegroundWindow(previous);
         }
     }

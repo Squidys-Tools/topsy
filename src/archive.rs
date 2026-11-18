@@ -13,6 +13,7 @@ use windows::Win32::System::Time::{FileTimeToSystemTime, SystemTimeToTzSpecificL
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
+use crate::log::{LogErr, MissingOk};
 use crate::model::archive::{entry_name, zip_paths};
 
 /// Zip `source` into a new file beside it (`report.zip`, or `report (2).zip` if that is taken)
@@ -27,7 +28,7 @@ pub fn compress(source: &Path) -> io::Result<PathBuf> {
     let (path, file) = reserve(candidates)?;
     let written = write(base, source, is_dir, file);
     if written.is_err() {
-        let _ = fs::remove_file(&path);
+        fs::remove_file(&path).missing_ok().log_err();
     }
     written.map(|()| path)
 }
@@ -186,7 +187,7 @@ mod tests {
     impl Scratch {
         fn new(tag: &str) -> Self {
             let dir = std::env::temp_dir().join(format!("topsy-zip-{}-{tag}", std::process::id()));
-            let _ = fs::remove_dir_all(&dir);
+            fs::remove_dir_all(&dir).missing_ok().log_err();
             fs::create_dir_all(&dir).unwrap();
             Self(dir)
         }
@@ -194,7 +195,7 @@ mod tests {
 
     impl Drop for Scratch {
         fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
+            fs::remove_dir_all(&self.0).missing_ok().log_err();
         }
     }
 

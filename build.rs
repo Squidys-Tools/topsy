@@ -8,6 +8,11 @@
 //! It also gives the exe its icon, drawn by `src/model/app_icon.rs`, written as a binary `.res`
 //! and turned into an object by the same MinGW's `windres`. No `.rc` script, so no preprocessor.
 
+#![expect(
+    clippy::expect_used,
+    reason = "a build script reports failure by panicking"
+)]
+
 use std::path::PathBuf;
 use std::process::Command;
 

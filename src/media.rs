@@ -25,6 +25,7 @@ use windows::Media::Control::{
 };
 use windows::Win32::System::Com::COINIT_MULTITHREADED;
 
+use crate::log::LogErr;
 use crate::model::media::{Controls, Event, Status, Timeline, Track};
 use crate::win32;
 
@@ -83,7 +84,7 @@ pub fn spawn(art_size: u32) -> async_channel::Receiver<Update> {
 /// Ask the current session's app to act; it answers with a playback event. Never blocks.
 pub fn press(button: Button) {
     if let Some(wake) = WAKE.get() {
-        let _ = wake.send(Wake::Press(button));
+        wake.send(Wake::Press(button)).log_err();
     }
 }
 
@@ -107,9 +108,15 @@ impl Watched {
 
 impl Drop for Watched {
     fn drop(&mut self) {
-        let _ = self.session.RemoveMediaPropertiesChanged(self.tokens.0);
-        let _ = self.session.RemovePlaybackInfoChanged(self.tokens.1);
-        let _ = self.session.RemoveTimelinePropertiesChanged(self.tokens.2);
+        self.session
+            .RemoveMediaPropertiesChanged(self.tokens.0)
+            .log_err();
+        self.session
+            .RemovePlaybackInfoChanged(self.tokens.1)
+            .log_err();
+        self.session
+            .RemoveTimelinePropertiesChanged(self.tokens.2)
+            .log_err();
     }
 }
 
@@ -120,7 +127,7 @@ where
 {
     let wake = wake.clone();
     TypedEventHandler::new(move |_, _| {
-        let _ = wake.send(what());
+        wake.send(what()).log_err();
         Ok(())
     })
 }
@@ -133,7 +140,7 @@ fn run(
 ) -> windows::core::Result<()> {
     let manager = Manager::RequestAsync()?.join()?;
     manager.CurrentSessionChanged(&handler(wake, || Wake::Session))?;
-    let _ = wake.send(Wake::Session);
+    wake.send(Wake::Session).log_err();
     let send = |event: Event, art| tx.send_blocking(Update { event, art }).is_ok();
     // Nothing to send counts as sent.
     let report = |event: Option<Event>| event.is_none_or(|event| send(event, None));
@@ -166,11 +173,12 @@ fn run(
             (Wake::Timeline, Some(session)) => report(timeline(session)),
             (Wake::Press(button), Some(session)) => {
                 // Not waited on: the app reports the outcome as a playback event.
-                let _ = match button {
+                match button {
                     Button::Previous => session.TrySkipPreviousAsync(),
                     Button::PlayPause => session.TryTogglePlayPauseAsync(),
                     Button::Next => session.TrySkipNextAsync(),
-                };
+                }
+                .log_err();
                 true
             }
             (_, None) => true,

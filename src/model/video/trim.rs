@@ -3,6 +3,7 @@ use std::time::Duration;
 
 /// The shortest clip Trim or Make GIF will cut.
 pub const MIN_CLIP: Duration = Duration::from_millis(100);
+#[cfg(test)]
 /// A GIF starts as the first few seconds of the clip.
 pub const GIF_DEFAULT: Duration = Duration::from_secs(5);
 /// GIFs past this length get huge for no good reason; Make GIF refuses them.
@@ -55,6 +56,7 @@ impl TrimRange {
         self.start
     }
 
+    #[cfg(test)]
     pub fn end(&self) -> Duration {
         self.end
     }
@@ -72,6 +74,7 @@ impl TrimRange {
     }
 
     /// The opening seconds of a clip `duration` long, the range Make GIF starts from.
+    #[cfg(test)]
     pub fn gif_default(duration: Duration) -> TrimRange {
         TrimRange {
             start: Duration::ZERO,

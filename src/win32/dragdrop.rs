@@ -19,6 +19,8 @@ use windows::core::{Interface, PCWSTR, Ref, implement, w};
 
 use super::wide;
 
+use crate::log::LogErr;
+
 /// The `IDropTarget` registered on the window. `RegisterDragDrop` records it in this
 /// window property; GPUI keeps no reference of its own.
 fn registered_drop_target(hwnd: HWND) -> Option<IDropTarget> {
@@ -57,7 +59,7 @@ impl PausedDropTarget {
         let target = registered_drop_target(hwnd);
         match &target {
             Some(_) => {
-                let _ = unsafe { RevokeDragDrop(hwnd) };
+                unsafe { RevokeDragDrop(hwnd) }.log_err();
             }
             None => eprintln!(
                 "topsy: the island's drop target was not found, so a drag out may stall (is OleDropTargetInterface gone?)"
@@ -101,7 +103,6 @@ struct WatchingDropTarget {
     accepted: AtomicBool,
 }
 
-#[allow(non_snake_case)]
 impl IDropTarget_Impl for WatchingDropTarget_Impl {
     fn DragEnter(
         &self,
@@ -119,7 +120,7 @@ impl IDropTarget_Impl for WatchingDropTarget_Impl {
         self.accepted
             .store(result.is_ok() && !refused, Ordering::Relaxed);
         if refused {
-            let _ = self.tx.try_send(DropEvent::Refused);
+            self.tx.try_send(DropEvent::Refused).log_err();
         }
         result
     }
@@ -165,7 +166,7 @@ pub fn watch_drop_refusals(hwnd: HWND, tx: async_channel::Sender<DropEvent>) {
         eprintln!("topsy: no drop target to watch (is OleDropTargetInterface gone?)");
         return;
     };
-    let _ = unsafe { RevokeDragDrop(hwnd) };
+    unsafe { RevokeDragDrop(hwnd) }.log_err();
     let watcher: IDropTarget = WatchingDropTarget {
         inner: inner.clone(),
         tx,
@@ -175,7 +176,7 @@ pub fn watch_drop_refusals(hwnd: HWND, tx: async_channel::Sender<DropEvent>) {
     if let Err(err) = unsafe { RegisterDragDrop(hwnd, &watcher) } {
         eprintln!("topsy: could not watch the drop target: {err}");
         // Leave the island as plain a drop target as before: put GPUI's back.
-        let _ = unsafe { RegisterDragDrop(hwnd, &inner) };
+        unsafe { RegisterDragDrop(hwnd, &inner) }.log_err();
     }
 }
 

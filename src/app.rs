@@ -15,6 +15,7 @@ use windows::Win32::Foundation::HWND;
 
 use crate::basket::Basket;
 use crate::frame::{ACRYLIC_TINT, Frame, Glass, PEEK};
+use crate::log::LogErr;
 use crate::model::edge::EdgeZone;
 use crate::model::jiggle::JiggleConfig;
 use crate::model::tray_cause::TrayCause;
@@ -38,7 +39,9 @@ impl Island {
             TrayEvent::OpenSettings(previous) => {
                 let island = cx.entity().downgrade();
                 let on_change: OnChange = Rc::new(move |setting, on, cx| {
-                    let _ = island.update(cx, |island, cx| island.on_setting(setting, on, cx));
+                    island
+                        .update(cx, |island, cx| island.on_setting(setting, on, cx))
+                        .log_err();
                 });
                 // Out of the island's update: a new window must not be made while it is leased.
                 cx.defer(move |cx| settings_window::open(cx, on_change, previous));
@@ -171,7 +174,13 @@ pub fn run() {
                 cx.new(move |_| Island::new(hwnd, scale, frame, persistence))
             }
         });
-        let island = window.entity(cx).expect("island entity");
+        // Without its window the island can't exist; there is nothing to run.
+        let Some(island) = window
+            .log_err()
+            .and_then(|window| window.entity(cx).log_err())
+        else {
+            return cx.quit();
+        };
 
         // The basket gets its window now, empty and click-through until a jiggle: made later,
         // its creation would take the foreground from the app being dragged out of.
@@ -207,8 +216,10 @@ pub fn run() {
                 }
             },
         )
-        .entity(cx)
-        .expect("basket entity");
+        .and_then(|window| window.entity(cx));
+        let Some(basket) = basket.log_err() else {
+            return cx.quit();
+        };
         island.update(cx, |island, _| island.basket = Some(basket.clone()));
         forward(cx, &basket, basket_refuse_rx, Basket::on_drop_event);
 
@@ -362,7 +373,7 @@ fn open_glass<V: 'static + Render>(
         &mut App,
     ) -> Entity<V>
     + 'static,
-) -> gpui::WindowHandle<V> {
+) -> gpui::Result<gpui::WindowHandle<V>> {
     cx.open_window(
         WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -416,5 +427,4 @@ fn open_glass<V: 'static + Render>(
             build(hwnd, glass, backdrop, window, cx)
         },
     )
-    .expect("open a glass window")
 }
