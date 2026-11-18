@@ -341,7 +341,7 @@ impl Basket {
     }
 
     /// Hand the stack (every file) or one tile's file to the system's drag loop. As the shelf's
-    /// chips do, from a task: the loop dispatches this window's messages (README, Shelf).
+    /// chips do, from a task: the loop dispatches this window's messages (docs/internals/gpui.md).
     fn begin_drag_out(&mut self, grip: Grip, cx: &mut Context<Self>) {
         let paths = self.paths(grip);
         let Some(hwnd) = self.hwnd.filter(|_| !paths.is_empty() && !self.drag_out) else {
