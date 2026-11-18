@@ -122,7 +122,10 @@ Rules for new and touched code. Don't sweep old code to match.
 - Unused code is deleted, not silenced. If a lint must be silenced, use `#[expect(lint, reason = "...")]`, not
   `#[allow]`.
 - No `unwrap()` or `expect()` outside tests: propagate with `?`, log, or encode the invariant in types.
-- Never discard an error silently with `let _ =`: log it, propagate it, or say why ignoring it is right.
+- Never discard an error silently with `let _ =`: propagate it, or `.log_err()` it (`crate::log`) when failing
+  changes nothing for the caller. A Win32 call whose normal success reads as failure (`GlobalUnlock`,
+  `GlobalFree`) or returns no error at all gets `#[expect(clippy::let_underscore_must_use, reason = "...")]`.
+  Removing a file that may not be there is `.missing_ok().log_err()`. Clippy enforces all of this.
 - Spell out every enum variant in a `match`; avoid `_` arms and `matches!` on our own enums, so a new variant is a
   compile error everywhere it matters.
 - Prefer let chains (`if let Some(x) = a && cond`) to nested `if let`.
