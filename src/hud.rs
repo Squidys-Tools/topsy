@@ -10,8 +10,8 @@ use crate::autostart::RegString;
 use crate::frame::{Mode, PEEK};
 use crate::icons::{self, Icon};
 use crate::log::LogErr;
-use crate::win32::{self, battery, brightness, volume};
-use crate::{Island, PEEK_LINGER, config, log};
+use crate::win32::{battery, brightness, volume};
+use crate::{Island, config, log};
 use model::hud::{Battery, BatteryWatch, Hud, Power, SEGMENTS, lit};
 
 const VOLUME_KEYS: RegString<'static> = RegString::new(r"Software\topsy", "VolumeKeys");
@@ -35,6 +35,14 @@ impl State {
     pub fn is_shown(&self) -> bool {
         self.shown.is_some()
     }
+}
+
+/// What the island must do in turn for a change the HUD made.
+pub(crate) enum Effect {
+    /// A HUD came up: the notch drops to show it, or the open tray redraws under it.
+    Shown,
+    /// The HUD folded away: the notch goes back to what it was showing.
+    Done,
 }
 
 pub enum Event {
@@ -73,58 +81,51 @@ pub fn start(cx: &mut App, island: &Entity<Island>) {
     battery::watch(move |power| {
         events.try_send(Event::Power(power)).log_err();
     });
-    crate::app::forward(cx, island, heard, Island::on_hud);
+    crate::app::forward(cx, island, heard, |island, event, cx| {
+        island.update_hud(cx, |hud, mode, cx| hud.show(event, mode, cx));
+    });
 }
 
-impl Island {
-    fn on_hud(&mut self, event: Event, cx: &mut Context<Self>) {
+impl State {
+    /// Show what `event` reports; `mode` is the island's, for the log.
+    pub(crate) fn show(
+        &mut self,
+        event: Event,
+        mode: Mode,
+        cx: &mut Context<Island>,
+    ) -> Option<Effect> {
         let hud = match event {
             Event::Volume { level, muted } => Hud::Volume { level, muted },
             Event::Brightness(percent) => Hud::Brightness(f32::from(percent) / 100.0),
-            Event::Power(power) => match self.hud.battery.read(power) {
-                Some(battery) => Hud::Battery(battery),
-                None => return,
-            },
+            Event::Power(power) => Hud::Battery(self.battery.read(power)?),
         };
-        log(&format!("hud {hud:?} (mode {:?})", self.mode));
-        self.hud.shown = Some(hud);
-        self.hud.generation += 1;
-        if self.mode == Mode::Tray {
-            cx.notify();
-        } else {
-            // The HUD folds the notch itself; a collapse booked earlier must not cut it short.
-            self.collapse_generation += 1;
-            self.set_mode(Mode::Peek, cx);
-        }
-        let generation = self.hud.generation;
+        log(&format!("hud {hud:?} (mode {mode:?})"));
+        self.shown = Some(hud);
+        self.generation += 1;
+        let generation = self.generation;
         cx.spawn(async move |this, cx| {
             cx.background_executor().timer(LINGER).await;
-            this.update(cx, |this, cx| {
-                if this.hud.generation == generation {
-                    this.hud_done(cx);
-                }
+            this.update(cx, |island, cx| {
+                island.update_hud(cx, |hud, _, _| hud.expire(generation));
             })
             .ok();
         })
         .detach();
+        Some(Effect::Shown)
     }
 
-    fn hud_done(&mut self, cx: &mut Context<Self>) {
-        self.hud.shown = None;
-        if self.mode != Mode::Peek {
-            cx.notify();
-        } else if self.resting() != Mode::Peek && self.hwnd.is_some_and(win32::cursor_over) {
-            // Being looked at: back to the plain peek, which folds once the cursor leaves.
-            self.set_mode(Mode::Peek, cx);
-            self.schedule_collapse(PEEK_LINGER, cx);
-        } else {
-            self.set_mode(self.resting(), cx);
+    /// The timer of the HUD `generation` is up: it folds away, unless a newer one replaced it.
+    fn expire(&mut self, generation: u64) -> Option<Effect> {
+        if self.generation != generation {
+            return None;
         }
+        self.shown = None;
+        Some(Effect::Done)
     }
 
     /// The HUD in the dropped notch, if one is showing.
-    pub(crate) fn hud_peek(&self) -> Option<Div> {
-        let hud = self.hud.shown?;
+    pub(crate) fn peek(&self) -> Option<Div> {
+        let hud = self.shown?;
         Some(
             row(hud)
                 .w(px(SIZE.0))
@@ -135,8 +136,8 @@ impl Island {
     }
 
     /// The HUD over the top of the open tray, if one is showing.
-    pub(crate) fn hud_over_tray(&self) -> Option<Div> {
-        let hud = self.hud.shown?;
+    pub(crate) fn over_tray(&self) -> Option<Div> {
+        let hud = self.shown?;
         Some(
             div()
                 .absolute()

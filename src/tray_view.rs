@@ -4,7 +4,7 @@
 use gpui::{ClickEvent, Context, Div, ScrollWheelEvent, div, prelude::*, px, rgb, rgba};
 
 use crate::widgets::{self, Effect};
-use crate::{Island, Mode, now_playing};
+use crate::{Island, Mode, PEEK_LINGER, hud, now_playing, win32};
 use model::activity::{Activity, Key};
 use model::tray_cause::Sections;
 
@@ -69,10 +69,38 @@ impl Island {
         }
     }
 
+    /// The one way into the HUD from its listeners and tasks: `update` changes its state, told
+    /// the island's mode, and the island does what it asks in turn.
+    pub(crate) fn update_hud(
+        &mut self,
+        cx: &mut Context<Self>,
+        update: impl FnOnce(&mut hud::State, Mode, &mut Context<Self>) -> Option<hud::Effect>,
+    ) {
+        let mode = self.mode;
+        match update(&mut self.hud, mode, cx) {
+            Some(hud::Effect::Shown) if self.mode == Mode::Tray => cx.notify(),
+            Some(hud::Effect::Shown) => {
+                // The HUD folds the notch itself; a collapse booked earlier must not cut it short.
+                self.collapse_generation += 1;
+                self.set_mode(Mode::Peek, cx);
+            }
+            Some(hud::Effect::Done) if self.mode != Mode::Peek => cx.notify(),
+            Some(hud::Effect::Done)
+                if self.resting() != Mode::Peek && self.hwnd.is_some_and(win32::cursor_over) =>
+            {
+                // Being looked at: back to the plain peek, which folds once the cursor leaves.
+                self.set_mode(Mode::Peek, cx);
+                self.schedule_collapse(PEEK_LINGER, cx);
+            }
+            Some(hud::Effect::Done) => self.set_mode(self.resting(), cx),
+            None => {}
+        }
+    }
+
     /// What the peek says: the HUD, the Live Activities, the playing title with its art, or what
     /// is on the shelf.
     pub(crate) fn peek_content(&self, cx: &mut Context<Self>) -> Div {
-        if let Some(hud) = self.hud_peek() {
+        if let Some(hud) = self.hud.peek() {
             return hud;
         }
         if let Some(activities) = self.activity_peek(cx) {
@@ -175,7 +203,7 @@ impl Island {
             )
             .children((sections.widgets).then(|| self.widgets.row(self.widgets_visible(), cx)))
             .children(sections.shelf.then(|| self.shelf_section(cx)))
-            .children(self.hud_over_tray())
+            .children(self.hud.over_tray())
     }
 
     /// The shelf's header and its chips, or the hint when it is empty.
