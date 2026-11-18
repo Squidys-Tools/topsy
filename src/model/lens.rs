@@ -124,7 +124,7 @@ impl Shade {
         } else {
             0.0
         };
-        let below = smoothstep(self.black_until * 0.5, self.black_until, p.1);
+        let below = smoothstep(self.black_until, self.black_until + self.band, p.1);
         tint * (1.0 - self.clear * rim * below)
     }
 
@@ -226,6 +226,8 @@ mod tests {
         // The rim clears towards the edge, below the black only.
         assert!(middle(118.0) < middle(100.0) / 2.0);
         assert_eq!(shade.alpha(&SHAPE, (2.0, 10.0)), 1.0);
+        // The sides stay as black as the middle down to where the black ends.
+        assert!(shade.alpha(&SHAPE, (2.0, 45.0)) > 0.99);
         assert!(shade.alpha(&SHAPE, (2.0, 90.0)) < 0.3);
     }
 }
