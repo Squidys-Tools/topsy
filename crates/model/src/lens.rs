@@ -2,9 +2,10 @@
 
 use super::float::Rect;
 
-/// How far the open notch can reach, in logical pixels: the tray with its ears and the spring's
-/// overshoot, plus the margin the bevel bends in from outside the edge.
-const REACH: (f32, f32) = (720.0, 260.0);
+/// How far the open notch can reach, in logical pixels: its Home page (the player over a row of
+/// every widget) with its ears and the spring's overshoot, plus the margin the bevel bends in from
+/// outside the edge.
+const REACH: (f32, f32) = (1000.0, 400.0);
 
 /// The part of the screen the glass reads, for a notch hanging from `top` and centred on
 /// `center_x`, on `monitor` at `scale`. It holds every size the open notch springs through, so
@@ -34,9 +35,9 @@ mod tests {
     #[test]
     fn the_source_is_centred_under_the_notch_and_scales() {
         let at_100 = source(960, 0, 1.0, MONITOR);
-        assert_eq!((at_100.left, at_100.right, at_100.bottom), (600, 1320, 260));
+        assert_eq!((at_100.left, at_100.right, at_100.bottom), (460, 1460, 400));
         let at_150 = source(960, 0, 1.5, MONITOR);
-        assert_eq!((at_150.right - at_150.left, at_150.bottom), (1080, 390));
+        assert_eq!((at_150.right - at_150.left, at_150.bottom), (1500, 600));
     }
 
     #[test]
