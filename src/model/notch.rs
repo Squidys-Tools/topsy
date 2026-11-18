@@ -56,7 +56,7 @@ impl Notch {
 }
 
 /// The open glass is solid black down to this share of its height, as Droppy's is.
-const BLACK_UNTIL: f32 = 0.38;
+const BLACK_UNTIL: f32 = 0.45;
 
 /// The tint over the glass of a body `h` tall on its way to `target`: solid black down to the
 /// returned share of the body (never less than `at_least` pixels), then fading to the returned
