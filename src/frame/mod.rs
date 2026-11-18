@@ -93,8 +93,9 @@ pub enum Place {
     Floating { center: (i32, i32), scale: f32 },
 }
 
-/// A window's origin and size in physical pixels, and whether it was hidden.
-type Applied = ((i32, i32), (i32, i32), bool);
+/// A window's origin and size in physical pixels, whether it was hidden, and the notch's height
+/// within it (the rest is the capsule's strip), which shapes its region and glass.
+type Applied = ((i32, i32), (i32, i32), bool, i32);
 
 pub struct Frame {
     hwnd: Option<HWND>,
@@ -172,7 +173,7 @@ impl Frame {
     /// now, rather than snapping back on the next frame. Only a move counts, at the size last
     /// asked for: a resize still on its way would read as one.
     pub fn follow_window(&mut self) {
-        let (Some(hwnd), Some((origin, size, false)), Place::Floating { scale, .. }) =
+        let (Some(hwnd), Some((origin, size, false, notch)), Place::Floating { scale, .. }) =
             (self.hwnd, self.applied, self.place)
         else {
             return;
@@ -186,7 +187,7 @@ impl Frame {
                 center: (left + size.0 / 2, top + size.1 / 2),
                 scale,
             };
-            self.applied = Some(((left, top), size, false));
+            self.applied = Some(((left, top), size, false, notch));
         }
     }
 
@@ -296,11 +297,12 @@ impl Frame {
             Place::Floating { center, .. } => (center.0 - size.0 / 2, center.1 - size.1 / 2),
         };
         let hidden = notch.is_hidden();
-        if self.applied == Some((origin, size, hidden)) {
+        let applied = (origin, size, hidden, px(h));
+        if self.applied == Some(applied) {
             return;
         }
-        let appearing = !hidden && self.applied.is_none_or(|(_, _, was_hidden)| was_hidden);
-        self.applied = Some((origin, size, hidden));
+        let appearing = !hidden && self.applied.is_none_or(|(_, _, was_hidden, _)| was_hidden);
+        self.applied = Some(applied);
         let radius = if floating {
             self.float_radius(notch.height)
         } else {
