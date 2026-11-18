@@ -29,10 +29,10 @@ const FLOAT_RADIUS: f32 = 26.0;
 
 /// The acrylic fallback's own tint (0xRRGGBBAA).
 pub const ACRYLIC_TINT: u32 = 0x0c101c8c;
-/// Droppy's recipe, measured from its screenshots: solid black for the top 38% of the notch,
+/// Droppy's recipe, measured from its screenshots: solid black for the top 45% of the notch,
 /// then fading to about 44% black at the bottom edge, so the backdrop's own colour shows
 /// through, darkened but not greyed. The basket is filled the same way, to a darker floor.
-const BLACK_UNTIL: f32 = 0.38;
+const BLACK_UNTIL: f32 = 0.45;
 const GLASS_FLOOR: u32 = 0x00000070;
 /// The basket's floor, sampled from Droppy's: about 88% black at the bottom edge.
 pub const BASKET_FLOOR: u32 = 0x000000e0;
