@@ -37,7 +37,7 @@ use crate::log::LogErr;
 
 /// The blur's standard deviation in logical pixels: light enough that what is behind stays
 /// recognisable through the glass, as it does through Droppy's.
-const BLUR: f32 = 10.0;
+const BLUR: f32 = 4.0;
 /// The grain: how much of the noise is added, how fine (cycles per physical pixel), and how
 /// far it reaches, which only has to cover the largest window.
 const GRAIN: f32 = 0.3;
