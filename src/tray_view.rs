@@ -1,7 +1,7 @@
-//! The tray's layout: Home's player and widgets, or the shelf's header and its chips, as the page
-//! and `TrayCause::sections` say.
+//! What the island shows: the peek's line, and the tray's layout (Home's player and widgets, or
+//! the shelf's header and its chips, as the page and `TrayCause::sections` say).
 
-use gpui::{ClickEvent, Context, ScrollWheelEvent, div, prelude::*, px, rgb, rgba};
+use gpui::{ClickEvent, Context, Div, ScrollWheelEvent, div, prelude::*, px, rgb, rgba};
 
 use crate::widgets::{self, Effect};
 use crate::{Island, Mode, now_playing};
@@ -38,6 +38,55 @@ impl Island {
             Some(Effect::Refit) if self.mode == Mode::Tray => self.set_mode(Mode::Tray, cx),
             Some(Effect::Refit) | None => {}
         }
+    }
+
+    fn media_shown(&self) -> now_playing::Shown {
+        let tray = self.mode == Mode::Tray;
+        now_playing::Shown {
+            open: self.mode != Mode::Hidden,
+            tray,
+            player: tray && self.sections().media,
+            peek: self.mode == Mode::Peek,
+        }
+    }
+
+    /// The one way into Now Playing from its listeners and tasks: `update` changes its state,
+    /// told what of the island is on screen, and the island does what it asks in turn.
+    pub(crate) fn update_media(
+        &mut self,
+        cx: &mut Context<Self>,
+        update: impl FnOnce(
+            &mut now_playing::Media,
+            now_playing::Shown,
+            &mut Context<Self>,
+        ) -> Option<now_playing::Effect>,
+    ) {
+        let shown = self.media_shown();
+        match update(&mut self.media, shown, cx) {
+            Some(now_playing::Effect::Pressed) => self.press = None,
+            Some(now_playing::Effect::Refit) => self.fit_tray(),
+            None => {}
+        }
+    }
+
+    /// What the peek says: the HUD, the Live Activities, the playing title with its art, or what
+    /// is on the shelf.
+    pub(crate) fn peek_content(&self, cx: &mut Context<Self>) -> Div {
+        if let Some(hud) = self.hud_peek() {
+            return hud;
+        }
+        if let Some(activities) = self.activity_peek(cx) {
+            return activities;
+        }
+        let count = self.shelf.len();
+        if let Some(hint) = (self.media).peek_hint(count, self.media_shown(), cx) {
+            return hint;
+        }
+        let label = match count {
+            0 => "topsy".to_string(),
+            n => format!("{n} on shelf"),
+        };
+        div().text_xs().child(label)
     }
 
     /// Fold back to rest now, cancelling any collapse already scheduled (Escape, the tray icon).
@@ -119,7 +168,11 @@ impl Island {
             .on_scroll_wheel(cx.listener(|this, event: &ScrollWheelEvent, window, cx| {
                 this.on_scroll(event, window, cx);
             }))
-            .children(sections.media.then(|| self.player(cx)).flatten())
+            .children(
+                (sections.media)
+                    .then(|| self.media.player(self.media_shown(), cx))
+                    .flatten(),
+            )
             .children((sections.widgets).then(|| self.widgets.row(self.widgets_visible(), cx)))
             .children(sections.shelf.then(|| self.shelf_section(cx)))
             .children(self.hud_over_tray())

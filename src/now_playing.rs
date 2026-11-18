@@ -8,14 +8,15 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    App, Bounds, ClickEvent, Context, Entity, FontWeight, MouseButton, MouseDownEvent, ObjectFit,
-    RenderImage, ScrollHandle, canvas, div, fill, img, point, prelude::*, px, relative, rgb, rgba,
+    App, Bounds, ClickEvent, Context, Div, Entity, FontWeight, MouseButton, MouseDownEvent,
+    ObjectFit, RenderImage, ScrollHandle, canvas, div, fill, img, point, prelude::*, px, relative,
+    rgb, rgba,
 };
 
 use crate::icons::{self, Icon};
 use crate::media::{self, Button};
 use crate::win32::meter::Meter;
-use crate::{Island, Mode, icon, log};
+use crate::{Island, icon, log};
 use model::levels::{self, BARS, Levels};
 use model::marquee;
 use model::media::{Card, Event, NowPlaying, Progress, clock};
@@ -54,44 +55,75 @@ pub struct Media {
     scrolling: Cell<bool>,
 }
 
+/// What of the island is on screen, as the island decides it: Now Playing books redraws only
+/// for what is.
+#[derive(Clone, Copy)]
+pub(crate) struct Shown {
+    /// The island is not hidden.
+    pub(crate) open: bool,
+    pub(crate) tray: bool,
+    /// The open tray shows the player.
+    pub(crate) player: bool,
+    pub(crate) peek: bool,
+}
+
+/// What the island must do in turn for a change Now Playing made.
+pub(crate) enum Effect {
+    /// A button took the left button: no chip is being pressed.
+    Pressed,
+    /// The session changed: an open tray springs to its sections' size.
+    Refit,
+}
+
 /// Start watching the system's media session, unless `TOPSY_NO_MEDIA` is set.
 pub fn start(cx: &mut App, island: &Entity<Island>) {
     if crate::config::get().no_media {
         return;
     }
     let art_size = (ART * island.read(cx).scale).round() as u32;
-    crate::app::forward(cx, island, media::spawn(art_size), Island::on_media);
+    crate::app::forward(cx, island, media::spawn(art_size), |island, update, cx| {
+        island.update_media(cx, |media, shown, cx| media.apply(update, shown, cx));
+    });
 }
 
-impl Island {
-    pub(crate) fn on_media(&mut self, update: media::Update, cx: &mut Context<Self>) {
+impl Media {
+    fn apply(
+        &mut self,
+        update: media::Update,
+        shown: Shown,
+        cx: &mut Context<Island>,
+    ) -> Option<Effect> {
         log(&format!("media {:?}", update.event));
         let track = matches!(update.event, Event::Track(_) | Event::Gone);
         // Only the open tray shows the position; apps report it every few seconds.
-        let shown = match update.event {
-            Event::Timeline(_) => self.mode == Mode::Tray && self.sections().media,
-            _ => self.mode != Mode::Hidden,
+        let drawn = match update.event {
+            Event::Timeline(_) => shown.player,
+            _ => shown.open,
         };
-        let mut changed = self.media.now.apply(update.event);
+        let mut changed = self.now.apply(update.event);
         if track {
-            self.media.title_shown.set(None);
-            changed |= self.media.art.is_some() || update.art.is_some();
-            self.media.accent = update.art.as_ref().and_then(|a| a.accent);
+            self.title_shown.set(None);
+            changed |= self.art.is_some() || update.art.is_some();
+            self.accent = update.art.as_ref().and_then(|a| a.accent);
             let art = update.art.map(|a| a.image);
-            if let Some(old) = std::mem::replace(&mut self.media.art, art) {
+            if let Some(old) = std::mem::replace(&mut self.art, art) {
                 icon::forget(vec![old], cx);
             }
         }
-        self.fit_tray();
         // What isn't drawn now is drawn from the new state when it next is.
-        if changed && shown {
+        if changed && drawn {
             cx.notify();
         }
+        Some(Effect::Refit)
     }
 
     /// The player: art, title and artist; the progress bar; the buttons.
-    pub(crate) fn player(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
-        let card = self.media.now.card()?;
+    pub(crate) fn player(
+        &self,
+        shown: Shown,
+        cx: &mut Context<Island>,
+    ) -> Option<impl IntoElement + use<>> {
+        let card = self.now.card()?;
         let Card {
             title,
             artist,
@@ -108,7 +140,7 @@ impl Island {
             (Button::Next, Icon::Next, controls.next),
         ]
         .map(|(button, glyph, enabled)| control(button, glyph, enabled, cx));
-        let progress = self.media.now.progress(Instant::now());
+        let progress = self.now.progress(Instant::now());
         if playing && let Some(p) = progress.filter(|p| p.elapsed < p.length) {
             self.tick(p, cx);
         }
@@ -119,7 +151,7 @@ impl Island {
             .flex_row()
             .items_center()
             .gap(px(12.0))
-            .children(art(self.media.art.as_ref(), ART, 10.0))
+            .children(art(self.art.as_ref(), ART, 10.0))
             .child(
                 div()
                     .flex_1()
@@ -133,7 +165,7 @@ impl Island {
                             .font_weight(FontWeight::SEMIBOLD)
                             .whitespace_nowrap()
                             .overflow_x_scroll()
-                            .track_scroll(&self.media.title)
+                            .track_scroll(&self.title)
                             // GPUI scrolls as far as its children's boxes reach, and a block
                             // child is only as wide as the line: this one keeps the text's width.
                             .flex()
@@ -147,7 +179,7 @@ impl Island {
                             .child(a.to_owned())
                     })),
             )
-            .child(self.bars(22.0, 4.0, cx));
+            .child(self.bars(22.0, 4.0, shown, cx));
         Some(
             div()
                 .w_full()
@@ -173,18 +205,21 @@ impl Island {
 
     /// Redraw when the elapsed time next reads a new second, while the player is drawn. Nothing
     /// is booked otherwise, so a closed island costs nothing however long the song.
-    fn tick(&self, progress: Progress, cx: &mut Context<Self>) {
-        if self.media.ticking.replace(true) {
+    fn tick(&self, progress: Progress, cx: &mut Context<Island>) {
+        if self.ticking.replace(true) {
             return;
         }
         let after = progress.until_next_second();
         cx.spawn(async move |this, cx| {
             cx.background_executor().timer(after).await;
-            this.update(cx, |this, cx| {
-                this.media.ticking.set(false);
-                if this.mode == Mode::Tray {
-                    cx.notify();
-                }
+            this.update(cx, |island, cx| {
+                island.update_media(cx, |media, shown, cx| {
+                    media.ticking.set(false);
+                    if shown.tray {
+                        cx.notify();
+                    }
+                    None
+                });
             })
             .ok();
         })
@@ -193,56 +228,52 @@ impl Island {
 
     /// Scroll a title too long for its line to where it is now, and book the next step. The
     /// overflow is the last layout's, so a new title starts moving a frame after it is drawn.
-    fn scroll_title(&self, cx: &mut Context<Self>) {
+    fn scroll_title(&self, cx: &mut Context<Island>) {
         let now = Instant::now();
-        let fresh = self.media.title_shown.get().is_none();
-        let shown = *self.media.title_shown.get().get_or_insert(now);
-        self.media.title_shown.set(Some(shown));
-        let overflow = f32::from(self.media.title.max_offset().width);
+        let fresh = self.title_shown.get().is_none();
+        let shown = *self.title_shown.get().get_or_insert(now);
+        self.title_shown.set(Some(shown));
+        let overflow = f32::from(self.title.max_offset().width);
         let next = match marquee::at(overflow, now - shown) {
             Some((x, next)) => {
-                self.media.title.set_offset(point(px(-x), px(0.0)));
+                self.title.set_offset(point(px(-x), px(0.0)));
                 next
             }
             None if fresh => marquee::FRAME,
             None => return,
         };
-        if self.media.scrolling.replace(true) {
+        if self.scrolling.replace(true) {
             return;
         }
         cx.spawn(async move |this, cx| {
             cx.background_executor().timer(next).await;
-            this.update(cx, |this, cx| {
-                this.media.scrolling.set(false);
-                if this.mode == Mode::Tray && this.sections().media {
-                    cx.notify();
-                } else {
-                    // Shown again, it starts from the beginning.
-                    this.media.title_shown.set(None);
-                }
+            this.update(cx, |island, cx| {
+                island.update_media(cx, |media, shown, cx| {
+                    media.scrolling.set(false);
+                    if shown.player {
+                        cx.notify();
+                    } else {
+                        // Shown again, it starts from the beginning.
+                        media.title_shown.set(None);
+                    }
+                    None
+                });
             })
             .ok();
         })
         .detach();
     }
 
-    /// What the peek says: the playing title with its art, or what is on the shelf.
-    pub(crate) fn peek_content(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        if let Some(hud) = self.hud_peek() {
-            return hud;
-        }
-        if let Some(activities) = self.activity_peek(cx) {
-            return activities;
-        }
-        let count = self.shelf.len();
-        let Some(title) = self.media.now.hint() else {
-            let label = match count {
-                0 => "topsy".to_string(),
-                n => format!("{n} on shelf"),
-            };
-            return div().text_xs().child(label);
-        };
-        div()
+    /// The peek's hint while something plays: the title with its art, and how many files
+    /// (`count`) are on the shelf.
+    pub(crate) fn peek_hint(
+        &self,
+        count: usize,
+        shown: Shown,
+        cx: &mut Context<Island>,
+    ) -> Option<Div> {
+        let title = self.now.hint()?;
+        let hint = div()
             .w(px(crate::PEEK.0))
             .flex_shrink_0()
             .px(px(14.0))
@@ -251,7 +282,7 @@ impl Island {
             .items_center()
             .gap(px(6.0))
             .text_xs()
-            .children(art(self.media.art.as_ref(), PEEK_ART, 5.0))
+            .children(art(self.art.as_ref(), PEEK_ART, 5.0))
             .child(
                 div()
                     .flex_1()
@@ -260,33 +291,41 @@ impl Island {
                     .child(title.to_owned()),
             )
             .children((count > 0).then(|| div().text_color(rgba(DIM)).child(count.to_string())))
-            .child(self.bars(14.0, 3.0, cx))
+            .child(self.bars(14.0, 3.0, shown, cx));
+        Some(hint)
     }
 
     /// Whether the level bars are on screen and moving: something plays and the peek or the
     /// player shows it.
-    fn bars_live(&self) -> bool {
-        self.media.now.hint().is_some()
-            && match self.mode {
-                Mode::Hidden => false,
-                Mode::Peek => true,
-                Mode::Tray => self.sections().media,
-            }
+    fn bars_live(&self, shown: Shown) -> bool {
+        self.now.hint().is_some() && (shown.peek || shown.player)
     }
 
     /// The level bars, `height` tall, each `width` wide. While they are live each frame books
     /// the next; once they aren't, the meter is let go and nothing more is booked.
-    fn bars(&self, height: f32, width: f32, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        if self.bars_live() && !self.media.metering.replace(true) {
+    fn bars(
+        &self,
+        height: f32,
+        width: f32,
+        shown: Shown,
+        cx: &mut Context<Island>,
+    ) -> impl IntoElement + use<> {
+        if self.bars_live(shown) && !self.metering.replace(true) {
             cx.spawn(async move |this, cx| {
                 let frame = Duration::from_millis(levels::FRAME_MS);
                 cx.background_executor().timer(frame).await;
-                this.update(cx, |this, cx| this.meter_frame(cx)).ok();
+                this.update(cx, |island, cx| {
+                    island.update_media(cx, |media, shown, cx| {
+                        media.meter_frame(shown, cx);
+                        None
+                    });
+                })
+                .ok();
             })
             .detach();
         }
-        let heights = self.media.levels.bars();
-        let color = match self.media.accent {
+        let heights = self.levels.bars();
+        let color = match self.accent {
             Some([r, g, b]) => rgb(u32::from_be_bytes([0, r, g, b])),
             None => rgb(GLYPH),
         };
@@ -311,14 +350,14 @@ impl Island {
         .flex_shrink_0()
     }
 
-    fn meter_frame(&mut self, cx: &mut Context<Self>) {
-        self.media.metering.set(false);
-        if !self.bars_live() {
-            self.media.meter = None;
-            let moving = self.media.levels.bars() != [levels::REST; BARS];
-            self.media.levels.rest();
+    fn meter_frame(&mut self, shown: Shown, cx: &mut Context<Island>) {
+        self.metering.set(false);
+        if !self.bars_live(shown) {
+            self.meter = None;
+            let moving = self.levels.bars() != [levels::REST; BARS];
+            self.levels.rest();
             // A pause leaves the player on screen: settle its bars to dots.
-            if moving && self.mode != Mode::Hidden {
+            if moving && shown.open {
                 cx.notify();
             }
             return;
@@ -326,15 +365,14 @@ impl Island {
         // Reopened every second, so a change of output device (headphones in) is followed.
         let now = Instant::now();
         let stale = self
-            .media
             .meter
             .as_ref()
             .is_none_or(|(_, opened)| now - *opened >= Duration::from_secs(1));
         if stale {
-            self.media.meter = Some((Meter::open(), now));
+            self.meter = Some((Meter::open(), now));
         }
-        let peak = self.media.meter.as_ref().map_or(0.0, |(m, _)| m.peak());
-        self.media.levels.push(peak);
+        let peak = self.meter.as_ref().map_or(0.0, |(m, _)| m.peak());
+        self.levels.push(peak);
         cx.notify();
     }
 }
@@ -422,8 +460,8 @@ fn control(
         .hover(|style| style.bg(rgba(0xffffff14)))
         .on_mouse_down(
             MouseButton::Left,
-            cx.listener(|this, _: &MouseDownEvent, _window, cx| {
-                this.press = None;
+            cx.listener(|island, _: &MouseDownEvent, _window, cx| {
+                island.update_media(cx, |_, _, _| Some(Effect::Pressed));
                 cx.stop_propagation();
             }),
         )
