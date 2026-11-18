@@ -316,6 +316,8 @@ fn write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 
 fn delete(dir: &Path, id: u64) {
     for ext in ["json", "png"] {
-        std::fs::remove_file(dir.join(format!("{id}.{ext}"))).missing_ok().log_err();
+        std::fs::remove_file(dir.join(format!("{id}.{ext}")))
+            .missing_ok()
+            .log_err();
     }
 }

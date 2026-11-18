@@ -4,6 +4,7 @@
 use std::time::Instant;
 
 use super::Event;
+use crate::log::LogErr;
 use crate::model::activity::{Activity, Key};
 use crate::model::browser_download::{Downloads, Update};
 use crate::win32::folder;
@@ -36,6 +37,6 @@ pub fn watch(events: async_channel::Sender<Event>) {
             Update::Gone { id, name } if len(&name) > 0 => done(id, name),
             Update::Gone { id, .. } => Event::Remove(Key::Download(id)),
         };
-        let _ = events.try_send(event);
+        events.try_send(event).log_err();
     });
 }

@@ -7,6 +7,7 @@
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
+use crate::log::LogErr;
 use windows::Win32::Devices::DeviceAndDriverInstallation::{
     CM_GETIDLIST_FILTER_ENUMERATOR, CM_Get_DevNode_PropertyW, CM_Get_Device_ID_List_SizeW,
     CM_Get_Device_ID_ListW, CM_LOCATE_DEVNODE_PHANTOM, CM_Locate_DevNodeW, CR_SUCCESS,
@@ -55,7 +56,7 @@ impl IMMNotificationClient_Impl for Client_Impl {
     fn OnDeviceStateChanged(&self, id: &PCWSTR, state: DEVICE_STATE) -> windows::core::Result<()> {
         // SAFETY: the id is valid for this call.
         if let Ok(id) = unsafe { id.to_string() } {
-            let _ = self.0.send((id, state));
+            self.0.send((id, state)).log_err();
         }
         Ok(())
     }
@@ -85,7 +86,7 @@ pub fn watch(report: impl Fn(Seen) + Send + 'static) {
             let (tx, rx) = mpsc::channel();
             // SAFETY: COM for this thread; the client stays registered for the thread's life.
             let devices = unsafe {
-                let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+                CoInitializeEx(None, COINIT_MULTITHREADED).ok().log_err();
                 CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL)
                     .and_then(|devices| {
                         let client: IMMNotificationClient = Client(tx).into();

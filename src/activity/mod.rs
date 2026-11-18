@@ -13,6 +13,7 @@ use gpui::{App, Context, Entity};
 
 use crate::autostart::RegString;
 use crate::frame::Mode;
+use crate::log::LogErr;
 use crate::model::activity::{Activities, Activity, Key};
 use crate::win32::{self, earbuds};
 use crate::{Island, log};
@@ -64,7 +65,7 @@ pub fn start(cx: &mut App, island: &Entity<Island>) {
         } else {
             Activity::Disconnected { name: seen.name }
         };
-        let _ = events.try_send(Event::Set(key, activity));
+        events.try_send(Event::Set(key, activity)).log_err();
     });
     crate::app::forward(cx, island, heard, Island::on_activity);
 }
