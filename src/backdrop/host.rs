@@ -1,12 +1,7 @@
-//! The glass behind the pill, drawn by the system compositor in any shape we ask for.
-//!
-//! GPUI presents through DirectComposition as the window's *topmost* visual tree. A window can
-//! carry a second, non-topmost tree from Windows.UI.Composition, which DWM composes underneath
-//! GPUI's. That tree holds the host backdrop (the blurred desktop behind the window) clipped to
-//! a rounded rectangle whose radius we choose, so the glass can be a true capsule rather than
-//! DWM's fixed window corner, and a second such pane for the page capsule under the notch. The
-//! backdrop goes through a saturation boost first, so the glass keeps the colour of what is
-//! behind it under the dark fill. Tint and rim are drawn by GPUI on top.
+//! The fallback glass: Windows.UI.Composition's host backdrop (the desktop behind the window,
+//! blurred by the system by a fixed amount), saturated and clipped to the notch. A window can
+//! carry one non-topmost tree from Windows.UI.Composition, which DWM composes underneath GPUI's
+//! topmost DirectComposition tree.
 
 use std::cell::RefCell;
 use std::ffi::c_void;
@@ -33,11 +28,8 @@ use windows::Win32::System::WinRT::{
 use windows::core::{BOOL, GUID, HSTRING, Interface, PCWSTR, implement};
 use windows_numerics::Vector2;
 
+use super::{Outline, SATURATION};
 use crate::log::LogErr;
-
-/// How much more saturated the glass is than the desktop behind it, as Droppy's glass borrows the
-/// colour behind it rather than greying it.
-const SATURATION: f32 = 1.45;
 /// Direct2D's colour matrix effect, which the compositor runs itself.
 const CLSID_D2D1_COLOR_MATRIX: GUID = GUID::from_u128(0x921f03d6_641c_47df_852d_b4bb6153ae11);
 /// `D2D1_COLORMATRIX_ALPHA_MODE_PREMULTIPLIED`.
@@ -75,17 +67,17 @@ fn compositor(cx: &mut gpui::App) -> windows::core::Result<Compositor> {
     Ok(compositor)
 }
 
-/// The compositor glass of one window. Lives on the UI thread, which owns the dispatcher
+/// The host backdrop glass of one window. Lives on the UI thread, which owns the dispatcher
 /// queue Windows.UI.Composition needs.
-pub struct Backdrop {
+pub struct Host {
     _target: DesktopWindowTarget,
     shape: CompositionRoundedRectangleGeometry,
     capsule: CompositionRoundedRectangleGeometry,
 }
 
-impl Backdrop {
+impl Host {
     /// Put the blurred backdrop behind `hwnd`'s content. Fails on systems without host backdrop
-    /// support (before Windows 11), where the caller falls back to window-wide acrylic.
+    /// support (before Windows 11).
     pub fn new(hwnd: HWND, cx: &mut gpui::App) -> windows::core::Result<Self> {
         unsafe {
             let compositor = compositor(cx)?;
@@ -124,25 +116,28 @@ impl Backdrop {
         }
     }
 
-    /// The handle to reshape the glass from a task; cheap to clone.
-    pub fn shape(&self) -> Shape {
-        Shape(self.shape.clone())
+    pub fn shape(&self) -> HostShape {
+        HostShape(self.shape.clone())
     }
 
     /// The page capsule's pane, the same kind of handle.
-    pub fn capsule(&self) -> Shape {
-        Shape(self.capsule.clone())
+    pub fn capsule(&self) -> HostShape {
+        HostShape(self.capsule.clone())
     }
 }
 
-/// The glass's outline, in physical pixels of the window's client area.
 #[derive(Clone)]
-pub struct Shape(CompositionRoundedRectangleGeometry);
+pub struct HostShape(CompositionRoundedRectangleGeometry);
 
-impl Shape {
-    /// A rounded rectangle at `(x, y)`. Parts outside the window are cut off with it, which is
-    /// how the notch gets a square top: its rounded top corners sit above the window.
-    pub fn set(&self, x: f32, y: f32, width: f32, height: f32, radius: f32) {
+impl HostShape {
+    pub fn set(&self, outline: Outline) {
+        let Outline {
+            x,
+            y,
+            width,
+            height,
+            radius,
+        } = outline;
         self.0.SetOffset(Vector2 { X: x, Y: y }).log_err();
         self.0
             .SetSize(Vector2 {

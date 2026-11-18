@@ -59,7 +59,7 @@ impl Frame {
             )
         };
         let fill = match look {
-            Glass::Blur | Glass::Tint => edge_fill(self.floor),
+            Glass::Blur | Glass::HostBlur | Glass::Tint => edge_fill(self.floor),
             Glass::Acrylic => edge_fill(0x00000000),
             Glass::Solid => black.into(),
             Glass::Clear => rgba(0x00000000).into(),
@@ -141,7 +141,7 @@ impl Frame {
 
         // The capsule slides out from under the notch, so it shows only below it.
         let capsule_fill = match look {
-            Glass::Blur | Glass::Tint => rgba(CAPSULE_FILL),
+            Glass::Blur | Glass::HostBlur | Glass::Tint => rgba(CAPSULE_FILL),
             Glass::Solid => black,
             Glass::Acrylic | Glass::Clear => rgba(0x00000000),
         };

@@ -38,7 +38,7 @@ release build (see [Building](building.md)). Each script states its usage in its
   reveal changes the foreground window. Last, it puts a borderless fullscreen window in front (`fullscreen.ps1`)
   and checks the edge no longer reveals. Run it on a release build.
 - `check-glass.ps1`: the blur proof described in [Glass](../internals/glass.md). Shows a stripe window
-  (`stripes.ps1`) at the top of the screen for about 40 s.
+  (`stripes.ps1`) at the top of the screen for about 50 s.
 - `trace-width.ps1` / `shot.ps1`: sample or screenshot the notch (or, with `shot.ps1 -Rect`, any part of the
   screen, such as the basket) to look at the animation as composited (`trace-width.ps1` needs
   `TOPSY_GLASS=solid`). Captures go in `/shots`, which is gitignored.

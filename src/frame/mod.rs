@@ -7,7 +7,7 @@ mod paint;
 use gpui::{App, Pixels, Size};
 use windows::Win32::Foundation::HWND;
 
-use crate::backdrop::Backdrop;
+use crate::backdrop::{self, Backdrop, Outline};
 use crate::{log, win32};
 use model::notch::Notch;
 
@@ -46,6 +46,8 @@ pub enum Glass {
     /// The compositor's blur of whatever is behind the notch, in its own shape ([`Backdrop`]),
     /// under Droppy's black-to-glass fill.
     Blur,
+    /// The same, held to the host backdrop and its fixed blur.
+    HostBlur,
     /// Window-wide acrylic, which only takes DWM's fixed corner. The fallback where the
     /// compositor glass can't start.
     Acrylic,
@@ -58,6 +60,15 @@ pub enum Glass {
 }
 
 impl Glass {
+    /// The compositor glass to try, for the kinds drawn over one.
+    pub fn backdrop(self) -> Option<backdrop::Kind> {
+        match self {
+            Glass::Blur => Some(backdrop::Kind::Live),
+            Glass::HostBlur => Some(backdrop::Kind::Host),
+            Glass::Acrylic | Glass::Tint | Glass::Solid | Glass::Clear => None,
+        }
+    }
+
     /// The window-wide acrylic can't leave the ears' corners clear, so it goes without them.
     fn has_ears(self) -> bool {
         self != Glass::Acrylic
@@ -102,7 +113,7 @@ pub struct Frame {
     glass: Glass,
     /// The "Black notch" setting: draw [`Glass::Solid`] whatever the glass is.
     black: bool,
-    /// The compositor glass, reshaped with the window ([`Glass::Blur`] only).
+    /// The compositor glass, reshaped with the window (the kinds with a [`Glass::backdrop`]).
     backdrop: Option<Backdrop>,
     /// Where the notch hangs: horizontal centre and top edge of its monitor, in physical
     /// screen pixels. Every resize keeps the window centred on this point.
@@ -287,7 +298,13 @@ impl Frame {
         });
         let capsule_glass = (strip >= 0.5).then(|| {
             let top = (h + strip - CAPSULE.1) * s;
-            ((w - CAPSULE.0) / 2.0 * s, top, CAPSULE.0 * s, CAPSULE.1 * s)
+            Outline {
+                x: (w - CAPSULE.0) / 2.0 * s,
+                y: top,
+                width: CAPSULE.0 * s,
+                height: CAPSULE.1 * s,
+                radius: CAPSULE.1 * s / 2.0,
+            }
         });
         let origin = match self.place {
             Place::Notch => match self.anchor {
@@ -332,24 +349,35 @@ impl Frame {
         let capsule_shape = self.backdrop.as_ref().map(Backdrop::capsule);
         let r = radius * s;
         // No blur shows as a glass of no height.
-        let blur = !hidden && self.look() == Glass::Blur;
+        let blur = !hidden && self.look().backdrop().is_some();
         let tall = |h: f32| if blur { h } else { 0.0 };
         // The notch's rounded top corners sit above the window, which squares them off.
         let glass = if floating {
-            (0.0, 0.0, size.0 as f32, tall(size.1 as f32), r)
+            Outline {
+                x: 0.0,
+                y: 0.0,
+                width: size.0 as f32,
+                height: tall(size.1 as f32),
+                radius: r,
+            }
         } else {
-            let left = notch.ear_slot * s;
-            (left, -r, notch.body_width * s, tall(h * s + r), r)
+            Outline {
+                x: notch.ear_slot * s,
+                y: -r,
+                width: notch.body_width * s,
+                height: tall(h * s + r),
+                radius: r,
+            }
         };
         cx.spawn(async move |_| {
             win32::move_window(hwnd, origin.0, origin.1, size.0, size.1, appearing);
             win32::set_clip(hwnd, clip);
             if let Some(shape) = shape {
-                shape.set(glass.0, glass.1, glass.2, glass.3, glass.4);
+                shape.set(origin, s, glass);
             }
             if let Some(shape) = capsule_shape {
-                let (x, y, w, h) = capsule_glass.filter(|_| blur).unwrap_or_default();
-                shape.set(x, y, w, h, h / 2.0);
+                let none = Outline::default();
+                shape.set(origin, s, capsule_glass.filter(|_| blur).unwrap_or(none));
             }
         })
         .detach();
