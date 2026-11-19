@@ -7,6 +7,7 @@ non-topmost tree, which DWM composes underneath GPUI's; `src/backdrop/` puts the
 rectangle whose top corners sit above the window and are cut off with it, which gives the notch its square top. GPUI
 draws the tint and rim on top. A second such pane is the page capsule under the open tray (see
 [Shelf widgets](widgets.md)). Either kind of glass holds while the window is inactive, which the island always is.
+While the tray is open, the lens (below) takes over from the notch's pane.
 
 - **Live (the default).** dwmapi's undocumented shared multi-window visual (ordinals 163 and 164, as VLC 4 uses
   them) is a live copy of every window on the virtual screen except the ones excluded (the island itself), updated
@@ -23,6 +24,36 @@ centred on zero so it lightens nothing, keeps large flat areas from banding, as 
   behind, blurred by the system, enabled by `DWMWA_USE_HOSTBACKDROPBRUSH`) through the same saturation, a Direct2D
   colour matrix the compositor runs. Its blur can be added to but never lightened, and Windows.UI.Composition takes
   only some built-in Direct2D effects: no displacement map, so no refraction.
+
+## The lens: the open tray bends what is behind it
+
+The open tray is Liquid Glass: what is behind it, bent by a soft round bevel toward its edge, blurred as much as
+the live glass, with a faint colour split and a lit rim (`src/backdrop/lens/`). No compositor effect displaces
+pixels, so this is a pixel shader of our own (HLSL, compiled at startup with `D3DCompile`), drawn with Direct3D 11
+into a composition swap chain. The hidden notch and the peek keep the compositor glass; so does the basket.
+
+- **A window of its own, just under the island.** GPUI owns the island's swap chain. The lens is a topmost tool
+  window placed directly under the island in z-order, and the island's compositor glass is shrunk to nothing while
+  it shows, so GPUI's tint and content draw over the lens. Raising the island (every reshape does) lifts it above
+  the lens's slot, so the lens is restacked under it after each move. The lens can't be layered or
+  `WS_EX_TRANSPARENT`: DirectComposition content on a layered window doesn't show. Instead its window region is
+  the notch's body, which the island covers, and it answers `HTTRANSPARENT`, so it never takes a click.
+- **It reads the screen once, as the tray opens.** A GDI copy of the area around the notch, taken before the
+  lens shows, becomes a mipmapped texture the shader samples. Nothing runs while the tray stays open, and it
+  shows in screenshots and recordings. What is behind does not move while it is open.
+- **Live glass** (the setting, or `TOPSY_LENS=live`) follows the screen. A capture of the screen would see the
+  lens and bend its own drawing, and hiding topsy from captures would hide the open tray from recordings too.
+  Instead a second live copy (the live glass's shared visual) of just the region behind the notch, with the island
+  and the lens left out, is shown in a window parked beside every screen and captured there with
+  Windows.Graphics.Capture. A live copy is new on every composition whether or not anything behind changed, so
+  frames never stop on their own; they are capped at 30 a second, and only while the tray is open. It needs the
+  live glass: over the host backdrop the lens stays a snapshot.
+- **Starting and stopping the capture pumps messages** on the UI thread, so GPUI can run a frame mid-call and
+  call back into the lens. Every call records what it wants, and only one applies it; one made meanwhile is taken
+  up when the running one ends.
+- **Its cost is paid at startup.** Creating the device and compiling the shader takes about 100 ms (70 of it the
+  compile), done when the notch is made so the first open doesn't stall. The device stays: about 24 MB more private
+  memory and two more threads at idle, and no idle CPU.
 
 The window-wide alternative, `SetWindowCompositionAttribute` with `ACCENT_ENABLE_ACRYLICBLURBEHIND` (what
 GPUI's own `WindowBackgroundAppearance::Blurred` does), blurs the **whole window rectangle** and ignores
@@ -59,12 +90,16 @@ the contrast beside it, in five modes:
 |---|---|---|
 | `clear` | transparent fill, no blur | 1.00 (control: proves the measurement) |
 | `tint` | the same fill, no blur | 0.49 (what the dark fill alone does) |
-| *(default)* | live glass, notch-clipped | **0.14** (28% of what the tint leaves; the grain is part of it) |
-| `host` | host backdrop, notch-clipped | 0.04 (8%) |
+| *(default)* | the lens, over the live glass | **0.21** (43% of what the tint leaves) |
+| `host` | the lens, over the host backdrop | 0.21 (43%) |
 | `acrylic` | window-wide acrylic, the fallback | 0.05 (10%) |
 
-It samples the bottom of the tray, where the fill has faded most. The live glass's light blur leaves some of the
-6 px stripes and the host backdrop flattens them, so the check proves there is a blur, not how light it is. The `tint`
-control matters: the fill is still about half opaque there, so it cuts stripe contrast by itself, and without the control that would look like blur.
+It samples the bottom of the tray, where the fill has faded most, so with the lens it measures the lens: its blur
+matches the live glass's deviation, and what is left of the stripes there is the bevel gathering them. With
+`TOPSY_LENS=off` the live glass keeps 0.14 (28%; the grain is part of it) and the host backdrop 0.04 (8%). The
+blur is light enough to leave some of the 6 px stripes, so the check proves there is a blur, not how light it is.
+The lens's blur is a Gaussian sampled on a spiral: a grid of taps lined up with the stripes and kept 60% of them.
+The `tint` control matters: the fill is still about half opaque there, so it cuts stripe contrast by itself, and
+without the control that would look like blur.
 A first attempt used `DwmEnableBlurBehindWindow`, which does honour an explicit blur region but is a weak blur
 (0.30 against the old, lighter tint's 0.45), with the stripes plainly visible through it. It was dropped.

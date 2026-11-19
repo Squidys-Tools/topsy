@@ -34,6 +34,8 @@ pub const ACRYLIC_TINT: u32 = 0x0c101c8c;
 /// through, darkened but not greyed. The basket is filled the same way, to a darker floor.
 const BLACK_UNTIL: f32 = 0.45;
 const GLASS_FLOOR: u32 = 0x00000070;
+/// The open notch's floor over the lens glass: lighter, so the bend shows.
+const LENS_FLOOR: u32 = 0x00000040;
 /// The basket's floor, sampled from Droppy's: about 88% black at the bottom edge.
 pub const BASKET_FLOOR: u32 = 0x000000e0;
 /// A light rim along the bottom edge, fading out up the sides where the notch turns black.
@@ -104,9 +106,10 @@ pub enum Place {
     Floating { center: (i32, i32), scale: f32 },
 }
 
-/// A window's origin and size in physical pixels, whether it was hidden, and the notch's height
-/// within it (the rest is the capsule's strip), which shapes its region and glass.
-type Applied = ((i32, i32), (i32, i32), bool, i32);
+/// A window's origin and size in physical pixels, whether it was hidden, the notch's height
+/// within it (the rest is the capsule's strip), which shapes its region and glass, and whether
+/// it was open.
+type Applied = ((i32, i32), (i32, i32), bool, i32, bool);
 
 pub struct Frame {
     hwnd: Option<HWND>,
@@ -130,6 +133,8 @@ pub struct Frame {
     /// The capsule strip each recent window height (physical) was made with. The window takes
     /// its new size a frame after it is asked for, so a frame is split by the size it has.
     strips: Vec<(i32, f32)>,
+    /// The lens glass is behind the open notch.
+    lensed: bool,
 }
 
 impl Frame {
@@ -152,6 +157,7 @@ impl Frame {
             applied: None,
             floor: GLASS_FLOOR,
             strips: Vec::new(),
+            lensed: false,
         }
     }
 
@@ -184,7 +190,7 @@ impl Frame {
     /// now, rather than snapping back on the next frame. Only a move counts, at the size last
     /// asked for: a resize still on its way would read as one.
     pub fn follow_window(&mut self) {
-        let (Some(hwnd), Some((origin, size, false, notch)), Place::Floating { scale, .. }) =
+        let (Some(hwnd), Some((origin, size, false, notch, open)), Place::Floating { scale, .. }) =
             (self.hwnd, self.applied, self.place)
         else {
             return;
@@ -198,7 +204,7 @@ impl Frame {
                 center: (left + size.0 / 2, top + size.1 / 2),
                 scale,
             };
-            self.applied = Some(((left, top), size, false, notch));
+            self.applied = Some(((left, top), size, false, notch, open));
         }
     }
 
@@ -218,6 +224,13 @@ impl Frame {
         if let (Glass::Acrylic, Some(hwnd)) = (self.glass, self.hwnd) {
             cx.spawn(async move |_| win32::set_acrylic(hwnd, (!black).then_some(ACRYLIC_TINT)))
                 .detach();
+        }
+    }
+
+    /// The *Live glass* setting, for the open notch's lens.
+    pub fn set_live_lens(&self, live: bool) {
+        if let Some(backdrop) = &self.backdrop {
+            backdrop.set_live_lens(live);
         }
     }
 
@@ -244,7 +257,8 @@ impl Frame {
     }
 
     /// Make the OS window exactly the shape for a body of `width` x `height` (logical pixels),
-    /// hanging from the anchor or centred on the basket's point.
+    /// hanging from the anchor or centred on the basket's point. The lens glass takes the glass
+    /// while `open`.
     ///
     /// The window is resized every frame as the spring moves, and its region and the glass's
     /// clip are reshaped with it. Hidden, it keeps a 1 px window (GPUI can't draw into an empty
@@ -254,7 +268,15 @@ impl Frame {
     /// and a resize mid-draw would reach GPUI's window handler where it cannot update the
     /// window (see [`win32::move_window`]).
     /// `strip` is the room under the notch for the page capsule, as it springs out.
-    pub fn sync(&mut self, width: f32, height: f32, strip: f32, drawn_scale: f32, cx: &mut App) {
+    pub fn sync(
+        &mut self,
+        width: f32,
+        height: f32,
+        strip: f32,
+        drawn_scale: f32,
+        open: bool,
+        cx: &mut App,
+    ) {
         if drawn_scale != self.drawn_scale {
             // GPUI has moved the window to the size Windows suggested for the new DPI.
             self.drawn_scale = drawn_scale;
@@ -314,11 +336,14 @@ impl Frame {
             Place::Floating { center, .. } => (center.0 - size.0 / 2, center.1 - size.1 / 2),
         };
         let hidden = notch.is_hidden();
-        let applied = (origin, size, hidden, px(h));
+        let applied = (origin, size, hidden, px(h), open);
         if self.applied == Some(applied) {
             return;
         }
-        let appearing = !hidden && self.applied.is_none_or(|(_, _, was_hidden, _)| was_hidden);
+        let appearing = !hidden
+            && self
+                .applied
+                .is_none_or(|(_, _, was_hidden, _, _)| was_hidden);
         self.applied = Some(applied);
         let radius = if floating {
             self.float_radius(notch.height)
@@ -350,6 +375,7 @@ impl Frame {
         let r = radius * s;
         // No blur shows as a glass of no height.
         let blur = !hidden && self.look().backdrop().is_some();
+        self.lensed = blur && open && self.backdrop.as_ref().is_some_and(Backdrop::has_lens);
         let tall = |h: f32| if blur { h } else { 0.0 };
         // The notch's rounded top corners sit above the window, which squares them off.
         let glass = if floating {
@@ -370,14 +396,19 @@ impl Frame {
             }
         };
         cx.spawn(async move |_| {
+            // The lens reads the screen as it opens: before the window grows over it.
+            if let Some(shape) = &shape {
+                shape.set(origin, size, s, glass, open);
+            }
             win32::move_window(hwnd, origin.0, origin.1, size.0, size.1, appearing);
             win32::set_clip(hwnd, clip);
-            if let Some(shape) = shape {
-                shape.set(origin, s, glass);
+            if let Some(shape) = &shape {
+                shape.restack();
             }
             if let Some(shape) = capsule_shape {
                 let none = Outline::default();
-                shape.set(origin, s, capsule_glass.filter(|_| blur).unwrap_or(none));
+                let capsule = capsule_glass.filter(|_| blur).unwrap_or(none);
+                shape.set(origin, size, s, capsule, false);
             }
         })
         .detach();

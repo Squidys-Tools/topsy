@@ -14,6 +14,7 @@ use raw_window_handle::HasWindowHandle;
 use windows::Win32::Foundation::HWND;
 
 use crate::basket::Basket;
+use crate::config::Lens;
 use crate::frame::{ACRYLIC_TINT, Frame, Glass, PEEK};
 use crate::log::LogErr;
 use crate::settings::Setting;
@@ -91,6 +92,7 @@ impl Island {
                     basket.update(cx, |basket, cx| basket.set_black(on, cx));
                 }
             }
+            Setting::LiveGlass => self.frame.set_live_lens(on),
             // Switched off, what is on screen goes now.
             Setting::LiveActivities => {
                 self.update_activities(cx, |_| Some(activity::Effect::Changed(Instant::now())))
@@ -176,6 +178,17 @@ pub fn run() {
         let window = open_glass(cx, bounds, glass, black, refuse_tx, previous_foreground, {
             move |hwnd, glass, backdrop, window, cx| {
                 let scale = window.scale_factor();
+                let backdrop = match (backdrop, hwnd) {
+                    (Some(backdrop), Some(hwnd)) if config.lens != Lens::Off => {
+                        let live = match config.lens {
+                            Lens::Snapshot => false,
+                            Lens::Live => true,
+                            Lens::Setting | Lens::Off => look::is_live_lens(),
+                        };
+                        Some(backdrop.with_lens(hwnd, live, cx))
+                    }
+                    (backdrop, _) => backdrop,
+                };
                 let frame = Frame::new(hwnd, scale, glass, black, backdrop);
                 cx.new(move |_| Island::new(hwnd, scale, frame, persistence))
             }

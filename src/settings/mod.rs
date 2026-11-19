@@ -18,12 +18,15 @@ pub enum Setting {
     VolumeHud,
     /// Downloads and Bluetooth audio in the notch (`activity`).
     LiveActivities,
+    /// The open notch's glass follows the screen (`look`).
+    LiveGlass,
 }
 
 impl Setting {
     /// In the order the menu and the window show them.
-    pub const ALL: [Setting; 6] = [
+    pub const ALL: [Setting; 7] = [
         Setting::Black,
+        Setting::LiveGlass,
         Setting::Autostart,
         Setting::SendTo,
         Setting::Clipboard,
@@ -35,6 +38,7 @@ impl Setting {
     pub fn menu_label(self) -> &'static str {
         match self {
             Setting::Black => "&Black notch",
+            Setting::LiveGlass => "Live &glass",
             Setting::Autostart => "Start with &Windows",
             Setting::SendTo => "Show in Sen&d to",
             Setting::Clipboard => "Clipboard &history",
@@ -51,6 +55,7 @@ impl Setting {
     pub fn is_on(self) -> bool {
         match self {
             Setting::Black => look::is_black(),
+            Setting::LiveGlass => look::is_live_lens(),
             Setting::Autostart => autostart::is_enabled(),
             Setting::SendTo => sendto::is_enabled(),
             Setting::Clipboard => clipboard::is_enabled(),
@@ -62,6 +67,7 @@ impl Setting {
     pub fn set(self, on: bool) -> windows::core::Result<()> {
         match self {
             Setting::Black => look::set_black(on),
+            Setting::LiveGlass => look::set_live_lens(on),
             Setting::Autostart if on => std::env::current_exe()
                 .map_err(windows::core::Error::from)
                 .and_then(|exe| autostart::enable(&exe)),

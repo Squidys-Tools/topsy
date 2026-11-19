@@ -8,12 +8,25 @@ use std::time::Duration;
 
 use crate::frame::{Glass, Mode};
 
+/// The open notch's lens glass, as `TOPSY_LENS` asks.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Lens {
+    /// As the *Live glass* setting says.
+    Setting,
+    Off,
+    Snapshot,
+    Live,
+}
+
 pub struct Config {
     /// `TOPSY_LOG`: trace events to stderr, for the live checks.
     pub log: bool,
     /// `TOPSY_GLASS=host|acrylic|tint|solid|clear`: force a fill. Any value also overrides the
     /// *Black notch* setting; an unknown one forces the default blur.
     pub glass: Option<Glass>,
+    /// `TOPSY_LENS=off|snapshot|live`: the open notch's lens glass, off, or forced to read the
+    /// screen once or to follow it whatever the *Live glass* setting says.
+    pub lens: Lens,
     /// What the island folds back to: `TOPSY_IDLE=peek|tray` keeps it down for the live checks,
     /// and without the mouse hook nothing could reveal it, so it peeks.
     pub rest: Mode,
@@ -58,6 +71,12 @@ impl Config {
                 "clear" => Glass::Clear,
                 _ => Glass::Blur,
             }),
+            lens: match text("TOPSY_LENS").as_deref() {
+                Some("off") => Lens::Off,
+                Some("snapshot") => Lens::Snapshot,
+                Some("live") => Lens::Live,
+                _ => Lens::Setting,
+            },
             rest: match text("TOPSY_IDLE").as_deref() {
                 Some("peek") => Mode::Peek,
                 Some("tray") => Mode::Tray,
@@ -112,6 +131,10 @@ mod tests {
         assert!(config(&[("TOPSY_NO_MEDIA", "1")]).no_media);
         assert!(c.seed.is_none() && c.exit_after.is_none() && c.state.is_none());
         assert!(c.transform.is_none());
+        assert_eq!(c.lens, Lens::Setting);
+        assert_eq!(config(&[("TOPSY_LENS", "off")]).lens, Lens::Off);
+        assert_eq!(config(&[("TOPSY_LENS", "live")]).lens, Lens::Live);
+        assert_eq!(config(&[("TOPSY_LENS", "bogus")]).lens, Lens::Setting);
     }
 
     #[test]

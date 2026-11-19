@@ -19,5 +19,10 @@ the build before Now Playing, the floating tray, chip actions and the settings w
 as the build after, back to back on a busy machine. The cause was never found (not our render loop, not the
 hook, not the media thread). It is worth a profile.
 
+The open tray's lens keeps a Direct3D device from startup: about 24 MB more private memory and two more threads,
+no idle CPU (`TOPSY_LENS=off` leaves them out). A snapshot (the default) costs nothing while the tray is open.
+With *Live glass* on and the tray open, topsy takes about 0.6% of a core and 2.3% of an integrated GPU's 3D
+engine, and DWM 3.4% of it over a still backdrop or 5.9% over one animating every frame.
+
 While music plays and its level bars are on screen, the meter reads add about 2.5–3% of a core; see
 [Now Playing](../internals/now-playing.md).
