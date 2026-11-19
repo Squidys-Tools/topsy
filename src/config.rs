@@ -11,7 +11,7 @@ use crate::frame::{Glass, Mode};
 pub struct Config {
     /// `TOPSY_LOG`: trace events to stderr, for the live checks.
     pub log: bool,
-    /// `TOPSY_GLASS=acrylic|tint|solid|clear`: force a fill. Any value also overrides the
+    /// `TOPSY_GLASS=host|acrylic|tint|solid|clear`: force a fill. Any value also overrides the
     /// *Black notch* setting; an unknown one forces the default blur.
     pub glass: Option<Glass>,
     /// What the island folds back to: `TOPSY_IDLE=peek|tray` keeps it down for the live checks,
@@ -51,6 +51,7 @@ impl Config {
         Self {
             log: var("TOPSY_LOG").is_some(),
             glass: text("TOPSY_GLASS").map(|v| match v.as_str() {
+                "host" => Glass::HostBlur,
                 "acrylic" => Glass::Acrylic,
                 "tint" => Glass::Tint,
                 "solid" => Glass::Solid,
@@ -142,6 +143,10 @@ mod tests {
     fn any_glass_value_forces_a_fill() {
         assert_eq!(config(&[("TOPSY_GLASS", "tint")]).glass, Some(Glass::Tint));
         assert_eq!(config(&[("TOPSY_GLASS", "blur")]).glass, Some(Glass::Blur));
+        assert_eq!(
+            config(&[("TOPSY_GLASS", "host")]).glass,
+            Some(Glass::HostBlur)
+        );
         assert_eq!(config(&[("TOPSY_GLASS", "")]).glass, Some(Glass::Blur));
     }
 
