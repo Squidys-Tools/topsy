@@ -4,18 +4,22 @@
 //! hands us a visual of every window on the virtual screen but the ones we exclude, updated by DWM
 //! as they change. It goes in a non-topmost DirectComposition target under GPUI's topmost one,
 //! shifted so the part behind the window lines up with it. Unlike the host backdrop, its blur is
-//! ours to choose. DWM does the work; topsy only moves the visual when the window moves.
+//! ours to choose. A faint fixed grain over it, as on acrylic, keeps large flat areas from
+//! banding and reads as material. DWM does the work; topsy only moves the visual when the window
+//! moves.
 
 use std::cell::Cell;
 use std::ffi::c_void;
 use std::rc::Rc;
 
 use windows::Win32::Foundation::{HMODULE, HWND, RECT, SIZE};
-use windows::Win32::Graphics::Direct2D::Common::D2D1_BORDER_MODE_HARD;
+use windows::Win32::Graphics::Direct2D::Common::{
+    D2D1_BORDER_MODE_HARD, D2D1_TURBULENCE_NOISE_FRACTAL_SUM,
+};
 use windows::Win32::Graphics::DirectComposition::{
-    DCompositionCreateDevice3, IDCompositionDesktopDevice, IDCompositionDevice3,
-    IDCompositionGaussianBlurEffect, IDCompositionRectangleClip, IDCompositionTarget,
-    IDCompositionVisual, IDCompositionVisual2,
+    DCOMPOSITION_BORDER_MODE_SOFT, DCompositionCreateDevice3, IDCompositionDesktopDevice,
+    IDCompositionDevice3, IDCompositionGaussianBlurEffect, IDCompositionRectangleClip,
+    IDCompositionTarget, IDCompositionVisual, IDCompositionVisual2,
 };
 use windows::Win32::Graphics::Dwm::{
     DWMWA_CLOAK, DWMWA_USE_HOSTBACKDROPBRUSH, DwmSetWindowAttribute, DwmUnregisterThumbnail,
@@ -26,6 +30,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SM_YVIRTUALSCREEN, SW_SHOWNOACTIVATE, ShowWindow, WINDOW_STYLE, WS_EX_TOOLWINDOW,
 };
 use windows::core::{BOOL, Error, HRESULT, IUnknown, Interface, PCSTR, s, w};
+use windows_numerics::{Vector2, Vector4};
 
 use super::{Outline, SATURATION};
 use crate::log::LogErr;
@@ -33,6 +38,13 @@ use crate::log::LogErr;
 /// The blur's standard deviation in logical pixels: light enough that what is behind stays
 /// recognisable through the glass, as it does through Droppy's.
 const BLUR: f32 = 10.0;
+/// The grain: how much of the noise is added, how fine (cycles per physical pixel), and how
+/// far it reaches, which only has to cover the largest window.
+const GRAIN: f32 = 0.3;
+const GRAIN_FREQUENCY: f32 = 0.8;
+const GRAIN_REACH: f32 = 8192.0;
+/// What one octave of fractal-sum turbulence averages, so the grain can be centred on zero.
+const GRAIN_MEAN: f32 = 0.39;
 /// `DWM_CLOAKED_APP`.
 const CLOAKED_APP: u32 = 2;
 /// `WCA_EXCLUDED_FROM_LIVEPREVIEW`, for `SetWindowCompositionAttribute`.
@@ -206,13 +218,33 @@ fn pane(
         // A hard border keeps the top of the screen from fading into the blur.
         blur.SetBorderMode(D2D1_BORDER_MODE_HARD)?;
         blur.SetInput(0, &saturation, 0)?;
-        glass.SetEffect(&blur)?;
+
+        // Perlin noise, made grey, then added to the glass centred on zero, so it shifts each
+        // pixel a little up or down without lightening the whole.
+        let noise = effects.CreateTurbulenceEffect()?;
+        noise.SetNoise(D2D1_TURBULENCE_NOISE_FRACTAL_SUM)?;
+        noise.SetBaseFrequency(&Vector2::new(GRAIN_FREQUENCY, GRAIN_FREQUENCY))?;
+        noise.SetNumOctaves(1)?;
+        noise.SetSize(&Vector2::new(GRAIN_REACH, GRAIN_REACH))?;
+        let grey = effects.CreateSaturationEffect()?;
+        grey.SetSaturation2(0.0)?;
+        grey.SetInput(0, &noise, 0)?;
+        // DirectComposition's arithmetic composite weighs input 0 by the second coefficient and
+        // input 1 by the third.
+        let grained = effects.CreateArithmeticCompositeEffect()?;
+        grained.SetCoefficients(&Vector4::new(0.0, GRAIN, 1.0, -GRAIN * GRAIN_MEAN))?;
+        grained.SetClampOutput(true)?;
+        grained.SetInput(0, &grey, 0)?;
+        grained.SetInput(1, &blur, 0)?;
+        glass.SetEffect(&grained)?;
         let clip = device.CreateRectangleClip()?;
         glass.SetClip(&clip)?;
         // The copy spans the virtual screen; cut it down to what the blur can reach before the
         // effect runs, or DWM blurs every changing pixel of every monitor.
         let source = device.CreateRectangleClip()?;
         copy.SetClip(&source)?;
+        // Clips are aliased unless asked otherwise, which steps the notch's rounded corners.
+        glass.SetBorderMode(DCOMPOSITION_BORDER_MODE_SOFT)?;
         glass.AddVisual(&copy, false, None::<&IDCompositionVisual>)?;
         root.AddVisual(&glass, true, None::<&IDCompositionVisual>)?;
 
