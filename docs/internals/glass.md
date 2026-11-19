@@ -89,16 +89,17 @@ the contrast beside it, in five modes:
 | `TOPSY_GLASS` | What it is | Contrast kept |
 |---|---|---|
 | `clear` | transparent fill, no blur | 1.00 (control: proves the measurement) |
-| `tint` | the same fill, no blur | 0.31 (what the dark fill alone does) |
-| *(default)* | the lens, over the live glass | **0.12** (38% of what the tint leaves) |
-| `host` | the lens, over the host backdrop | 0.12 (38%) |
-| `acrylic` | window-wide acrylic, the fallback | 0.06 (19%) |
+| `tint` | the same fill, no blur | 0.49 (what the dark fill alone does) |
+| *(default)* | the lens, over the live glass | **0.21** (43% of what the tint leaves) |
+| `host` | the lens, over the host backdrop | 0.21 (43%) |
+| `acrylic` | window-wide acrylic, the fallback | 0.05 (10%) |
 
 It samples the bottom of the tray, where the fill has faded most, so with the lens it measures the lens: its blur
 matches the live glass's deviation, and what is left of the stripes there is the bevel gathering them. With
-`TOPSY_LENS=off` the live glass keeps 0.06 (21%; the grain is part of it) and the host backdrop 0.04 (13%). Both
-compositor glasses flatten 6 px stripes completely, so the check proves there is a blur, not how light it is. The
-lens's blur is a Gaussian sampled on a spiral: a grid of taps lined up with the stripes and kept 60% of them. The `tint` control matters: the fill is still
-about 70% opaque there, so it cuts stripe contrast by itself, and without the control that would look like blur.
+`TOPSY_LENS=off` the live glass keeps 0.14 (28%; the grain is part of it) and the host backdrop 0.04 (8%). The
+blur is light enough to leave some of the 6 px stripes, so the check proves there is a blur, not how light it is.
+The lens's blur is a Gaussian sampled on a spiral: a grid of taps lined up with the stripes and kept 60% of them.
+The `tint` control matters: the fill is still about half opaque there, so it cuts stripe contrast by itself, and
+without the control that would look like blur.
 A first attempt used `DwmEnableBlurBehindWindow`, which does honour an explicit blur region but is a weak blur
 (0.30 against the old, lighter tint's 0.45), with the stripes plainly visible through it. It was dropped.
