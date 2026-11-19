@@ -24,8 +24,8 @@ and re-centred every frame as the spring moves (see [Glass](glass.md)). User-fac
   which puts that app above it if it is topmost too, and other topmost windows can come along while it is hidden.
   The move that shows the notch also puts it at the top of the topmost band, without activating it.
 - **Black at the edge, glass below, measured from Droppy.** Sampled from Droppy's own screenshots: solid black
-  for the top 62% of the notch (of the height it is opening to, so the glass rises out of the black instead of the
-  black sliding down as it grows), then a straight fade to about 62% black at the bottom edge, so the backdrop's own
+  for the top 45% of the notch (of the height it is opening to, so the glass rises out of the black instead of the
+  black sliding down as it grows), then a straight fade to about 44% black at the bottom edge, so the backdrop's own
   colour shows through darkened, never greyed; ears that reach out about 14% of the height (16 px on the tray);
   and a light rim along the bottom edge, fading out up the sides where the notch is black. The closed notch is
   black all the way down. The ears are GPUI paths with their handles halfway in (softer than a circle, as
