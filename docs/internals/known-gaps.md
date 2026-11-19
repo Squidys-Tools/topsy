@@ -16,8 +16,8 @@ Keep this honest: remove a gap you close, add one you find and leave.
   untested. A taskbar docked at the top is not handled.
 - **Glass.** The fill, ears and rim are matched to Droppy's screenshots by sampling them, and compared over a
   vivid blue and a purple backdrop, not side by side with Droppy itself. The host backdrop's blur is heavier than
-  Droppy's (whose backdrop stays recognisable through the glass) and its strength can't be set; it is plain blur,
-  without acrylic's luminosity layer and noise. No Liquid Glass refraction at the edges. Not verified: Windows 10
+  Droppy's (whose backdrop stays recognisable through the glass) and its strength can't be set; it is saturated
+  but has no luminosity layer or noise. No Liquid Glass refraction at the edges. Not verified: Windows 10
   (falls back to acrylic with square corners), behaviour with "Transparency effects" turned off, and light
   backdrops.
 - **Motion.** Resizing a window every frame is not profiled, and the window trails the spring by a frame. No
