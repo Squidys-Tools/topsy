@@ -67,6 +67,8 @@ pub enum Event {
     },
     /// Where the track is; `None` when the app gives no length (a live stream).
     Timeline(Option<Timeline>),
+    /// The shown session's app, while there are others to switch to.
+    Source(Option<String>),
 }
 
 /// The app's report of where the track was at `at`.
@@ -119,6 +121,8 @@ pub struct Card<'a> {
     pub artist: Option<&'a str>,
     pub playing: bool,
     pub controls: Controls,
+    /// The app playing, while there are others to switch to.
+    pub source: Option<&'a str>,
 }
 
 #[derive(Debug, Default)]
@@ -127,6 +131,7 @@ pub struct NowPlaying {
     status: Status,
     controls: Controls,
     timeline: Option<Timeline>,
+    source: Option<String>,
 }
 
 impl NowPlaying {
@@ -173,6 +178,7 @@ impl NowPlaying {
                 }
                 return changed && self.card().is_some();
             }
+            Event::Source(source) => self.source = source,
         }
         before != self.card().map(Card::owned)
     }
@@ -206,6 +212,7 @@ impl NowPlaying {
             artist: (!track.artist.is_empty()).then_some(track.artist.as_str()),
             playing: self.status == Status::Playing,
             controls: self.controls,
+            source: self.source.as_deref(),
         })
     }
 
@@ -216,9 +223,16 @@ impl NowPlaying {
 }
 
 impl Card<'_> {
-    fn owned(self) -> (String, Option<String>, bool, Controls) {
+    fn owned(self) -> (String, Option<String>, bool, Controls, Option<String>) {
         let artist = self.artist.map(str::to_owned);
-        (self.title.to_owned(), artist, self.playing, self.controls)
+        let source = self.source.map(str::to_owned);
+        (
+            self.title.to_owned(),
+            artist,
+            self.playing,
+            self.controls,
+            source,
+        )
     }
 }
 
@@ -308,6 +322,18 @@ mod tests {
         assert!(!media.apply(Event::Track(Track::new("Song", "Band"))));
         assert!(!media.apply(playback(Status::Playing)));
         assert!(media.apply(Event::Track(Track::new("Next", "Band"))));
+    }
+
+    #[test]
+    fn the_source_shows_on_the_card_until_the_session_is_gone() {
+        let mut media = playing("Song", "Band");
+        assert!(media.apply(Event::Source(Some("Spotify".into()))));
+        assert_eq!(media.card().unwrap().source, Some("Spotify"));
+        assert!(!media.apply(Event::Source(Some("Spotify".into()))));
+        media.apply(Event::Gone);
+        media.apply(Event::Track(Track::new("Song", "Band")));
+        media.apply(playback(Status::Playing));
+        assert_eq!(media.card().unwrap().source, None);
     }
 
     #[test]

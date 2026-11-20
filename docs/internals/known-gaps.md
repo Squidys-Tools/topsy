@@ -39,10 +39,10 @@ Keep this honest: remove a gap you close, add one you find and leave.
   has no rename: the island never takes focus. After the share sheet closes, the basket or island it was opened
   over keeps the foreground until you click elsewhere.
 - **Now Playing.** The level bars read the default output device, so a player routed to another output (per-app
-  output in Sound settings) shows resting bars. It follows only the system's *current* session (the one Windows
-  picks), with no way to switch between several. Its art is fetched on every properties change, not cached by
-  track. Not checked on the desktop yet: apps that report art late or not at all, and an app that never answers
-  a button.
+  output in Sound settings) shows resting bars. Its art is fetched on every properties change, not cached by
+  track. Two sessions of one app (two browser tabs) are told apart by their order, so a tab closing can move a
+  switch to its neighbour. Not checked on the desktop yet: apps that report art late or not at all, an app that
+  never answers a button, and switching between apps.
 - **Clipboard history.** If another app holds Ctrl+Alt+V the strip can't open (logged), and the hotkey can't be
   changed. Paste sends Ctrl+V, which a terminal that pastes on Ctrl+Shift+V ignores (the entry is still on the
   clipboard). Rich text and HTML are kept as plain text. The cap counts entries, not bytes, so a long history of

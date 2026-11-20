@@ -5,12 +5,13 @@ use std::path::Path;
 
 use windows::Win32::Storage::FileSystem::{MOVE_FILE_FLAGS, MoveFileExW};
 
-use windows::Win32::System::Com::COINIT_APARTMENTTHREADED;
+use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoTaskMemFree};
 use windows::Win32::UI::Shell::{
-    ILCreateFromPathW, ILFree, SHOpenFolderAndSelectItems, ShellExecuteW,
+    FOLDERID_AppsFolder, ILCreateFromPathW, ILFree, IShellItem, KF_FLAG_DEFAULT,
+    SHCreateItemInKnownFolder, SHOpenFolderAndSelectItems, SIGDN_NORMALDISPLAY, ShellExecuteW,
 };
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
-use windows::core::{PCWSTR, w};
+use windows::core::{HSTRING, PCWSTR, w};
 
 use super::{wide, with_com};
 
@@ -57,4 +58,21 @@ pub fn show_in_folder(path: &Path) -> bool {
 pub fn move_new(from: &Path, to: &Path) -> io::Result<()> {
     let wide = |p: &Path| windows::core::HSTRING::from(p.as_os_str());
     unsafe { MoveFileExW(&wide(from), &wide(to), MOVE_FILE_FLAGS(0)) }.map_err(io::Error::from)
+}
+
+/// The name Start shows for the app with this AppUserModelID (`Chrome` reads `Google Chrome`),
+/// if it is installed under it. Wants COM on the calling thread.
+pub fn app_name(app_id: &str) -> Option<String> {
+    unsafe {
+        let item: IShellItem = SHCreateItemInKnownFolder(
+            &FOLDERID_AppsFolder,
+            KF_FLAG_DEFAULT,
+            &HSTRING::from(app_id),
+        )
+        .ok()?;
+        let name = item.GetDisplayName(SIGDN_NORMALDISPLAY).ok()?;
+        let text = name.to_string().ok();
+        CoTaskMemFree(Some(name.0 as _));
+        text.filter(|t| !t.is_empty())
+    }
 }
