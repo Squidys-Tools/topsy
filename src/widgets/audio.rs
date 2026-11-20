@@ -203,7 +203,9 @@ fn row(
                 .flex_shrink_0()
                 .text_size(px(11.0))
                 .font_weight(FontWeight::MEDIUM)
-                .truncate()
+                // Not `truncate`: GPUI keeps a no-wrap text's first measure, so it would never cut.
+                .line_clamp(1)
+                .text_ellipsis()
                 .child(app.name.clone()),
         )
         .child(slide)
