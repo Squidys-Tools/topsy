@@ -17,6 +17,7 @@ mod icons;
 mod island;
 mod log;
 mod look;
+mod new_folder;
 mod now_playing;
 mod settings;
 mod state;
