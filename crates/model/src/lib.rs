@@ -41,6 +41,7 @@ pub mod pdf_image;
 pub mod pdf_place;
 pub mod pomodoro;
 pub mod selection;
+pub mod sessions;
 pub mod shelf;
 pub mod size_search;
 pub mod spring;

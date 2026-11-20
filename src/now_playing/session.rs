@@ -1,11 +1,13 @@
 //! Now Playing's glue to Windows' Global System Media Transport Controls (the session the
 //! volume flyout shows).
 //!
-//! One thread owns the session manager and the current session. WinRT raises its events on
-//! thread-pool threads; their handlers only wake that thread, which reads the session and
-//! sends an [`Update`] to the UI thread. Button presses reach it the same way, so neither the
-//! UI thread nor a GPUI handler ever waits on the media app. Nothing runs between events.
+//! One thread owns the session manager and every session, and watches the one shown
+//! (`model::sessions` picks it). WinRT raises its events on thread-pool threads; their handlers
+//! only wake that thread, which reads the session and sends an [`Update`] to the UI thread.
+//! Button presses reach it the same way, so neither the UI thread nor a GPUI handler ever waits
+//! on the media app. Nothing runs between events.
 
+use std::collections::HashMap;
 use std::sync::mpsc;
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -28,6 +30,7 @@ use windows::Win32::System::Com::COINIT_MULTITHREADED;
 use crate::log::LogErr;
 use crate::win32;
 use model::media::{Controls, Event, Status, Timeline, Track};
+use model::sessions::{self, Sessions, Source};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Button {
@@ -49,16 +52,19 @@ pub struct Art {
 }
 
 enum Wake {
-    Session,
+    /// A session came, went, or Windows picked another as current.
+    Sessions,
     Properties,
+    /// Any session's playback changed.
     Playback,
     Timeline,
     Press(Button),
+    Switch,
 }
 
 static WAKE: OnceLock<mpsc::Sender<Wake>> = OnceLock::new();
 
-/// Watch the current media session on a thread of its own. `art_size` is the art's shorter
+/// Watch the media sessions on a thread of its own. `art_size` is the art's shorter
 /// side in physical pixels.
 pub fn spawn(art_size: u32) -> async_channel::Receiver<Update> {
     let (tx, rx) = async_channel::unbounded();
@@ -81,27 +87,70 @@ pub fn spawn(art_size: u32) -> async_channel::Receiver<Update> {
     rx
 }
 
-/// Ask the current session's app to act; it answers with a playback event. Never blocks.
+/// Ask the shown session's app to act; it answers with a playback event. Never blocks.
 pub fn press(button: Button) {
+    wake(Wake::Press(button));
+}
+
+/// Show the next session that is playing or paused.
+pub fn switch() {
+    wake(Wake::Switch);
+}
+
+fn wake(what: Wake) {
     if let Some(wake) = WAKE.get() {
-        wake.send(Wake::Press(button)).log_err();
+        wake.send(what).log_err();
     }
 }
 
-/// The current session and its event registrations, removed when it is replaced.
-struct Watched {
+/// A session, its playback as last read, and its playback registration, removed on drop.
+struct Tracked {
+    id: String,
+    app: String,
     session: Session,
-    tokens: (i64, i64, i64),
+    status: Status,
+    token: i64,
+}
+
+impl Tracked {
+    fn new(
+        id: String,
+        app: String,
+        session: Session,
+        wake: &mpsc::Sender<Wake>,
+    ) -> windows::core::Result<Self> {
+        let token = session.PlaybackInfoChanged(&handler(wake, || Wake::Playback))?;
+        Ok(Self {
+            id,
+            app,
+            session,
+            status: Status::Idle,
+            token,
+        })
+    }
+}
+
+impl Drop for Tracked {
+    fn drop(&mut self) {
+        self.session.RemovePlaybackInfoChanged(self.token).log_err();
+    }
+}
+
+/// The shown session under its id, and its track and timeline registrations, removed on drop.
+struct Watched {
+    id: String,
+    session: Session,
+    tokens: (i64, i64),
 }
 
 impl Watched {
-    fn new(session: Session, wake: &mpsc::Sender<Wake>) -> windows::core::Result<Self> {
+    fn new(id: String, session: Session, wake: &mpsc::Sender<Wake>) -> windows::core::Result<Self> {
         let props = session.MediaPropertiesChanged(&handler(wake, || Wake::Properties))?;
-        let playback = session.PlaybackInfoChanged(&handler(wake, || Wake::Playback))?;
         let timeline = session.TimelinePropertiesChanged(&handler(wake, || Wake::Timeline))?;
         Ok(Self {
+            id,
             session,
-            tokens: (props, playback, timeline),
+            tokens: (props, timeline),
         })
     }
 }
@@ -112,11 +161,131 @@ impl Drop for Watched {
             .RemoveMediaPropertiesChanged(self.tokens.0)
             .log_err();
         self.session
-            .RemovePlaybackInfoChanged(self.tokens.1)
+            .RemoveTimelinePropertiesChanged(self.tokens.1)
             .log_err();
-        self.session
-            .RemoveTimelinePropertiesChanged(self.tokens.2)
-            .log_err();
+    }
+}
+
+/// Every session, the one shown, and what the island was last told of its app.
+struct Watch<'a> {
+    manager: Manager,
+    wake: &'a mpsc::Sender<Wake>,
+    tx: &'a async_channel::Sender<Update>,
+    art_size: u32,
+    tracked: Vec<Tracked>,
+    sessions: Sessions,
+    shown: Option<Watched>,
+    source: Option<String>,
+    names: HashMap<String, String>,
+}
+
+impl Watch<'_> {
+    fn send(&self, event: Event, art: Option<Art>) -> bool {
+        self.tx.send_blocking(Update { event, art }).is_ok()
+    }
+
+    /// Nothing to send counts as sent.
+    fn report(&self, event: Option<Event>) -> bool {
+        event.is_none_or(|event| self.send(event, None))
+    }
+
+    /// Track the sessions there are now, each under an id of its own.
+    fn reload(&mut self) {
+        let old = std::mem::take(&mut self.tracked);
+        let Some(all) = self.manager.GetSessions().log_err() else {
+            return;
+        };
+        let all: Vec<Session> = all.into_iter().collect();
+        let apps: Vec<String> = all
+            .iter()
+            .map(|s| {
+                s.SourceAppUserModelId()
+                    .map(|a| a.to_string_lossy())
+                    .unwrap_or_default()
+            })
+            .collect();
+        let ids = sessions::ids(&apps);
+        for ((session, id), app) in all.into_iter().zip(ids).zip(apps) {
+            if let Some(mut tracked) = Tracked::new(id, app, session, self.wake).log_err() {
+                // A session between tracks reads no status, so it keeps the one it had.
+                let before = (old
+                    .iter()
+                    .find(|previous| previous.session == tracked.session))
+                .or_else(|| old.iter().find(|previous| previous.id == tracked.id));
+                if let Some(before) = before {
+                    tracked.status = before.status;
+                }
+                self.tracked.push(tracked);
+            }
+        }
+    }
+
+    /// Read every session's playback, let the rules pick the one to show, and tell the island
+    /// what changed. `recheck` rewatches the shown session when its id now names another.
+    /// False once the island is gone.
+    fn pick(&mut self, recheck: bool) -> bool {
+        for tracked in &mut self.tracked {
+            if let Some(status) = status(&tracked.session) {
+                tracked.status = status;
+            }
+        }
+        let sources = self.tracked.iter().map(|t| Source {
+            id: t.id.clone(),
+            status: t.status,
+        });
+        let current = self.manager.GetCurrentSession().ok().and_then(|current| {
+            let app = current.SourceAppUserModelId().ok()?.to_string_lossy();
+            let same = self.tracked.iter().find(|t| t.session == current);
+            same.or_else(|| self.tracked.iter().find(|t| t.app == app))
+                .map(|t| t.id.clone())
+        });
+        self.sessions.update(sources.collect(), current);
+        let shown = (self.sessions.shown())
+            .and_then(|id| self.tracked.iter().find(|t| t.id == id))
+            .map(|t| (t.id.clone(), t.session.clone()));
+        let same = match (&self.shown, &shown) {
+            (Some(watched), Some((id, session))) => {
+                watched.id == *id && (!recheck || watched.session == *session)
+            }
+            (None, None) => true,
+            (Some(_), None) | (None, Some(_)) => false,
+        };
+        (same || self.show(shown)) && self.tell_source()
+    }
+
+    /// Watch `shown` (an id and its session) and send all about it, or that there is none.
+    fn show(&mut self, shown: Option<(String, Session)>) -> bool {
+        self.shown = None;
+        let Some((id, session)) = shown else {
+            // The island forgets the source along with the session.
+            self.source = None;
+            return self.send(Event::Gone, None);
+        };
+        self.shown = Watched::new(id, session.clone(), self.wake).log_err();
+        let (track, art) = track(&session, self.art_size);
+        self.send(Event::Track(track), art)
+            && self.report(playback(&session))
+            && self.report(timeline(&session))
+    }
+
+    /// Send the shown session's app, while there are others to switch to, when it changed.
+    fn tell_source(&mut self) -> bool {
+        let app = (self.shown.as_ref())
+            .filter(|_| self.sessions.others())
+            .and_then(|w| self.tracked.iter().find(|t| t.id == w.id))
+            .map(|t| t.app.clone());
+        let source = app.map(|app| {
+            (self.names.entry(app))
+                .or_insert_with_key(|app| {
+                    win32::app_name(app).unwrap_or_else(|| sessions::app_name(app))
+                })
+                .clone()
+        });
+        if source == self.source {
+            return true;
+        }
+        self.source = source.clone();
+        self.send(Event::Source(source), None)
     }
 }
 
@@ -139,38 +308,50 @@ fn run(
     art_size: u32,
 ) -> windows::core::Result<()> {
     let manager = Manager::RequestAsync()?.join()?;
-    manager.CurrentSessionChanged(&handler(wake, || Wake::Session))?;
-    wake.send(Wake::Session).log_err();
-    let send = |event: Event, art| tx.send_blocking(Update { event, art }).is_ok();
-    // Nothing to send counts as sent.
-    let report = |event: Option<Event>| event.is_none_or(|event| send(event, None));
-    let mut current: Option<Watched> = None;
+    manager.CurrentSessionChanged(&handler(wake, || Wake::Sessions))?;
+    manager.SessionsChanged(&handler(wake, || Wake::Sessions))?;
+    wake.send(Wake::Sessions).log_err();
+    let mut watch = Watch {
+        manager,
+        wake,
+        tx,
+        art_size,
+        tracked: Vec::new(),
+        sessions: Sessions::default(),
+        shown: None,
+        source: None,
+        names: HashMap::new(),
+    };
     while let Ok(wake_up) = woken.recv() {
-        let session = current.as_ref().map(|w| &w.session);
+        let session = watch.shown.as_ref().map(|w| w.session.clone());
         let sent = match (wake_up, session) {
-            (Wake::Session, _) => {
-                current = None;
-                match manager.GetCurrentSession().ok() {
-                    None => send(Event::Gone, None),
-                    Some(session) => {
-                        current = Watched::new(session.clone(), wake).ok();
-                        let (track, art) = track(&session, art_size);
-                        send(Event::Track(track), art)
-                            && report(playback(&session))
-                            && report(timeline(&session))
-                    }
-                }
+            (Wake::Sessions, _) => {
+                watch.reload();
+                watch.pick(true)
+            }
+            (Wake::Switch, _) => {
+                watch.sessions.next();
+                watch.pick(false)
+            }
+            // Any session's playback may change which is shown; a newly shown one is reported
+            // whole, else the shown one's playback, and its position, which some apps only
+            // report along with it.
+            (Wake::Playback, session) => {
+                let before = watch.shown.as_ref().map(|w| w.id.clone());
+                let picked = watch.pick(false);
+                let after = watch.shown.as_ref().map(|w| w.id.clone());
+                picked
+                    && (before != after
+                        || session.is_none_or(|session| {
+                            watch.report(playback(&session)) && watch.report(timeline(&session))
+                        }))
             }
             (Wake::Properties, Some(session)) => {
                 // A new track drops the old one's position, so read the new one's after it.
-                let (track, art) = track(session, art_size);
-                send(Event::Track(track), art) && report(timeline(session))
+                let (track, art) = track(&session, art_size);
+                watch.send(Event::Track(track), art) && watch.report(timeline(&session))
             }
-            // Some apps only report the position along with a change of playback.
-            (Wake::Playback, Some(session)) => {
-                report(playback(session)) && report(timeline(session))
-            }
-            (Wake::Timeline, Some(session)) => report(timeline(session)),
+            (Wake::Timeline, Some(session)) => watch.report(timeline(&session)),
             (Wake::Press(button), Some(session)) => {
                 // Not waited on: the app reports the outcome as a playback event.
                 match button {
@@ -181,7 +362,7 @@ fn run(
                 .log_err();
                 true
             }
-            (_, None) => true,
+            (Wake::Properties | Wake::Timeline | Wake::Press(_), None) => true,
         };
         if !sent {
             break;
@@ -211,12 +392,7 @@ fn playback(session: &Session) -> Option<Event> {
     let Ok(info) = session.GetPlaybackInfo() else {
         return Some(Event::Gone);
     };
-    let status = match info.PlaybackStatus() {
-        Ok(PlaybackStatus::Playing) => Status::Playing,
-        Ok(PlaybackStatus::Paused) => Status::Paused,
-        Ok(PlaybackStatus::Changing) => return None,
-        _ => Status::Idle,
-    };
+    let status = status_of(info.PlaybackStatus())?;
     let controls = info.Controls().ok().map(|c| {
         let on = |b: windows::core::Result<bool>| b.unwrap_or(false);
         Controls {
@@ -232,6 +408,20 @@ fn playback(session: &Session) -> Option<Event> {
         controls: controls.unwrap_or_default(),
         at,
     })
+}
+
+/// The session's playback; `None` while it is between tracks, as for [`playback`].
+fn status(session: &Session) -> Option<Status> {
+    status_of(session.GetPlaybackInfo().ok()?.PlaybackStatus())
+}
+
+fn status_of(status: windows::core::Result<PlaybackStatus>) -> Option<Status> {
+    match status {
+        Ok(PlaybackStatus::Playing) => Some(Status::Playing),
+        Ok(PlaybackStatus::Paused) => Some(Status::Paused),
+        Ok(PlaybackStatus::Changing) => None,
+        _ => Some(Status::Idle),
+    }
 }
 
 /// Where the track is, as of when the app last said. WinRT counts in 100 ns ticks; its clock
