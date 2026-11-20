@@ -29,8 +29,11 @@ Keep this honest: remove a gap you close, add one you find and leave.
   thumbnail. Until the picture arrives, or if the shell has none, the chip shows an extension badge. A PDF's chip
   shows its first page only once pdfium has been downloaded (by the Transform panel or *Convert* on a PDF);
   before that it has the shell's icon.
-- **Zip.** *Compress to ZIP file* shows no progress, and a big folder can take a while before its chip appears.
-  Errors only go to stderr. Quitting mid-zip leaves the partial zip behind.
+- **Zip.** *Compress to ZIP file* and *Extract here* show no progress, and a big folder or zip can take a while
+  before its chip appears. Errors only go to stderr. Quitting mid-zip leaves the partial zip behind, and quitting
+  mid-extract the partial folder. Extraction has no guard against a zip bomb beyond the disk filling up.
+- **Selection.** Chips are picked with Ctrl- and Shift-click only: no Ctrl+A (the island never takes the keys)
+  and no dragging a box around them. The basket has no *Extract here* or *New folder with selection*.
 - **Tray.** A file dragged straight into a tray already opened by a click keeps the player on screen until it
   lands. The drop lands anywhere on the tray.
 - **Basket.** Droppy's basket settings are not copied. A hidden basket shows nothing on screen until the next

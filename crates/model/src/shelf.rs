@@ -6,6 +6,8 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::selection::Selection;
+
 /// What a chip is on disk. A dropped path starts `Unknown`: the stat runs off the
 /// UI thread (a dead network share can stall it for its timeout) and
 /// `Shelf::resolve_kinds` merges the answer back, so the chip never waits on it.
@@ -56,16 +58,23 @@ impl Item {
         }
         (hash % 360) as f32 / 360.0
     }
+
+    /// A file with the `.zip` extension, which the shelf offers to extract.
+    pub fn is_zip(&self) -> bool {
+        self.kind == Kind::File
+            && (self.path.extension()).is_some_and(|ext| ext.eq_ignore_ascii_case("zip"))
+    }
 }
 
 /// Windows paths compare case-insensitively, accents and all.
-fn same_path(a: &Path, b: &Path) -> bool {
+pub(crate) fn same_path(a: &Path, b: &Path) -> bool {
     a.to_string_lossy().to_lowercase() == b.to_string_lossy().to_lowercase()
 }
 
 #[derive(Default)]
 pub struct Shelf {
     items: Vec<Item>,
+    selection: Selection,
 }
 
 impl Shelf {
@@ -114,24 +123,29 @@ impl Shelf {
     }
 
     pub fn remove(&mut self, index: usize) -> Option<Item> {
-        (index < self.items.len()).then(|| self.items.remove(index))
+        let removed = (index < self.items.len()).then(|| self.items.remove(index));
+        self.selection.keep(&self.items);
+        removed
     }
 
     /// Remove the item for `path`; false if it wasn't there.
     pub fn remove_path(&mut self, path: &Path) -> bool {
         let before = self.items.len();
         self.items.retain(|i| !same_path(&i.path, path));
+        self.selection.keep(&self.items);
         self.items.len() != before
     }
 
     pub fn clear(&mut self) {
         self.items.clear();
+        self.selection.clear();
     }
 
     /// A file was renamed on disk: its chip follows, where it was. False if it isn't parked.
     pub fn rename(&mut self, from: &Path, to: PathBuf) -> bool {
         match self.items.iter_mut().find(|i| same_path(&i.path, from)) {
             Some(item) => {
+                self.selection.rename(from, &to);
                 item.path = to;
                 true
             }
@@ -143,7 +157,42 @@ impl Shelf {
     pub fn prune(&mut self, exists: impl Fn(&Path) -> bool) -> usize {
         let before = self.items.len();
         self.items.retain(|i| exists(&i.path));
+        self.selection.keep(&self.items);
         before - self.items.len()
+    }
+
+    pub fn selection(&self) -> &Selection {
+        &self.selection
+    }
+
+    pub fn is_selected(&self, index: usize) -> bool {
+        (self.items.get(index)).is_some_and(|i| self.selection.contains(&i.path))
+    }
+
+    /// Ctrl-click: pick the chip at `index`, or put it back.
+    pub fn toggle_selected(&mut self, index: usize) {
+        self.selection.toggle(&self.items, index);
+    }
+
+    /// Shift-click: pick the run of chips from the last one Ctrl-clicked to `index`.
+    pub fn select_through(&mut self, index: usize) {
+        self.selection.extend(&self.items, index);
+    }
+
+    pub fn deselect(&mut self) {
+        self.selection.clear();
+    }
+
+    /// What dragging or a menu on the chip at `index` acts on: the selection, in shelf order,
+    /// when the chip is in it, else the chip alone.
+    pub fn targets(&self, index: usize) -> Vec<Item> {
+        if !self.is_selected(index) {
+            return self.items.get(index).cloned().into_iter().collect();
+        }
+        (self.items.iter())
+            .filter(|i| self.selection.contains(&i.path))
+            .cloned()
+            .collect()
     }
 }
 
@@ -298,6 +347,9 @@ mod tests {
         assert_eq!(item(r"C:\x\Makefile", Kind::File).badge_label(), "FILE");
         assert_eq!(item(r"C:\x\folder", Kind::Dir).badge_label(), "DIR");
         assert_eq!(item(r"C:\x\pic.png", Kind::Unknown).badge_label(), "…");
+        assert!(item(r"C:\x\a.ZIP", Kind::File).is_zip());
+        assert!(!item(r"C:\x\a.zip", Kind::Dir).is_zip());
+        assert!(!item(r"C:\x\zip", Kind::File).is_zip());
     }
 
     #[test]

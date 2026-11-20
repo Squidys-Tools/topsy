@@ -1,9 +1,10 @@
-//! Compress to .zip: a shelf file or folder, zipped beside the original.
+//! Compress to .zip and extract a .zip: shelf files zipped beside the originals, a zip unpacked
+//! into a folder beside it.
 //!
 //! Reads and writes every byte of it, so run it on a worker thread, never the UI thread.
 
 use std::fs::{self, File, Metadata, OpenOptions};
-use std::io::{self, BufWriter, Write};
+use std::io::{self, BufReader, BufWriter, Write};
 use std::os::windows::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -11,10 +12,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use windows::Win32::Foundation::{FILETIME, SYSTEMTIME};
 use windows::Win32::System::Time::{FileTimeToSystemTime, SystemTimeToTzSpecificLocalTime};
 use zip::write::SimpleFileOptions;
-use zip::{CompressionMethod, ZipWriter};
+use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
 use crate::log::{LogErr, MissingOk};
-use model::archive::{entry_name, zip_paths};
+use model::archive::{entry_name, entry_path, extract_paths, zip_paths};
 
 /// Zip `source` into a new file beside it (`report.zip`, or `report (2).zip` if that is taken)
 /// and return its path. A folder is zipped whole, under its own name, as Explorer does. On any
@@ -31,6 +32,88 @@ pub fn compress(source: &Path) -> io::Result<PathBuf> {
         fs::remove_file(&path).missing_ok().log_err();
     }
     written.map(|()| path)
+}
+
+/// Zip `sources` into one new file beside the first, named after it as [`compress`] names a
+/// zip of it alone. One source is [`compress`].
+pub fn compress_all(sources: &[PathBuf]) -> io::Result<PathBuf> {
+    let [first, rest @ ..] = sources else {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "nothing to zip",
+        ));
+    };
+    if rest.is_empty() {
+        return compress(first);
+    }
+    let candidates = zip_paths(first, fs::metadata(first)?.is_dir())
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "no folder to zip it into"))?;
+    let (path, file) = reserve(candidates)?;
+    drop(file);
+    let written = compress_files(sources, &path, &AtomicBool::new(false));
+    if written.is_err() {
+        fs::remove_file(&path).missing_ok().log_err();
+    }
+    written.map(|()| path)
+}
+
+/// Extract the zip at `zip` into a new folder beside it, named after it (`photos`, or
+/// `photos (2)` if that is taken), and return the folder. Nothing is overwritten, and an entry
+/// that would land outside the folder fails the whole extraction; on any failure the folder is
+/// deleted again. Links inside the zip are left out, as [`compress`] leaves them out.
+pub fn extract(zip: &Path) -> io::Result<PathBuf> {
+    let mut archive = ZipArchive::new(BufReader::new(File::open(zip)?))?;
+    let candidates = extract_paths(zip)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "no folder to extract into"))?;
+    let dir = reserve_dir(candidates)?;
+    let unpacked = unpack(&mut archive, &dir);
+    if unpacked.is_err() {
+        fs::remove_dir_all(&dir).missing_ok().log_err();
+    }
+    unpacked.map(|()| dir)
+}
+
+fn unpack(archive: &mut ZipArchive<BufReader<File>>, dir: &Path) -> io::Result<()> {
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index)?;
+        if entry.is_symlink() {
+            continue;
+        }
+        let name = entry.name()?.into_owned();
+        let target = (entry_path(&name))
+            .map(|relative| dir.join(relative))
+            .ok_or_else(|| {
+                io::Error::new(io::ErrorKind::InvalidData, format!("unsafe entry {name:?}"))
+            })?;
+        if entry.is_dir() {
+            fs::create_dir_all(&target)?;
+            continue;
+        }
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let mut out = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&target)?;
+        io::copy(&mut entry, &mut out)?;
+    }
+    Ok(())
+}
+
+/// Create the first free folder of `candidates`; like [`reserve`], never one already there.
+pub(crate) fn reserve_dir(candidates: impl Iterator<Item = PathBuf>) -> io::Result<PathBuf> {
+    for path in candidates {
+        match fs::create_dir(&path) {
+            Ok(()) => return Ok(path),
+            Err(err) if err.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(err) => return Err(err),
+        }
+    }
+    Err(io::Error::new(
+        io::ErrorKind::AlreadyExists,
+        "no free name for the folder",
+    ))
 }
 
 /// Zip several files or folders into `out` (already created), each under its own name at the
@@ -267,6 +350,66 @@ mod tests {
                 ("a.jpg".into(), b"x".to_vec())
             ]
         );
+    }
+
+    #[test]
+    fn several_files_are_zipped_into_one_named_after_the_first() {
+        let scratch = Scratch::new("all");
+        let (a, b) = (scratch.0.join("a.txt"), scratch.0.join("b"));
+        fs::write(&a, b"a").unwrap();
+        fs::create_dir_all(&b).unwrap();
+        fs::write(b.join("c.txt"), b"c").unwrap();
+        fs::write(scratch.0.join("a.zip"), b"not ours").unwrap();
+
+        let zip = compress_all(&[a, b]).unwrap();
+        assert_eq!(zip, scratch.0.join("a (2).zip"));
+        assert_eq!(
+            entries(&zip),
+            [
+                ("a.txt".into(), b"a".to_vec()),
+                ("b/".into(), Vec::new()),
+                ("b/c.txt".into(), b"c".to_vec()),
+            ]
+        );
+        assert_eq!(fs::read(scratch.0.join("a.zip")).unwrap(), b"not ours");
+    }
+
+    /// A zip at `path` holding `files` (name and bytes), written as they are named.
+    fn make_zip(path: &Path, files: &[(&str, &[u8])]) {
+        let mut zip = ZipWriter::new(File::create(path).unwrap());
+        for (name, data) in files {
+            zip.start_file(*name, SimpleFileOptions::default()).unwrap();
+            zip.write_all(data).unwrap();
+        }
+        zip.finish().unwrap();
+    }
+
+    #[test]
+    fn a_zip_is_extracted_beside_itself_and_never_over_anything() {
+        let scratch = Scratch::new("extract");
+        let zip = scratch.0.join("photos.zip");
+        make_zip(&zip, &[("a.jpg", b"a"), ("2024/b.jpg", b"b")]);
+        fs::create_dir_all(scratch.0.join("photos")).unwrap();
+
+        let dir = extract(&zip).unwrap();
+        assert_eq!(dir, scratch.0.join("photos (2)"));
+        assert_eq!(fs::read(dir.join("a.jpg")).unwrap(), b"a");
+        assert_eq!(fs::read(dir.join("2024").join("b.jpg")).unwrap(), b"b");
+        assert_eq!(fs::read_dir(scratch.0.join("photos")).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn a_zip_that_climbs_out_extracts_nothing() {
+        let scratch = Scratch::new("slip");
+        let zip = scratch.0.join("evil.zip");
+        make_zip(&zip, &[("fine.txt", b"x"), ("../escaped.txt", b"x")]);
+
+        assert!(extract(&zip).is_err());
+        let left: Vec<_> = fs::read_dir(&scratch.0)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(left, ["evil.zip"]);
     }
 
     #[test]
