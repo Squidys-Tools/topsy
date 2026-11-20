@@ -34,6 +34,8 @@ const TIMES: f32 = 12.0;
 const TIME_WIDTH: f32 = 48.0;
 const BAR: f32 = 8.0;
 const BUTTON: (f32, f32) = (48.0, 36.0);
+/// The app's name beside the buttons, at most as wide as the room left of them.
+const SOURCE_WIDTH: f32 = 96.0;
 const DIM: u32 = 0xffffff80;
 const GLYPH: u32 = 0xebebeb;
 
@@ -132,6 +134,7 @@ impl Media {
             artist,
             playing,
             controls,
+            source,
         } = card;
         let buttons = [
             (Button::Previous, Icon::Previous, controls.previous),
@@ -196,12 +199,14 @@ impl Media {
                 .child(timeline(progress))
                 .child(
                     div()
+                        .relative()
                         .mt(px(10.0))
                         .flex()
                         .flex_row()
                         .justify_center()
                         .gap(px(14.0))
-                        .children(buttons),
+                        .children(buttons)
+                        .children(source.map(|app| switch(app, cx))),
                 ),
         )
     }
@@ -408,6 +413,47 @@ fn art(art: Option<&Arc<RenderImage>>, side: f32, radius: f32) -> Option<impl In
             .rounded(px(radius))
             .object_fit(ObjectFit::Fill)
     })
+}
+
+/// The app playing, beside the buttons while another app has a session too: a click shows the
+/// next one.
+fn switch(app: &str, cx: &mut Context<Island>) -> impl IntoElement + use<> {
+    div()
+        .id("media-source")
+        .absolute()
+        .left_0()
+        .top_0()
+        .h(px(BUTTON.1))
+        .max_w(px(SOURCE_WIDTH))
+        .px(px(8.0))
+        .rounded(px(10.0))
+        .flex()
+        .items_center()
+        .text_size(px(12.0))
+        .font_weight(FontWeight::SEMIBOLD)
+        .text_color(rgba(DIM))
+        .cursor_pointer()
+        .hover(|style| style.bg(rgba(0xffffff14)).text_color(rgb(GLYPH)))
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(|island, _: &MouseDownEvent, _window, cx| {
+                island.update_media(cx, |_, _, _| Some(Effect::Pressed));
+                cx.stop_propagation();
+            }),
+        )
+        .on_click(cx.listener(|_, _: &ClickEvent, _window, cx| {
+            cx.stop_propagation();
+            log("media switch");
+            media::switch();
+        }))
+        .child(
+            div()
+                .max_w(px(SOURCE_WIDTH - 16.0))
+                // Not `truncate`: GPUI keeps a no-wrap text's first measure, so it would never cut.
+                .line_clamp(1)
+                .text_ellipsis()
+                .child(app.to_owned()),
+        )
 }
 
 /// A media button. Pressing it asks the session's app from the media thread; the icon changes

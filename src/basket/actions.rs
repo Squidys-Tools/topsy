@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use gpui::{ClipboardItem, Context, Window};
+use gpui::{Context, Window};
 
 use super::Basket;
 use crate::island::chip::{self, ACTIONS, Action};
@@ -111,14 +111,11 @@ impl Basket {
         log(&format!("basket {action:?} {}", paths.len()));
         match (action, target) {
             (Action::ShowInFolder, Target::One(item)) => chip::show_in_folder(item.path),
-            (Action::CopyPath, _) => {
-                let quoted: Vec<String> = (paths.iter())
-                    .map(|p| format!("\"{}\"", p.display()))
-                    .collect();
-                cx.write_to_clipboard(ClipboardItem::new_string(quoted.join("\r\n")));
-            }
+            (Action::CopyPath, _) => chip::copy_as_paths(&paths, cx),
             (Action::Compress, Target::One(item)) => {
-                chip::zip(item, cx, |this: &mut Self, zip, cx| this.add(vec![zip], cx));
+                chip::zip(vec![item.path], cx, |this: &mut Self, zip, cx| {
+                    this.add(vec![zip], cx)
+                });
             }
             (Action::Transform, _) => {
                 if let Some(island) = self.island.upgrade() {
@@ -135,7 +132,14 @@ impl Basket {
                     }
                 }
             }
-            (Action::ShowInFolder | Action::Compress | Action::Rename, _) => {}
+            (
+                Action::ShowInFolder
+                | Action::Compress
+                | Action::Rename
+                | Action::Extract
+                | Action::NewFolder,
+                _,
+            ) => {}
         }
     }
 }

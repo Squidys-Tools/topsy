@@ -1,6 +1,9 @@
 //! A chip: one file on the shelf as the tray draws it, and what can be done with it (open it,
-//! drag it out, the actions in its right-click menu).
+//! pick it with Ctrl or Shift, drag it out, the actions in its right-click menu).
 
+mod menu;
+
+use std::io;
 use std::path::PathBuf;
 
 use gpui::{
@@ -10,12 +13,14 @@ use gpui::{
 
 use crate::icons::{Icon, icon};
 use crate::log::LogErr;
-use model::shelf::{Item, Kind};
+use model::shelf::Item;
 use windows::Win32::Foundation::HWND;
 
-use crate::island::{COLLAPSE_AFTER_LEAVE, COLLAPSE_AFTER_RELEASE};
-use crate::win32::{self, DragOutcome, MenuEntry};
+use crate::island::COLLAPSE_AFTER_RELEASE;
+use crate::win32::{self, DragOutcome};
 use crate::{Island, archive, log};
+
+pub(crate) use menu::{ACTIONS, Action};
 
 /// How far (logical pixels) a pressed chip must be dragged before it becomes a drag out.
 pub(crate) const DRAG_OUT_THRESHOLD: f32 = 6.0;
@@ -23,39 +28,6 @@ pub(crate) const DRAG_OUT_THRESHOLD: f32 = 6.0;
 pub(crate) const CHIP: (f32, f32) = (72.0, 70.0);
 /// The picture at the top of a chip, square.
 pub const ICON: f32 = 38.0;
-
-/// What a chip's right-click menu offers; each is its own menu id.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Action {
-    ShowInFolder = 1,
-    CopyPath,
-    Compress,
-    Remove,
-    Transform,
-    Share,
-    /// The basket's only: renaming types into the window, and the island never takes the keys.
-    Rename,
-}
-
-pub(crate) const ACTIONS: [Action; 7] = [
-    Action::ShowInFolder,
-    Action::CopyPath,
-    Action::Compress,
-    Action::Remove,
-    Action::Transform,
-    Action::Share,
-    Action::Rename,
-];
-
-const MENU: [MenuEntry; 7] = [
-    MenuEntry::Item(Action::Transform as usize, "&Transform…"),
-    MenuEntry::Item(Action::Share as usize, "&Share…"),
-    MenuEntry::Item(Action::ShowInFolder as usize, "Show in &folder"),
-    MenuEntry::Item(Action::CopyPath as usize, "Copy as &path"),
-    MenuEntry::Item(Action::Compress as usize, "Compress to &ZIP file"),
-    MenuEntry::Separator,
-    MenuEntry::Item(Action::Remove as usize, "&Remove from shelf"),
-];
 
 /// Run `work` on a thread of its own, for shell calls that pump messages or take a while.
 pub(crate) fn on_thread(name: &str, work: impl FnOnce() + Send + 'static) -> bool {
@@ -82,7 +54,8 @@ impl Island {
     }
 
     /// One file on the shelf: its thumbnail or icon (a coloured type badge until that arrives,
-    /// or if the shell has none) and the name. Press and drag to take it out, click to open it,
+    /// or if the shell has none) and the name. Press and drag to take it out (with the rest of
+    /// the selection, if it is picked), click to open it, Ctrl- or Shift-click to pick it,
     /// right-click for its actions, the corner cross to remove it from the shelf (not from disk).
     pub(crate) fn chip(
         &self,
@@ -134,6 +107,10 @@ impl Island {
                 .into_any_element(),
         };
 
+        let (rest, hover) = match self.shelf.is_selected(index) {
+            true => (rgba(0x0a84ff66), rgba(0x0a84ff80)),
+            false => (rgba(0x00000000), rgba(0xffffff1a)),
+        };
         div()
             .id(("chip", index))
             .group("chip")
@@ -148,7 +125,8 @@ impl Island {
             .pt(px(6.0))
             .rounded(px(8.0))
             .cursor_pointer()
-            .hover(|style| style.bg(rgba(0xffffff1a)))
+            .bg(rest)
+            .hover(move |style| style.bg(hover))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |this, event: &MouseDownEvent, _window, _cx| {
@@ -181,7 +159,11 @@ impl Island {
                 MouseButton::Left,
                 cx.listener(|this, _: &gpui::MouseUpEvent, _window, _cx| this.press = None),
             )
-            .on_click(cx.listener(move |this, _: &ClickEvent, _window, _cx| this.open_item(index)))
+            .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                // The shelf's own click would clear the selection.
+                cx.stop_propagation();
+                this.click_chip(index, cx);
+            }))
             .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(move |this, _: &MouseDownEvent, _window, cx| {
@@ -202,19 +184,35 @@ impl Island {
             .child(remove)
     }
 
-    fn open_item(&self, index: usize) {
-        if let Some(item) = self.shelf.items().get(index) {
-            open(item.clone());
+    /// Ctrl-click picks the chip or puts it back, Shift-click picks the run up to it, and a plain
+    /// click opens it and lets the selection go.
+    fn click_chip(&mut self, index: usize, cx: &mut Context<Self>) {
+        let held = win32::held_keys();
+        if held.ctrl {
+            self.shelf.toggle_selected(index);
+        } else if held.shift {
+            self.shelf.select_through(index);
+        } else {
+            if let Some(item) = self.shelf.items().get(index) {
+                open(item.clone());
+            }
+            if self.shelf.selection().is_empty() {
+                return;
+            }
+            self.shelf.deselect();
         }
+        cx.notify();
     }
 
-    /// Hand a chip's file to the system's drag loop, so it can be dropped on any window.
+    /// Hand a chip's file to the system's drag loop, so it can be dropped on any window; a picked
+    /// chip takes the whole selection with it.
     ///
     /// The loop blocks until the button is released, and dispatches this window's messages
     /// while it runs, so it can't run inside the event handler that got us here: that would
     /// re-enter GPUI. It runs from a task instead, outside any borrow of this entity.
     fn begin_drag_out(&mut self, index: usize, cx: &mut Context<Self>) {
-        let (Some(hwnd), Some(item)) = (self.hwnd, self.shelf.items().get(index).cloned()) else {
+        let items = self.shelf.targets(index);
+        let Some(hwnd) = self.hwnd.filter(|_| !items.is_empty()) else {
             return;
         };
         if self.drag_out {
@@ -223,10 +221,11 @@ impl Island {
         self.drag_out = true;
         // Whatever was about to fold the tray away must not, mid-drag.
         self.collapse_generation += 1;
-        log(&format!("dragout start {}", item.name()));
+        log(&format!("dragout start {}", names(&items)));
         cx.spawn(async move |this, cx| {
-            let outcome = win32::drag_files_out(hwnd, std::slice::from_ref(&item.path));
-            this.update(cx, |this, cx| this.finish_drag_out(&item, outcome, cx))
+            let paths: Vec<PathBuf> = items.iter().map(|i| i.path.clone()).collect();
+            let outcome = win32::drag_files_out(hwnd, &paths);
+            this.update(cx, |this, cx| this.finish_drag_out(&items, outcome, cx))
                 .ok();
         })
         .detach();
@@ -234,7 +233,7 @@ impl Island {
 
     fn finish_drag_out(
         &mut self,
-        item: &Item,
+        items: &[Item],
         outcome: windows::core::Result<DragOutcome>,
         cx: &mut Context<Self>,
     ) {
@@ -246,74 +245,17 @@ impl Island {
         }
         log(&format!(
             "dragout done {} ({})",
-            item.name(),
+            names(items),
             if moved { "dropped" } else { "cancelled" }
         ));
         if moved {
-            self.shelf.remove_path(&item.path);
+            for item in items {
+                self.shelf.remove_path(&item.path);
+            }
             self.shelf_changed(cx);
         }
         // The button is up and the cursor is usually elsewhere by now.
         self.schedule_collapse(COLLAPSE_AFTER_RELEASE, cx);
-    }
-
-    /// Pop up a chip's menu at the cursor and carry out the choice.
-    ///
-    /// The menu runs its own message loop, so it runs on a thread of its own (see
-    /// [`win32::popup_menu`]) and the choice comes back here. The tray stays open meanwhile.
-    fn chip_menu(&mut self, index: usize, cx: &mut Context<Self>) {
-        let Some(item) = self.shelf.items().get(index).cloned() else {
-            return;
-        };
-        if self.chip_menu || self.drag_out {
-            return;
-        }
-        let (tx, rx) = async_channel::bounded(1);
-        // Transform, first, takes files only.
-        let from = usize::from(item.kind != Kind::File);
-        if !on_thread("topsy-chip-menu", move || {
-            tx.send_blocking(win32::popup_menu(&MENU[from..])).log_err();
-        }) {
-            return;
-        }
-        self.chip_menu = true;
-        self.collapse_generation += 1;
-        cx.spawn(async move |this, cx| {
-            let choice = rx.recv().await.ok().flatten();
-            let action = ACTIONS.into_iter().find(|a| Some(*a as usize) == choice);
-            this.update(cx, |this, cx| {
-                this.chip_menu = false;
-                if let Some(action) = action {
-                    this.chip_action(action, item, cx);
-                }
-                this.schedule_collapse(COLLAPSE_AFTER_LEAVE, cx);
-            })
-            .ok();
-        })
-        .detach();
-    }
-
-    /// Acts on the chip's path, not its index: the shelf may have changed while the menu was up.
-    fn chip_action(&mut self, action: Action, item: Item, cx: &mut Context<Self>) {
-        log(&format!("chip {action:?} {}", item.name()));
-        match action {
-            Action::ShowInFolder => show_in_folder(item.path),
-            Action::CopyPath => copy_as_path(&item.path, cx),
-            Action::Compress => zip(item, cx, |this: &mut Self, zip, cx| {
-                this.add_paths(vec![zip], cx);
-            }),
-            Action::Transform => {
-                let island = cx.entity();
-                crate::transform::open(cx, &island, vec![item.path]);
-            }
-            Action::Share => share(self.hwnd, vec![item.path], cx),
-            Action::Remove => {
-                if self.shelf.remove_path(&item.path) {
-                    self.shelf_changed(cx);
-                }
-            }
-            Action::Rename => {}
-        }
     }
 }
 
@@ -370,38 +312,61 @@ pub(crate) fn share<T: 'static>(hwnd: Option<HWND>, paths: Vec<PathBuf>, cx: &mu
     .detach();
 }
 
-/// The path on the clipboard, quoted, as Explorer's "Copy as path" does.
-pub(crate) fn copy_as_path(path: &std::path::Path, cx: &mut App) {
-    let quoted = format!("\"{}\"", path.display());
-    cx.write_to_clipboard(ClipboardItem::new_string(quoted));
+/// The paths on the clipboard, quoted, one per line, as Explorer's "Copy as path" does.
+pub(crate) fn copy_as_paths(paths: &[PathBuf], cx: &mut App) {
+    let quoted: Vec<String> = (paths.iter())
+        .map(|p| format!("\"{}\"", p.display()))
+        .collect();
+    cx.write_to_clipboard(ClipboardItem::new_string(quoted.join("\r\n")));
 }
 
-/// Zip a file or folder beside it on a worker thread, and hand the zip to `park` when it is
-/// done. A failed zip leaves nothing on disk and nothing to park.
+/// The chips' names, for the log.
+fn names(items: &[Item]) -> String {
+    let names: Vec<String> = items.iter().map(Item::name).collect();
+    names.join(", ")
+}
+
+/// Zip files and folders into one zip beside the first on a worker thread, and hand the zip to
+/// `park` when it is done. A failed zip leaves nothing on disk and nothing to park.
 pub(crate) fn zip<T: 'static>(
-    item: Item,
+    paths: Vec<PathBuf>,
     cx: &mut Context<T>,
     park: fn(&mut T, PathBuf, &mut Context<T>),
 ) {
+    let name = (paths.iter())
+        .map(|p| p.file_name().unwrap_or(p.as_os_str()).to_string_lossy())
+        .collect::<Vec<_>>()
+        .join(", ");
+    file_job("zip", name, move || archive::compress_all(&paths), cx, park);
+}
+
+/// Run `job`, which makes a file or folder (a zip, an extracted folder), on a worker thread and
+/// hand what it made to `done`. A failed job is logged and `done` never runs.
+fn file_job<T: 'static>(
+    what: &'static str,
+    name: String,
+    job: impl FnOnce() -> io::Result<PathBuf> + Send + 'static,
+    cx: &mut Context<T>,
+    done: impl FnOnce(&mut T, PathBuf, &mut Context<T>) + 'static,
+) {
     let (tx, rx) = async_channel::bounded(1);
-    let source = item.path.clone();
-    if !on_thread("topsy-zip", move || {
-        tx.send_blocking(archive::compress(&source)).log_err();
+    if !on_thread("topsy-file-job", move || {
+        tx.send_blocking(job()).log_err();
     }) {
         return;
     }
     cx.spawn(async move |this, cx| {
-        let Ok(zipped) = rx.recv().await else {
+        let Ok(made) = rx.recv().await else {
             return;
         };
-        this.update(cx, |this, cx| match zipped {
-            Ok(zip) => {
-                log(&format!("zipped {} to {}", item.name(), zip.display()));
-                park(this, zip, cx);
+        this.update(cx, |this, cx| match made {
+            Ok(path) => {
+                log(&format!("{what} {name}: {}", path.display()));
+                done(this, path, cx);
             }
             Err(err) => {
-                log(&format!("zip failed {}", item.name()));
-                eprintln!("topsy: could not zip {}: {err}", item.path.display());
+                log(&format!("{what} failed {name}"));
+                eprintln!("topsy: could not {what} {name}: {err}");
             }
         })
         .ok();

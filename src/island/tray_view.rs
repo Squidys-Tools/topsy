@@ -219,8 +219,9 @@ impl Island {
         self.pager.show_capsule(capsule);
     }
 
-    /// The tray has just opened: Home, this month's calendar.
+    /// The tray has just opened: Home, this month's calendar, nothing picked on the shelf.
     pub(crate) fn opened(&mut self, cx: &mut Context<Self>) {
+        self.shelf.deselect();
         self.pager.opened();
         self.widgets.opened(cx);
     }
@@ -349,6 +350,7 @@ impl Island {
 
         let (_, h) = Mode::Tray.size();
         div()
+            .id("shelf")
             .w_full()
             .h(px(h))
             .flex_shrink_0()
@@ -374,5 +376,12 @@ impl Island {
                     ),
             )
             .child(body)
+            // A chip's click stops here; one anywhere else on the shelf lets the selection go.
+            .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                if !this.shelf.selection().is_empty() {
+                    this.shelf.deselect();
+                    cx.notify();
+                }
+            }))
     }
 }
