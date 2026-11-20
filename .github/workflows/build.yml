@@ -3,13 +3,18 @@ name: build
 # Builds topsy.exe with the GNU toolchain and runs the gates on every PR. The exe is uploaded,
 # so it can be tried on a machine with no Rust, MinGW or Windows SDK, only for main and for
 # runs started by hand: `gh workflow run build.yml --ref <branch>` (or Run workflow on the
-# Actions tab).
+# Actions tab). nightly.yml calls it with the version to stamp into the exe.
 
 on:
   pull_request:
   push:
     branches: [main]
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: true
 
 permissions:
   contents: read
@@ -61,6 +66,14 @@ jobs:
           if (-not $fxc) { throw 'No fxc.exe in the Windows SDK on this runner' }
           "GPUI_FXC_PATH=$($fxc.FullName)" | Add-Content $env:GITHUB_ENV
           "fxc: $($fxc.FullName)"
+
+      # Set for every step, so the gates and the exe build the same crate and nothing rebuilds.
+      - name: Stamp the release version
+        if: inputs.version != ''
+        shell: pwsh
+        env:
+          VERSION: ${{ inputs.version }}
+        run: '"TOPSY_RELEASE_VERSION=$env:VERSION" | Add-Content $env:GITHUB_ENV'
 
       # The same gates as scripts/check.ps1.
       - name: check-structure

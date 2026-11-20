@@ -26,6 +26,11 @@ pub enum Change {
 /// Told about every change the window makes, so the app can apply it.
 pub type OnChange = Rc<dyn Fn(Change, &mut App)>;
 
+/// A nightly build is stamped with its release version (`.github/workflows/nightly.yml`).
+const VERSION: &str = match option_env!("TOPSY_RELEASE_VERSION") {
+    Some(version) => version,
+    None => env!("CARGO_PKG_VERSION"),
+};
 const SIZE: (f32, f32) = (340.0, 600.0);
 const BACKGROUND: u32 = 0x202020;
 const ACCENT: u32 = 0x4c8dff;
@@ -319,7 +324,7 @@ impl Render for SettingsWindow {
                     .child(
                         div()
                             .text_color(rgba(0xffffff80))
-                            .child(concat!("topsy ", env!("CARGO_PKG_VERSION"))),
+                            .child(format!("topsy {VERSION}")),
                     )
                     .child(quit),
             )
