@@ -42,6 +42,9 @@ use std::ffi::c_void;
 
 use windows::Win32::Foundation::HWND;
 use windows::Win32::System::Com::{COINIT, COINIT_DISABLE_OLE1DDE, CoInitializeEx, CoUninitialize};
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    GetAsyncKeyState, VIRTUAL_KEY, VK_CONTROL, VK_SHIFT,
+};
 
 pub fn hwnd_from_raw(handle: raw_window_handle::RawWindowHandle) -> Option<HWND> {
     match handle {
@@ -67,4 +70,20 @@ pub fn with_com<T>(apartment: COINIT, f: impl FnOnce() -> T) -> T {
         unsafe { CoUninitialize() };
     }
     result
+}
+
+/// The modifier keys down right now.
+pub struct HeldKeys {
+    pub ctrl: bool,
+    pub shift: bool,
+}
+
+/// Which modifiers are down, read from the keyboard itself: the island never has the keyboard,
+/// so its thread's key state (what GPUI's event modifiers come from) can be stale.
+pub fn held_keys() -> HeldKeys {
+    let down = |key: VIRTUAL_KEY| unsafe { GetAsyncKeyState(i32::from(key.0)) < 0 };
+    HeldKeys {
+        ctrl: down(VK_CONTROL),
+        shift: down(VK_SHIFT),
+    }
 }

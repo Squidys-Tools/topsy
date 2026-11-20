@@ -13,8 +13,11 @@ Decisions behind [the shelf](../user/shelf.md) and [the tray icon and settings](
   the PDF app registers; with a browser as the default there is none and the shell returns a generic icon. So
   `icon::pixels` draws the first page with pdfium when it is installed. Parking a file never downloads pdfium;
   only Transform does.
-- **Zips are written on a worker thread** and deleted if they fail half-way. Links and junctions inside a folder
-  are left out.
+- **Zips are written and extracted on a worker thread**, and what they made is deleted if they fail half-way.
+  Links and junctions inside a folder are left out. An entry name is checked by `model::archive::entry_path`
+  before anything is written, including the names Windows would trim into `..`.
+- **Ctrl and Shift are read with `GetAsyncKeyState` at the click**, not from GPUI's event: the island never has
+  the keyboard, so its thread's key state, which GPUI reads, can be stale.
 - Opening a chip and its menu pump messages, so they run off the handler; see [GPUI traps](gpui.md).
 
 ## Tray icon
