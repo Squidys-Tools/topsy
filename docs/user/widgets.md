@@ -12,6 +12,9 @@ capsule under the notch or a sideways swipe (see [The notch](notch.md)).
 - **System stats**: how busy the processor is and how much memory is in use, each with a graph of the last
   minute or so.
 - **Weather**: the temperature and conditions where you are, today's high and low, and the next few hours.
+- **Audio**: a volume slider for every app playing sound, after Droppy's Audio Control. Drag an app's slider to
+  set its volume, or click the speaker beside it to mute it; moving a muted app's slider unmutes it. It is the
+  same volume as in Windows' volume mixer, so a change in either shows in both.
 
 A drag or a drop opens the tray on the shelf alone, without the widgets.
 
@@ -25,6 +28,8 @@ to begin with; turn every one off (with nothing playing) to get the plain tray b
 
 - Widgets only do anything while you are looking at them: the stats are sampled once a second and the weather is
   fetched while the tray is open, never in the background. The graphs start where you last left them.
+- **Audio** lists the apps with sound open on your default output device, one row per app however many windows
+  or tabs it plays from; Windows' own system sounds are left out. It is off until you turn it on.
 - **Weather** asks Windows where you are, so it is off until you turn it on. Windows needs *Location services*
   and *Let desktop apps access your location* on (Settings › Privacy & security › Location); if they are off the
   widget says so and clicking it opens that page. It shows the weather for your position, without a town name.

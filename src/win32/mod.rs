@@ -16,6 +16,7 @@ pub mod inbox;
 pub mod location;
 mod menu;
 pub mod meter;
+pub mod mixer;
 pub mod paste;
 mod picker;
 pub mod sendto;

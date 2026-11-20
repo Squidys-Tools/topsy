@@ -26,7 +26,7 @@ pub enum Change {
 /// Told about every change the window makes, so the app can apply it.
 pub type OnChange = Rc<dyn Fn(Change, &mut App)>;
 
-const SIZE: (f32, f32) = (340.0, 560.0);
+const SIZE: (f32, f32) = (340.0, 600.0);
 const BACKGROUND: u32 = 0x202020;
 const ACCENT: u32 = 0x4c8dff;
 

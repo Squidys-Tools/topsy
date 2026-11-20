@@ -19,7 +19,7 @@ mod steps;
 pub mod tools;
 pub mod video;
 mod view;
-mod widgets;
+pub(crate) mod widgets;
 
 use std::path::PathBuf;
 use std::sync::Arc;

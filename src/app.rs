@@ -44,7 +44,9 @@ impl Island {
                         .update(cx, |island, cx| match change {
                             Change::Setting(setting, on) => island.on_setting(setting, on, cx),
                             Change::Widgets(lineup) => island
-                                .update_widgets(cx, |widgets, _, _| widgets.set_lineup(lineup)),
+                                .update_widgets(cx, |widgets, _, cx| {
+                                    widgets.set_lineup(lineup, cx)
+                                }),
                         })
                         .log_err();
                 });
