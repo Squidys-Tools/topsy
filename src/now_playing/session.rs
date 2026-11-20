@@ -191,7 +191,7 @@ impl Watch<'_> {
 
     /// Track the sessions there are now, each under an id of its own.
     fn reload(&mut self) {
-        self.tracked.clear();
+        let old = std::mem::take(&mut self.tracked);
         let Some(all) = self.manager.GetSessions().log_err() else {
             return;
         };
@@ -206,7 +206,15 @@ impl Watch<'_> {
             .collect();
         let ids = sessions::ids(&apps);
         for ((session, id), app) in all.into_iter().zip(ids).zip(apps) {
-            if let Some(tracked) = Tracked::new(id, app, session, self.wake).log_err() {
+            if let Some(mut tracked) = Tracked::new(id, app, session, self.wake).log_err() {
+                // A session between tracks reads no status, so it keeps the one it had.
+                let before = (old
+                    .iter()
+                    .find(|previous| previous.session == tracked.session))
+                .or_else(|| old.iter().find(|previous| previous.id == tracked.id));
+                if let Some(before) = before {
+                    tracked.status = before.status;
+                }
                 self.tracked.push(tracked);
             }
         }
