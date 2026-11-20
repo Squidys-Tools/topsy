@@ -446,7 +446,14 @@ fn switch(app: &str, cx: &mut Context<Island>) -> impl IntoElement + use<> {
             log("media switch");
             media::switch();
         }))
-        .child(div().truncate().child(app.to_owned()))
+        .child(
+            div()
+                .max_w(px(SOURCE_WIDTH - 16.0))
+                // Not `truncate`: GPUI keeps a no-wrap text's first measure, so it would never cut.
+                .line_clamp(1)
+                .text_ellipsis()
+                .child(app.to_owned()),
+        )
 }
 
 /// A media button. Pressing it asks the session's app from the media thread; the icon changes
