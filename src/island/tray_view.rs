@@ -220,9 +220,9 @@ impl Island {
     }
 
     /// The tray has just opened: Home, this month's calendar.
-    pub(crate) fn opened(&mut self) {
+    pub(crate) fn opened(&mut self, cx: &mut Context<Self>) {
         self.pager.opened();
-        self.widgets.opened();
+        self.widgets.opened(cx);
     }
 
     /// The open tray springs to its sections' size when they change under it: the track stops,

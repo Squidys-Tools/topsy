@@ -8,14 +8,16 @@ pub enum Widget {
     Pomodoro,
     Stats,
     Weather,
+    Audio,
 }
 
 impl Widget {
-    pub const ALL: [Widget; 4] = [
+    pub const ALL: [Widget; 5] = [
         Widget::Calendar,
         Widget::Pomodoro,
         Widget::Stats,
         Widget::Weather,
+        Widget::Audio,
     ];
 
     /// Its name in the saved lineup.
@@ -25,6 +27,7 @@ impl Widget {
             Widget::Pomodoro => "pomodoro",
             Widget::Stats => "stats",
             Widget::Weather => "weather",
+            Widget::Audio => "audio",
         }
     }
 
@@ -34,6 +37,7 @@ impl Widget {
             Widget::Pomodoro => "Pomodoro",
             Widget::Stats => "System stats",
             Widget::Weather => "Weather",
+            Widget::Audio => "Audio",
         }
     }
 }
@@ -43,7 +47,8 @@ impl Widget {
 pub struct Lineup(Vec<Widget>);
 
 impl Default for Lineup {
-    /// Weather is left off: finding where you are asks Windows for your location.
+    /// Weather is left off: finding where you are asks Windows for your location. Audio is too:
+    /// the row is wide enough already.
     fn default() -> Self {
         Lineup(vec![Widget::Calendar, Widget::Pomodoro, Widget::Stats])
     }
@@ -115,9 +120,12 @@ mod tests {
 
     #[test]
     fn a_saved_lineup_round_trips_and_skips_what_it_does_not_know() {
-        let lineup = Lineup::parse("weather, calendar,clock,weather");
-        assert_eq!(lineup.widgets(), [Widget::Weather, Widget::Calendar]);
-        assert_eq!(lineup.serialize(), "weather,calendar");
+        let lineup = Lineup::parse("weather, calendar,clock,weather,audio");
+        assert_eq!(
+            lineup.widgets(),
+            [Widget::Weather, Widget::Calendar, Widget::Audio]
+        );
+        assert_eq!(lineup.serialize(), "weather,calendar,audio");
         assert_eq!(Lineup::parse(&lineup.serialize()), lineup);
         assert!(Lineup::parse("").is_empty(), "every widget switched off");
         assert_eq!(
@@ -162,6 +170,7 @@ mod tests {
                 (Widget::Calendar, true),
                 (Widget::Pomodoro, false),
                 (Widget::Weather, false),
+                (Widget::Audio, false),
             ]
         );
     }

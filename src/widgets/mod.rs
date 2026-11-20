@@ -1,8 +1,9 @@
 //! Shelf widgets, after Droppy's: a row of small cards (a calendar, a Pomodoro timer, system
-//! stats, the weather) across the top of a tray opened to look. Which show, and in what order,
+//! stats, the weather, every app's volume) across the top of a tray opened to look. Which show, and in what order,
 //! is the lineup in `model::widgets`, set in the settings window. Nothing here runs while the row
 //! is off screen: each card books its own redraws only while it is drawn.
 
+mod audio;
 mod calendar;
 mod pomodoro;
 mod stats;
@@ -33,6 +34,7 @@ pub struct State {
     pomodoro: pomodoro::State,
     stats: stats::State,
     weather: weather::State,
+    audio: audio::State,
 }
 
 impl Default for State {
@@ -46,6 +48,7 @@ impl Default for State {
             pomodoro: Default::default(),
             stats: Default::default(),
             weather: Default::default(),
+            audio: Default::default(),
         }
     }
 }
@@ -61,9 +64,12 @@ pub(crate) enum Effect {
 }
 
 impl State {
-    /// The tray opened: the calendar shows this month again.
-    pub fn opened(&mut self) {
+    /// The tray opened: the calendar shows this month again, and the Audio card listens.
+    pub fn opened(&mut self, cx: &mut Context<Island>) {
         self.calendar.reset();
+        if self.lineup.contains(Widget::Audio) {
+            self.audio.opened(cx);
+        }
     }
 
     pub(crate) fn is_on(&self) -> bool {
@@ -79,12 +85,20 @@ impl State {
     }
 
     /// The settings window changed the lineup (it is saved already).
-    pub(crate) fn set_lineup(&mut self, lineup: Lineup) -> Option<Effect> {
+    pub(crate) fn set_lineup(
+        &mut self,
+        lineup: Lineup,
+        cx: &mut Context<Island>,
+    ) -> Option<Effect> {
         if config::get().no_widgets {
             return None;
         }
         if !lineup.contains(Widget::Pomodoro) {
             self.pomodoro.stop();
+        }
+        match lineup.contains(Widget::Audio) {
+            true => self.audio.listen(cx),
+            false => self.audio.stop(cx),
         }
         self.lineup = lineup;
         Some(Effect::Refit)
@@ -132,6 +146,7 @@ impl State {
             Widget::Pomodoro => self.pomodoro.card(cx),
             Widget::Stats => self.stats.card(visible, cx),
             Widget::Weather => self.weather.card(visible, cx),
+            Widget::Audio => self.audio.card(cx),
         }
     }
 }
@@ -153,6 +168,7 @@ fn card_width(widget: Widget) -> f32 {
         Widget::Pomodoro => pomodoro::WIDTH,
         Widget::Stats => stats::WIDTH,
         Widget::Weather => weather::WIDTH,
+        Widget::Audio => audio::WIDTH,
     }
 }
 

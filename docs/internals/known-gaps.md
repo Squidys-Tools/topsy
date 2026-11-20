@@ -63,8 +63,10 @@ Keep this honest: remove a gap you close, add one you find and leave.
   live) and shows no town name. The calendar has no events and its month and day names are English. The stats'
   graphs hold only what was sampled while the tray was open. The Pomodoro's end shows as a Live Activity, so with
   *Live Activities* off only the chime says so; quitting topsy forgets a running timer. The row can't be
-  reordered by dragging on the notch, only with the settings window's arrows. With all four on the tray is about
-  850 px wide and isn't narrowed for a smaller monitor.
+  reordered by dragging on the notch, only with the settings window's arrows. With all five on the tray is about
+  1110 px wide and isn't narrowed for a smaller monitor. Audio is untested on the live desktop; it shows the
+  default output device only, follows a change of it only when the tray next opens, leaves out system sounds,
+  and its slider stops following a drag that leaves the slider's row.
 - **Tray pages.** Droppy's third page, a grid of every widget, isn't there. With the acrylic fallback (before
   Windows 11) the gap between the notch and its page capsule is glass too and takes clicks, since that glass
   fills the whole window. A swipe turns the page once it has travelled, rather than following the fingers.

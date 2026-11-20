@@ -32,6 +32,7 @@ pub mod magick;
 pub mod marquee;
 pub mod matte;
 pub mod media;
+pub mod mixer;
 pub mod name_field;
 pub mod notch;
 pub mod orientation;

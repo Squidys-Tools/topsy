@@ -109,7 +109,7 @@ impl Island {
 
     pub(crate) fn set_mode(&mut self, mode: Mode, cx: &mut Context<Self>) {
         if mode == Mode::Tray && self.mode != Mode::Tray {
-            self.opened();
+            self.opened(cx);
         }
         self.mode = mode;
         win32::escape::take(mode == Mode::Tray && self.tray_cause == TrayCause::Opened);
