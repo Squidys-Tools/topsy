@@ -15,7 +15,8 @@ use model::update::Nightly;
 
 const TEXT: u32 = 0xffffffff;
 const DIM: u32 = 0xffffff73;
-const SELECT: u32 = 0x0a64d6;
+/// A frosted highlight rather than an accent colour, so the row lifts out of the glass.
+const SELECT: u32 = 0xffffff26;
 const RULE: u32 = 0xffffff1a;
 const GREEN: u32 = 0x34c759;
 const ON_GREEN: u32 = 0x04210c;
@@ -40,7 +41,7 @@ fn row(
         .pl(px(8.0))
         .pr(px(10.0))
         .rounded(px(7.0))
-        .when(highlighted, |row| row.bg(rgb(SELECT)))
+        .when(highlighted, |row| row.bg(rgba(SELECT)))
         .when(!enabled, |row| row.opacity(0.35))
         .child(
             div()

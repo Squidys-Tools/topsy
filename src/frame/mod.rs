@@ -38,6 +38,8 @@ const BLACK_UNTIL: f32 = 0.45;
 const GLASS_FLOOR: u32 = 0x00000070;
 /// The open notch's floor over the lens glass: lighter, so the bend shows.
 const LENS_FLOOR: u32 = 0x00000040;
+/// The tray icon's menu: one even shade of glass, dark enough that it only just shows.
+const MENU_FLOOR: u32 = 0x000000c4;
 /// The basket's floor, sampled from Droppy's: about 88% black at the bottom edge.
 pub const BASKET_FLOOR: u32 = 0x000000e0;
 /// A light rim along the bottom edge, fading out up the sides where the notch turns black.
@@ -139,6 +141,8 @@ pub struct Frame {
     lensed: bool,
     /// The corners of a floating window.
     radius: f32,
+    /// One shade of glass at the floor all the way down, without the black band at the top.
+    even: bool,
 }
 
 impl Frame {
@@ -163,6 +167,7 @@ impl Frame {
             strips: Vec::new(),
             lensed: false,
             radius: FLOAT_RADIUS,
+            even: false,
         }
     }
 
@@ -177,11 +182,12 @@ impl Frame {
         self
     }
 
-    /// Floating with the notch's own glass and a menu's corners: the tray icon's menu.
+    /// Floating, evenly glazed, with a menu's corners: the tray icon's menu.
     pub fn menu(self) -> Self {
         let mut frame = self.floating();
-        frame.floor = GLASS_FLOOR;
+        frame.floor = MENU_FLOOR;
         frame.radius = MENU_RADIUS;
+        frame.even = true;
         frame
     }
 
