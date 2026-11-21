@@ -7,7 +7,6 @@
 
 pub(crate) mod menu;
 mod menu_view;
-mod menu_window;
 
 use std::ffi::c_void;
 use std::sync::OnceLock;

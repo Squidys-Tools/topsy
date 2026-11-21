@@ -1,16 +1,21 @@
 //! Clipboard history on disk. One thread owns the history and its folder
 //! (`%LOCALAPPDATA%\topsy\clipboard`): each entry is `<id>.json`, an image's pixels
-//! `<id>.png` beside it, a link's site icon `icons\<host>.png`. Copies arrive from the
-//! clipboard watcher and changes from the strip; the thread wakes otherwise only when the
-//! oldest entry is due to expire. It publishes each new state for the strip to read. The rules
-//! are in `model::clipboard`.
+//! `<id>.png` beside it, a link's site icon `icons\<host>.png` and its page's preview
+//! `previews\<hash>.json` and `.png`. Copies arrive from the
+//! clipboard watcher and changes from the palette; the thread wakes otherwise only when the
+//! oldest entry is due to expire. It publishes each new state for the palette to read. The
+//! rules are in `model::clipboard`.
 
-mod card;
+mod actions;
+mod detail;
 mod favicon;
+mod link;
+pub mod palette;
 mod pictures;
 mod preview;
-pub mod strip;
+mod view;
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -21,8 +26,12 @@ use crate::log;
 use crate::log::{LogErr, MissingOk};
 use crate::win32::clipboard::{self as watcher, Copy};
 use crate::win32::paste::Data;
-use model::clipboard::{Added, Content, Entry, History, leftovers};
+use model::clip_kind::Kind;
+use model::clipboard::{Added, Content, Entry, History, fingerprint, leftovers};
 use model::dib::{self, Rgba};
+
+/// The folder beside the history where links' previews are kept.
+const PREVIEWS: &str = "previews";
 
 const ENABLED: RegString<'static> = RegString::new(r"Software\topsy", "Clipboard");
 const KEEP_DAYS: RegString<'static> = RegString::new(r"Software\topsy", "ClipboardDays");
@@ -41,7 +50,7 @@ pub enum Command {
     Wake,
 }
 
-/// What the strip hears from the clipboard's threads.
+/// What the palette hears from the clipboard's threads.
 pub enum Event {
     /// The hotkey, with the window that was in front.
     Hotkey(usize),
@@ -112,6 +121,40 @@ pub fn icon_path(host: &str) -> Option<PathBuf> {
     Some(STORE.get()?.dir.join("icons").join(format!("{host}.png")))
 }
 
+/// Where a link's preview is kept, without its extension.
+pub fn preview_path(link: &str) -> Option<PathBuf> {
+    Some(STORE.get()?.dir.join(PREVIEWS).join(preview_name(link)))
+}
+
+fn preview_name(link: &str) -> String {
+    format!("{:016x}", fingerprint(link.trim().as_bytes()))
+}
+
+/// Remove the kept previews of links no longer in the history, and any a crash left
+/// half-written: a preview holds the page's title, which a cleared history mustn't keep.
+fn sweep_previews(dir: &Path, history: &History) {
+    let Ok(files) = std::fs::read_dir(dir.join(PREVIEWS)) else {
+        return;
+    };
+    let kept: HashSet<String> = (history.entries().iter())
+        .filter_map(|e| match &e.content {
+            Content::Text(text) => match e.content.kind() {
+                Kind::Link => Some(preview_name(text)),
+                Kind::Text | Kind::Color | Kind::Code | Kind::Image | Kind::Files => None,
+            },
+            Content::Files(_) | Content::Image { .. } => None,
+        })
+        .collect();
+    for file in files.filter_map(Result::ok) {
+        let path = file.path();
+        let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned());
+        let tmp = path.extension().is_some_and(|e| e == "tmp");
+        if tmp || stem.is_none_or(|stem| !kept.contains(&stem)) {
+            std::fs::remove_file(&path).missing_ok().log_err();
+        }
+    }
+}
+
 /// What to put back on the clipboard for `entry`. Reads an image's file, so not on the UI
 /// thread.
 pub fn data(entry: &Entry) -> Option<Data> {
@@ -132,7 +175,7 @@ pub fn data(entry: &Entry) -> Option<Data> {
 }
 
 /// Start watching the clipboard and keeping its history in `dir` (`None`: history is off for
-/// this run, as in scripted runs). The strip listens on what comes back.
+/// this run, as in scripted runs). The palette listens on what comes back.
 pub fn start(dir: Option<PathBuf>) -> Option<async_channel::Receiver<Event>> {
     let dir = dir?;
     if !watcher::claim(&dir) {
@@ -186,6 +229,7 @@ fn run(dir: &Path, rx: &mpsc::Receiver<Command>, changed: &async_channel::Sender
             dirty = true;
         }
         if std::mem::take(&mut dirty) {
+            sweep_previews(dir, &history);
             *ENTRIES.lock().unwrap_or_else(|e| e.into_inner()) = Some(history.entries().into());
             changed.try_send(Event::Changed).log_err();
         }

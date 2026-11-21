@@ -13,7 +13,7 @@ and re-centred every frame as the spring moves (see [Glass](glass.md)). User-fac
 - **Escape needs a keyboard hook.** The island has no focus to hear Escape, so a low-level keyboard hook
   (`src/win32/escape.rs`) is installed only while a tray opened by a click or the tray icon is open. It takes
   Escape from the app in front unless a mouse button is down (Escape then cancels a drag), a menu is up, or a
-  window of topsy's is in front (the Transform panel and the clipboard strip take Escape themselves).
+  window of topsy's is in front (the Transform panel and the clipboard palette take Escape themselves).
 - **Fullscreen is checked, not tracked.** Whether the foreground window fills the monitor under the cursor is
   asked when the edge, a drag to it or a jiggle happens, so it costs nothing in between. Games drag the mouse
   about freely, hence the rule. A maximized window doesn't count (with an auto-hidden taskbar it overhangs the

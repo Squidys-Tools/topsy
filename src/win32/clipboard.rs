@@ -2,7 +2,7 @@
 //! of each copy (`AddClipboardFormatListener`), so nothing polls. Each copy is read there,
 //! files before text before an image, and handed on with the exe of the app that made it.
 //! Copies marked private (password managers) are never read. The same window owns the
-//! clipboard strip's hotkey and what topsy puts on the clipboard to paste.
+//! clipboard palette's hotkey and what topsy puts on the clipboard to paste.
 
 use std::ffi::OsString;
 use std::os::windows::ffi::OsStringExt;
@@ -11,7 +11,7 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use windows::Win32::Foundation::{
-    CloseHandle, ERROR_ALREADY_EXISTS, GetLastError, HGLOBAL, HWND, LPARAM, LRESULT, WPARAM,
+    ERROR_ALREADY_EXISTS, GetLastError, HGLOBAL, HWND, LPARAM, LRESULT, WPARAM,
 };
 use windows::Win32::System::DataExchange::{
     AddClipboardFormatListener, CloseClipboard, GetClipboardData, GetClipboardOwner,
@@ -19,21 +19,19 @@ use windows::Win32::System::DataExchange::{
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Memory::{GlobalLock, GlobalSize, GlobalUnlock};
-use windows::Win32::System::Threading::{
-    CreateMutexW, OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
-    QueryFullProcessImageNameW,
-};
+use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     HOT_KEY_MODIFIERS, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, RegisterHotKey,
 };
 use windows::Win32::UI::Shell::{DragQueryFileW, HDROP};
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DispatchMessageW, GetForegroundWindow, GetMessageW,
-    GetWindowThreadProcessId, HWND_MESSAGE, MSG, RegisterClassW, WINDOW_EX_STYLE, WINDOW_STYLE,
-    WM_CLIPBOARDUPDATE, WM_HOTKEY, WNDCLASSW,
+    HWND_MESSAGE, MSG, RegisterClassW, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLIPBOARDUPDATE,
+    WM_HOTKEY, WNDCLASSW,
 };
-use windows::core::{PCWSTR, PWSTR, w};
+use windows::core::{PCWSTR, w};
 
+use super::process::window_exe;
 use crate::log::LogErr;
 use model::clipboard::{Content, fingerprint};
 use model::dib;
@@ -306,22 +304,6 @@ unsafe fn owner_exe() -> Option<PathBuf> {
         if window.0 as usize == WINDOW.load(Ordering::Relaxed) {
             return None;
         }
-        let mut pid = 0;
-        GetWindowThreadProcessId(window, Some(&mut pid));
-        if pid == 0 {
-            return None;
-        }
-        let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
-        let mut buf = [0u16; 1024];
-        let mut len = buf.len() as u32;
-        let named = QueryFullProcessImageNameW(
-            process,
-            PROCESS_NAME_WIN32,
-            PWSTR(buf.as_mut_ptr()),
-            &mut len,
-        );
-        CloseHandle(process).log_err();
-        named.ok()?;
-        Some(PathBuf::from(OsString::from_wide(&buf[..len as usize])))
+        window_exe(window)
     }
 }

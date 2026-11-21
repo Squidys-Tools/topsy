@@ -1,6 +1,6 @@
-//! A link card's site icon: the site's `/favicon.ico` or the icon its home page names, asked once per host and kept as a small
+//! A link's site icon: the site's `/favicon.ico` or the icon its home page names, asked once per host and kept as a small
 //! PNG in `icons\` beside the history. An empty file there means the site has none. Only
-//! public names are asked (see `model::favicon`), and only when a link card is shown.
+//! public names are asked (see `model::favicon`), and only when a link is listed.
 
 use std::collections::HashSet;
 use std::io::Cursor;
@@ -19,11 +19,11 @@ use model::favicon::{page_icon, public_ip, resolve};
 const SIZE: u32 = 128;
 /// A favicon bigger than this is not one.
 const MAX_BYTES: usize = 512 * 1024;
-/// How much of a home page is read for its icon links, which are in its head.
-const MAX_PAGE: usize = 256 * 1024;
+/// How much of a page is read for its icon links or its preview's tags, which are in its head.
+pub(super) const MAX_PAGE: usize = 256 * 1024;
 const MAX_REDIRECTS: usize = 3;
 
-/// Hosts already asked this run, so a strip opened twice doesn't ask twice.
+/// Hosts already asked this run, so a palette opened twice doesn't ask twice.
 static ASKED: Mutex<Option<HashSet<String>>> = Mutex::new(None);
 
 /// The icon for `host`, from `cache` or else from the site. Blocks on the network: call it from
@@ -56,7 +56,12 @@ pub fn load(cache: &Path, host: &str) -> Option<Arc<RenderImage>> {
             png
         }
     };
-    let mut image = image::load_from_memory(&png).ok()?.into_rgba8();
+    render(&png)
+}
+
+/// A kept PNG, ready to draw.
+pub(super) fn render(png: &[u8]) -> Option<Arc<RenderImage>> {
+    let mut image = image::load_from_memory(png).ok()?.into_rgba8();
     // GPUI's images are BGRA.
     for pixel in image.pixels_mut() {
         pixel.0.swap(0, 2);
@@ -87,7 +92,7 @@ fn download(host: &str) -> Option<Vec<u8>> {
 
 /// GET `https://{host}{path}`, following redirects that stay public: the host that answered and
 /// the body, `Some(None)` for no answer worth having, `None` when the network failed.
-fn follow(host: &str, path: &str, limit: usize) -> Option<Option<(String, Vec<u8>)>> {
+pub(super) fn follow(host: &str, path: &str, limit: usize) -> Option<Option<(String, Vec<u8>)>> {
     let (mut host, mut path) = (host.to_string(), path.to_string());
     for _ in 0..=MAX_REDIRECTS {
         // A public name can still point into the local network.

@@ -1,4 +1,5 @@
-//! The tray icon's menu's windows: bare topmost popups with the notch's glass behind them.
+//! A glass window of its own: a bare topmost popup with the notch's glass behind it, floating
+//! as the tray icon's menu does, or hanging from the top edge as the clipboard palette does.
 
 use gpui::{
     App, Bounds, Context, TitlebarOptions, Window, WindowBackgroundAppearance, WindowBounds,
@@ -7,8 +8,8 @@ use gpui::{
 use raw_window_handle::HasWindowHandle;
 use windows::Win32::Foundation::HWND;
 
+use super::{ACRYLIC_TINT, Frame, Glass};
 use crate::backdrop::Backdrop;
-use crate::frame::{ACRYLIC_TINT, Frame, Glass};
 use crate::{config, log, look, win32};
 
 fn hwnd(window: &Window) -> Option<HWND> {
@@ -16,17 +17,43 @@ fn hwnd(window: &Window) -> Option<HWND> {
     win32::hwnd_from_raw(handle.as_raw())
 }
 
-/// One of the menu's windows, `size` logical pixels: transparent, topmost, and either taking the
-/// focus (`activate`) or never, with the notch's glass behind it. `build` makes its view.
-pub(super) fn open_window<V: 'static + Render>(
+/// How an [`open_window`] sits and is glazed.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Shape {
+    /// Centred where it opens, evenly glazed like a menu.
+    Floating,
+    /// Hanging from the top edge of the monitor it opens on, a notch of its own.
+    Hanging,
+}
+
+/// What [`open_window`] makes.
+pub(crate) struct Popup {
+    /// Names it for the live checks; a bare popup shows none.
+    pub title: &'static str,
+    /// Physical screen pixels, on a monitor of `scale`.
+    pub origin: (i32, i32),
+    /// Logical pixels.
+    pub size: (f32, f32),
+    pub scale: f32,
+    /// Takes the focus, or never does.
+    pub activate: bool,
+    pub shape: Shape,
+}
+
+/// A transparent, topmost glass window, as `popup` says. `build` makes its view.
+pub(crate) fn open_window<V: 'static + Render>(
     cx: &mut App,
-    title: &'static str,
-    origin: (i32, i32),
-    size_px: (f32, f32),
-    scale: f32,
-    activate: bool,
+    popup: Popup,
     build: impl FnOnce(Option<HWND>, Frame, &mut Window, &mut Context<V>) -> V + 'static,
 ) -> gpui::Result<WindowHandle<V>> {
+    let Popup {
+        title,
+        origin,
+        size: size_px,
+        scale,
+        activate,
+        shape,
+    } = popup;
     let forced = config::get().glass;
     let mut glass = forced.unwrap_or(Glass::Blur);
     let black = forced.is_none() && look::is_black();
@@ -36,7 +63,6 @@ pub(super) fn open_window<V: 'static + Render>(
             point(logical(origin.0), logical(origin.1)),
             size(px(size_px.0), px(size_px.1)),
         ))),
-        // The title names it for the live checks; a bare popup shows none.
         titlebar: Some(TitlebarOptions {
             title: Some(title.into()),
             appears_transparent: false,
@@ -57,7 +83,7 @@ pub(super) fn open_window<V: 'static + Render>(
         let mut backdrop = None;
         if let Some(hwnd) = hwnd {
             if activate {
-                win32::apply_strip_styles(hwnd);
+                win32::apply_focus_styles(hwnd);
             } else {
                 win32::apply_overlay_styles(hwnd);
             }
@@ -65,7 +91,7 @@ pub(super) fn open_window<V: 'static + Render>(
                 match Backdrop::new(hwnd, kind, cx) {
                     Ok(made) => backdrop = Some(made),
                     Err(err) => {
-                        log(&format!("menu glass unavailable ({err}); acrylic"));
+                        log(&format!("{title} glass unavailable ({err}); acrylic"));
                         glass = Glass::Acrylic;
                     }
                 }
@@ -77,10 +103,17 @@ pub(super) fn open_window<V: 'static + Render>(
                 }
             }
         }
-        let mut frame = Frame::new(hwnd, scale, glass, black, backdrop).menu();
-        let to_px = |v: f32| (v * scale).round() as i32;
-        let (w, h) = (to_px(size_px.0), to_px(size_px.1));
-        frame.float_at((origin.0 + w / 2, origin.1 + h / 2), scale);
+        let frame = Frame::new(hwnd, scale, glass, black, backdrop);
+        let frame = match shape {
+            Shape::Floating => {
+                let mut frame = frame.menu();
+                let to_px = |v: f32| (v * scale).round() as i32;
+                let (w, h) = (to_px(size_px.0), to_px(size_px.1));
+                frame.float_at((origin.0 + w / 2, origin.1 + h / 2), scale);
+                frame
+            }
+            Shape::Hanging => frame.hanging(),
+        };
         cx.new(|cx| build(hwnd, frame, window, cx))
     })
 }
