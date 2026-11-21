@@ -9,7 +9,7 @@ use windows::Win32::Foundation::HWND;
 
 use crate::backdrop::Backdrop;
 use crate::frame::{ACRYLIC_TINT, Frame, Glass};
-use crate::{config, log, win32};
+use crate::{config, log, look, win32};
 
 fn hwnd(window: &Window) -> Option<HWND> {
     let handle = HasWindowHandle::window_handle(window).ok()?;
@@ -27,8 +27,9 @@ pub(super) fn open_window<V: 'static + Render>(
     activate: bool,
     build: impl FnOnce(Option<HWND>, Frame, &mut Window, &mut Context<V>) -> V + 'static,
 ) -> gpui::Result<WindowHandle<V>> {
-    // Glass even with *Black notch* on: the menu is always glazed.
-    let mut glass = config::get().glass.unwrap_or(Glass::Blur);
+    let forced = config::get().glass;
+    let mut glass = forced.unwrap_or(Glass::Blur);
+    let black = forced.is_none() && look::is_black();
     let logical = |v: i32| px(v as f32 / scale);
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(Bounds::new(
@@ -71,10 +72,12 @@ pub(super) fn open_window<V: 'static + Render>(
             }
             if glass == Glass::Acrylic {
                 win32::round_corners(hwnd);
-                win32::set_acrylic(hwnd, Some(ACRYLIC_TINT));
+                if !black {
+                    win32::set_acrylic(hwnd, Some(ACRYLIC_TINT));
+                }
             }
         }
-        let mut frame = Frame::new(hwnd, scale, glass, false, backdrop).menu();
+        let mut frame = Frame::new(hwnd, scale, glass, black, backdrop).menu();
         let to_px = |v: f32| (v * scale).round() as i32;
         let (w, h) = (to_px(size_px.0), to_px(size_px.1));
         frame.float_at((origin.0 + w / 2, origin.1 + h / 2), scale);
