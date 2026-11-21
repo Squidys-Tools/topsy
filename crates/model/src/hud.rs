@@ -1,5 +1,7 @@
-//! The HUDs that grow out of the notch when the volume, brightness or battery changes: what
-//! each one shows, and which battery changes are worth showing.
+//! The HUDs that grow out of the notch when the volume, brightness or battery changes, or an
+//! update is ready: what each one shows, and which battery changes are worth showing.
+
+use crate::update::Nightly;
 
 /// Segments in a HUD's bar, as in Droppy's.
 pub const SEGMENTS: usize = 16;
@@ -16,6 +18,8 @@ pub enum Hud {
     /// The screen's brightness, 0 to 1.
     Brightness(f32),
     Battery(Battery),
+    /// A newer nightly is downloaded; clicking the HUD opens the settings to restart into it.
+    Update(Nightly),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

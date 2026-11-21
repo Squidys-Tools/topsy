@@ -86,3 +86,6 @@ Keep this honest: remove a gap you close, add one you find and leave.
 - **Idle CPU** is ~1–2% of a core on a busy machine, not close to 0%, and the cause was never found; see
   [Measurements](../operations/measurements.md).
 - No droplets yet.
+- **Updates.** A nightly trusts what it downloads over HTTPS from the GitHub release, and the `SHA256SUMS` beside
+  it comes from the same release: nothing is signed, so a tampered release would be installed. The check thread
+  sleeps 4 hours at a time, so after the PC sleeps the next check can come late.

@@ -4,7 +4,8 @@
 
 topsy's icon in the notification area is a small topsy-turvy notch. **Left-click** it to open or close the
 shelf. **Right-click** it, or right-click the notch itself, for the menu: *Show shelf*, *Clear shelf (N)*,
-*Show basket (N)*, an item for each setting below (checked when on), *Settings…* and *Quit topsy*.
+*Show basket (N)*, an item for each setting below (checked when on), *Settings…*, *Restart to update* when an
+update is ready, and *Quit topsy*.
 
 On Windows 11 a new icon starts in the overflow flyout (the ^ arrow); drag it onto the taskbar to keep it
 visible.
@@ -31,6 +32,18 @@ other way round.
 - **Clipboard history** and how long it is kept; see [Clipboard history](clipboard-history.md).
 - **Volume HUD** lets topsy take the volume keys; see [HUDs](huds.md).
 - **Live Activities** shows downloads and Bluetooth audio in the notch; see [Live Activities](live-activities.md).
+- **Check for updates** keeps a nightly build up to date; see below. On until you turn it off. Saved in
+  `HKCU\Software\topsy\Updates`.
+
+## Updates
+
+A nightly build looks for a newer nightly when it starts and every 4 hours, and downloads it quietly into
+`%LOCALAPPDATA%\topsy\update`. When one is ready the notch shows *Update ready* for a few seconds; click it for
+the settings window, then *Restart to update*. The tray icon's menu has *Restart to update* too. topsy swaps
+its own `topsy.exe` and starts again; *Start with Windows* keeps working. An update you don't restart into is
+installed the next time topsy starts.
+
+Only nightlies update. A build from source or from CI never does.
 
 ## Quitting
 

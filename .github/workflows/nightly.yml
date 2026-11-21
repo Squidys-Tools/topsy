@@ -94,8 +94,8 @@ jobs:
           notes="Nightly build of \`main\` at ${GITHUB_SHA::12}. It may be broken.
 
           topsy is not code-signed, so Windows SmartScreen warns the first time it runs: choose
-          **More info**, then **Run anyway**. To update, quit topsy from its tray icon, replace
-          \`topsy.exe\` with this one in the same place, and start it again."
+          **More info**, then **Run anyway**. A nightly updates itself; one from before the updater
+          is updated by quitting topsy and replacing its \`topsy.exe\` with this one."
           start_tag=()
           if [[ -n $PREVIOUS_TAG ]]; then start_tag=(--notes-start-tag "$PREVIOUS_TAG"); fi
           gh release create "v$VERSION" topsy.exe SHA256SUMS \

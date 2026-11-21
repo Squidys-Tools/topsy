@@ -50,6 +50,7 @@ pub mod stats;
 pub mod transform;
 pub mod transform_card;
 pub mod tray_cause;
+pub mod update;
 pub mod video;
 pub mod weather;
 pub mod widgets;

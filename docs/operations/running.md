@@ -19,6 +19,7 @@ row here.
 | `TOPSY_STATE=<path>` | The shelf's save file, `%LOCALAPPDATA%\topsy\shelf.txt` by default (the basket's sits beside it). Set empty to not save. |
 | `TOPSY_CLIPBOARD=<dir>` | Where clipboard history is kept, `%LOCALAPPDATA%\topsy\clipboard` by default. Set empty for none. A run with `TOPSY_STATE` set keeps none unless this says where, so a live check never touches the real history. |
 | `TOPSY_LENS=off\|snapshot\|live` | The open tray's lens: none, the screen read once as it opens, or following the screen, whatever the *Live glass* setting says. See [Glass](../internals/glass.md). |
+| `TOPSY_REPLACES=<pid>` | Wait for that process to exit before starting. An update's restart sets it on the new topsy; nothing else needs it. |
 | `TOPSY_GLASS=host\|acrylic\|tint\|solid\|clear` | Force a fill and ignore the *Black notch* setting; the default is the notch-shaped live blur, and `host` holds it to the system's host backdrop. See [Glass](../internals/glass.md). |
 
 The developer's own topsy may be running, and other worktrees run theirs. Stop only a PID you started; never

@@ -280,11 +280,7 @@ impl Render for Island {
                 this.open_tray(TrayCause::Dropped, cx);
             }))
             .on_hover(cx.listener(|this, hovered: &bool, _window, cx| this.on_hover(*hovered, cx)))
-            .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                if this.mode != Mode::Tray {
-                    this.open_tray(TrayCause::Opened, cx);
-                }
-            }))
+            .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| this.clicked(cx)))
             .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(|_, _: &MouseDownEvent, _window, cx| {

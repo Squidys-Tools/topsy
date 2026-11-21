@@ -11,7 +11,7 @@
 - [Live Activities](./user/live-activities.md): downloads and Bluetooth audio
 - [Shelf widgets](./user/widgets.md): calendar, Pomodoro, system stats and weather
 - [Transform](./user/transform.md): compress, convert, resize, trim
-- [Tray icon and settings](./user/settings.md): the menu, start with Windows, Send to
+- [Tray icon and settings](./user/settings.md): the menu, start with Windows, Send to, updates
 
 ---
 

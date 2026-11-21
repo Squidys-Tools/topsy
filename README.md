@@ -38,8 +38,9 @@ topsy has no stable release yet. A nightly build of `main` comes out every 8 hou
 3. topsy is not code-signed, so Windows SmartScreen warns the first time: choose **More info**, then **Run
    anyway**.
 
-Turn on *Start with Windows* from the tray icon's menu to keep it running. To update, quit topsy from the tray
-icon, replace `topsy.exe` in the same place, and start it again. The settings window shows which build you run.
+Turn on *Start with Windows* from the tray icon's menu to keep it running. topsy keeps itself up to date: when a
+newer nightly is downloaded, the notch says so and *Restart to update* installs it
+([Updates](./docs/user/settings.md#updates)). The settings window shows which build you run.
 [CI, the artifact and nightlies](./docs/operations/ci.md) explains how to build one for any branch.
 
 ## Build from source

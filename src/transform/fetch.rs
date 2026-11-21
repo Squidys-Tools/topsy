@@ -16,22 +16,23 @@ pub use model::download::ModelStatus as Status;
 use model::download::{self, Reply, Start, Ticker};
 
 /// One file at a fixed address, with its size and hash, kept under `%LOCALAPPDATA%\topsy`.
-pub struct Pinned {
+/// The tools pin theirs in the source; an update learns its own from the release (`String`).
+pub struct Pinned<S = &'static str> {
     /// What the user is getting, for messages: "the background model", "FFmpeg".
     pub label: &'static str,
-    pub host: &'static str,
-    pub path: &'static str,
+    pub host: S,
+    pub path: S,
     pub size: u64,
-    pub sha256: &'static str,
+    pub sha256: S,
     /// Where it is kept, relative to `%LOCALAPPDATA%\topsy`.
-    pub file: &'static str,
+    pub file: S,
 }
 
 /// A host may redirect to its CDN, which may itself redirect once more.
 const MAX_REDIRECTS: usize = 4;
 
 /// The files downloading now, by `file`, so a second ask waits its turn instead of racing.
-static DOWNLOADING: Mutex<Vec<&'static str>> = Mutex::new(Vec::new());
+static DOWNLOADING: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 pub fn root() -> io::Result<PathBuf> {
     let base = std::env::var_os("LOCALAPPDATA").ok_or_else(|| {
@@ -40,20 +41,22 @@ pub fn root() -> io::Result<PathBuf> {
     Ok(PathBuf::from(base).join("topsy"))
 }
 
-impl Pinned {
+impl<S: AsRef<str>> Pinned<S> {
     pub fn path(&self) -> io::Result<PathBuf> {
-        Ok(root()?.join(self.file))
+        Ok(root()?.join(self.file.as_ref()))
     }
 
     fn part(&self) -> io::Result<PathBuf> {
-        Ok(root()?.join(format!("{}.part", self.file)))
+        Ok(root()?.join(format!("{}.part", self.file.as_ref())))
     }
 
     pub fn status(&self) -> Status {
         let len = (self.path().ok())
             .and_then(|p| fs::metadata(p).ok())
             .map(|m| m.len());
-        let busy = DOWNLOADING.lock().is_ok_and(|d| d.contains(&self.file));
+        let busy = DOWNLOADING
+            .lock()
+            .is_ok_and(|d| d.iter().any(|f| f == self.file.as_ref()));
         Status::of(busy, len, self.size)
     }
 
@@ -85,11 +88,12 @@ impl Pinned {
         }
         report(self.size);
         let digest = download::hex(&hash(&part, cancel)?);
-        if digest != self.sha256 {
+        if digest != self.sha256.as_ref() {
             fs::remove_file(&part).missing_ok().log_err();
             crate::log(&format!(
                 "{}: sha-256 {digest} != {}",
-                self.label, self.sha256
+                self.label,
+                self.sha256.as_ref()
             ));
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -110,7 +114,10 @@ impl Pinned {
         report: &mut dyn FnMut(u64),
         cancel: &AtomicBool,
     ) -> io::Result<()> {
-        let (mut host, mut path) = (self.host.to_string(), self.path.to_string());
+        let (mut host, mut path) = (
+            self.host.as_ref().to_string(),
+            self.path.as_ref().to_string(),
+        );
         for _ in 0..=MAX_REDIRECTS {
             // `head` opens the file, `body` writes to it: both reach it through the cell.
             let sink: RefCell<Option<(File, u64)>> = RefCell::new(None);
@@ -163,21 +170,22 @@ impl Pinned {
 }
 
 /// Marks a file as downloading for as long as it lives.
-struct Busy(&'static str);
+struct Busy(String);
 
 impl Busy {
-    fn claim(pinned: &Pinned) -> io::Result<Self> {
+    fn claim<S: AsRef<str>>(pinned: &Pinned<S>) -> io::Result<Self> {
         let mut downloading = DOWNLOADING
             .lock()
             .map_err(|_| io::Error::other("poisoned"))?;
-        if downloading.contains(&pinned.file) {
+        let file = pinned.file.as_ref();
+        if downloading.iter().any(|f| f == file) {
             return Err(io::Error::new(
                 io::ErrorKind::ResourceBusy,
                 format!("{} is already downloading", capital(pinned.label)),
             ));
         }
-        downloading.push(pinned.file);
-        Ok(Self(pinned.file))
+        downloading.push(file.to_string());
+        Ok(Self(file.to_string()))
     }
 }
 
