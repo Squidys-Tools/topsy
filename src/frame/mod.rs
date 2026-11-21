@@ -26,6 +26,8 @@ const CAPSULE_EDGE: u32 = 0xffffff24;
 const DWM_RADIUS: f32 = 8.0;
 /// The basket's corners, rounded all round.
 const FLOAT_RADIUS: f32 = 26.0;
+/// The tray icon's menu's corners.
+const MENU_RADIUS: f32 = 12.0;
 
 /// The acrylic fallback's own tint (0xRRGGBBAA).
 pub const ACRYLIC_TINT: u32 = 0x0c101c8c;
@@ -135,6 +137,8 @@ pub struct Frame {
     strips: Vec<(i32, f32)>,
     /// The lens glass is behind the open notch.
     lensed: bool,
+    /// The corners of a floating window.
+    radius: f32,
 }
 
 impl Frame {
@@ -158,6 +162,7 @@ impl Frame {
             floor: GLASS_FLOOR,
             strips: Vec::new(),
             lensed: false,
+            radius: FLOAT_RADIUS,
         }
     }
 
@@ -170,6 +175,14 @@ impl Frame {
         };
         self.floor = BASKET_FLOOR;
         self
+    }
+
+    /// Floating with the notch's own glass and a menu's corners: the tray icon's menu.
+    pub fn menu(self) -> Self {
+        let mut frame = self.floating();
+        frame.floor = GLASS_FLOOR;
+        frame.radius = MENU_RADIUS;
+        frame
     }
 
     /// Centre the floating window on `center` (physical screen pixels), on a monitor of `scale`.
@@ -252,7 +265,7 @@ impl Frame {
         if self.look() == Glass::Acrylic {
             DWM_RADIUS
         } else {
-            FLOAT_RADIUS.min(height / 2.0)
+            self.radius.min(height / 2.0)
         }
     }
 

@@ -27,7 +27,7 @@ release build (see [Building](building.md)). Each script states its usage in its
   shelf, and finally drops a file from another app onto the island to prove it is still a drop target after
   being dragged out of. Escape is held for 250 ms, as the drag loop polls the key.
 - `e2e-tray.ps1`: checks the real notification area: the icon is registered with the shell and drawn there, left
-  click toggles the shelf, the menu's items work (real keystrokes), *Start with Windows* writes and then clears
+  click toggles the shelf, the menu's items and its *Options* submenu work (real keystrokes), *Start with Windows* writes and then clears
   the real Run value, *Show in Send to* creates the shortcut (pointing at the exe) and removes it, *Black notch*
   saves the look and turns it back, right-clicking the notch opens the menu, and Quit exits cleanly and removes
   the icon. It handles an auto-hidden taskbar, and briefly sets the shell's "show this icon" flag for topsy under

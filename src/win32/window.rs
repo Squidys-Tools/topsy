@@ -40,6 +40,17 @@ fn cursor_at() -> Option<(POINT, HMONITOR)> {
 /// scale factor, all in physical screen pixels.
 pub fn cursor_monitor() -> Option<((i32, i32), Rect, f32)> {
     let (at, monitor) = cursor_at()?;
+    let (work, scale) = work_area(monitor)?;
+    Some(((at.x, at.y), work, scale))
+}
+
+/// The work area and scale factor of the monitor nearest `at` (physical screen pixels).
+pub fn monitor_at(at: (i32, i32)) -> Option<(Rect, f32)> {
+    let point = POINT { x: at.0, y: at.1 };
+    work_area(unsafe { MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST) })
+}
+
+fn work_area(monitor: HMONITOR) -> Option<(Rect, f32)> {
     let mut info = MONITORINFO {
         cbSize: size_of::<MONITORINFO>() as u32,
         ..Default::default()
@@ -58,7 +69,7 @@ pub fn cursor_monitor() -> Option<((i32, i32), Rect, f32)> {
         right: w.right,
         bottom: w.bottom,
     };
-    Some(((at.x, at.y), work, dpi as f32 / 96.0))
+    Some((work, dpi as f32 / 96.0))
 }
 
 /// Whether the foreground window is a fullscreen app on the monitor under the cursor, where

@@ -14,7 +14,7 @@ take the foreground (AGENTS.md, rule 2 of what we never compromise on), and thes
   as GPUI leaves `WM_MOUSEACTIVATE` to `DefWindowProc`. The island's window is subclassed to answer
   `MA_NOACTIVATE`.
 - **A popup menu needs its owner in front.** `TrackPopupMenu` doesn't close on a click elsewhere unless its owner
-  is the foreground window. The tray icon's and the chips' menus are owned by a hidden window on a thread of its
+  is the foreground window. The chips' and the basket's menus are owned by a hidden window on a thread of its
   own, which is made foreground for the menu and hands foreground back to the window that had it after, or keys
   go nowhere until the next click.
 - **Menus open on the button's release.** Opened on the press, the release still goes to the window under it and

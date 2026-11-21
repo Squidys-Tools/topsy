@@ -73,6 +73,14 @@ fn hwnd(window: &Window) -> Option<HWND> {
     win32::hwnd_from_raw(handle.as_raw())
 }
 
+/// Open the strip from the tray icon's menu; one already open stays.
+pub(crate) fn show(cx: &mut App, previous: usize) {
+    let open = cx.try_global::<Open>().map(|open| open.0);
+    if open.is_none_or(|handle| handle.update(cx, |_, _, _| ()).is_err()) {
+        toggle(cx, previous);
+    }
+}
+
 fn toggle(cx: &mut App, previous: usize) {
     let open = cx.try_global::<Open>().map(|open| open.0);
     if let Some(handle) = open

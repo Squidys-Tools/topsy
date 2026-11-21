@@ -3,7 +3,11 @@
 //! GPUI owns the main thread's message loop and gives no way into it, so the icon lives on
 //! its own thread with a hidden window, like the mouse hook. It reaches the app through a
 //! channel of [`TrayEvent`]; the app reaches it through [`show_menu`], [`set_shelf_count`]
-//! and [`remove`].
+//! and [`remove`]. The menu itself is a glass window on the UI thread ([`menu`]).
+
+pub(crate) mod menu;
+mod menu_view;
+mod menu_window;
 
 use std::ffi::c_void;
 use std::sync::OnceLock;
@@ -17,23 +21,26 @@ use windows::Win32::UI::Shell::{
     NOTIFYICON_VERSION_4, NOTIFYICONDATAW, Shell_NotifyIconW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DispatchMessageW,
-    GetCursorPos, GetMessageW, GetSystemMetrics, HICON, IMAGE_ICON, LR_DEFAULTCOLOR, LoadImageW,
-    MF_CHECKED, MF_GRAYED, MF_SEPARATOR, MF_STRING, MSG, PostMessageW, PostQuitMessage,
-    RegisterClassW, RegisterWindowMessageW, SM_CXSMICON, SetForegroundWindow, TPM_RETURNCMD,
-    TPM_RIGHTBUTTON, TrackPopupMenu, TranslateMessage, WM_APP, WM_CONTEXTMENU, WM_DESTROY, WM_NULL,
-    WNDCLASSW, WS_EX_TOOLWINDOW, WS_POPUP,
+    CreateWindowExW, DefWindowProcW, DispatchMessageW, GetCursorPos, GetMessageW, GetSystemMetrics,
+    HICON, IMAGE_ICON, LR_DEFAULTCOLOR, LoadImageW, MSG, PostMessageW, PostQuitMessage,
+    RegisterClassW, RegisterWindowMessageW, SM_CXSMICON, SetForegroundWindow, TranslateMessage,
+    WM_APP, WM_CONTEXTMENU, WM_DESTROY, WNDCLASSW, WS_EX_TOOLWINDOW, WS_POPUP,
 };
 use windows::core::{PCWSTR, w};
 
 use crate::log::LogErr;
 use crate::settings::Setting;
-use crate::win32::wide;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TrayEvent {
     /// Left click on the icon: open the shelf, or close it if it is open.
     Toggle,
+    /// Right click on the icon, or on the notch: open the menu at `at` (physical screen
+    /// pixels). `previous` is the window that was foreground before, as for `OpenSettings`.
+    Menu {
+        at: (i32, i32),
+        previous: usize,
+    },
     /// "Show shelf" in the menu.
     Show,
     ClearShelf,
@@ -45,6 +52,8 @@ pub enum TrayEvent {
     /// was foreground before the menu (as an address: `HWND` can't cross threads), to hand
     /// foreground back to when the settings window closes.
     OpenSettings(usize),
+    /// "Clipboard history": open the clipboard strip, to paste into `previous`.
+    Clipboard(usize),
     /// "Restart to update": install the downloaded nightly and start it.
     Update,
     Quit,
@@ -57,15 +66,6 @@ const WM_TRAY: u32 = WM_APP + 1;
 const WM_SHOW_MENU: u32 = WM_APP + 2;
 const ICON_ID: u32 = 1;
 
-const ID_SHOW: usize = 1;
-const ID_CLEAR: usize = 2;
-const ID_QUIT: usize = 3;
-const ID_SETTINGS: usize = 4;
-const ID_BASKET: usize = 5;
-const ID_UPDATE: usize = 6;
-/// `Setting::ALL[i]` is item `ID_SETTING + i`.
-const ID_SETTING: usize = 100;
-
 /// The hidden window on the tray thread; 0 until it exists.
 static WINDOW: AtomicIsize = AtomicIsize::new(0);
 /// The icon handle, kept so it can be added again after Explorer restarts.
@@ -76,7 +76,7 @@ static SHELF_COUNT: AtomicUsize = AtomicUsize::new(0);
 static BASKET_COUNT: AtomicUsize = AtomicUsize::new(0);
 static EVENTS: OnceLock<async_channel::Sender<TrayEvent>> = OnceLock::new();
 
-fn send(event: TrayEvent) {
+pub(crate) fn send(event: TrayEvent) {
     if let Some(tx) = EVENTS.get() {
         tx.try_send(event).log_err();
     }
@@ -95,6 +95,28 @@ pub fn set_shelf_count(count: usize) {
 /// Tell the menu how many files are in the basket (it greys out "Show basket" at zero).
 pub fn set_basket_count(count: usize) {
     BASKET_COUNT.store(count, Ordering::Relaxed);
+}
+
+fn shelf_count() -> usize {
+    SHELF_COUNT.load(Ordering::Relaxed)
+}
+
+fn basket_count() -> usize {
+    BASKET_COUNT.load(Ordering::Relaxed)
+}
+
+/// Make the hidden window foreground, so topsy keeps the right to bring a window of its own to
+/// the front (the settings window, the clipboard strip) once the menu has closed.
+fn hold_foreground() {
+    if let Some(hwnd) = window() {
+        unsafe {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "Windows may refuse the foreground; the window opens behind then"
+            )]
+            let _ = SetForegroundWindow(hwnd);
+        }
+    }
 }
 
 /// Pop the menu up at the cursor, as if the icon had been right-clicked. For the pill.
@@ -255,89 +277,21 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
     }
 }
 
-/// Show the menu at `at` and carry out the choice.
+/// Ask the UI thread for the menu at `at`. The click on the icon (or the notch) lets topsy
+/// take the foreground now, so the hidden window takes it, for the menu to take from it.
 unsafe fn open_menu(hwnd: HWND, at: POINT) {
+    let previous = crate::win32::foreground_window();
     unsafe {
-        let Ok(menu) = CreatePopupMenu() else {
-            return;
-        };
-        let count = SHELF_COUNT.load(Ordering::Relaxed);
-        let clear = wide(format!("&Clear shelf ({count})"));
-        let clear_flags = if count > 0 {
-            MF_STRING
-        } else {
-            MF_STRING | MF_GRAYED
-        };
-        AppendMenuW(menu, MF_STRING, ID_SHOW, w!("&Show shelf")).log_err();
-        AppendMenuW(menu, clear_flags, ID_CLEAR, PCWSTR(clear.as_ptr())).log_err();
-        let held = BASKET_COUNT.load(Ordering::Relaxed);
-        let basket = wide(format!("Show bas&ket ({held})"));
-        let basket_flags = if held > 0 {
-            MF_STRING
-        } else {
-            MF_STRING | MF_GRAYED
-        };
-        AppendMenuW(menu, basket_flags, ID_BASKET, PCWSTR(basket.as_ptr())).log_err();
-        AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null()).log_err();
-        for (i, setting) in Setting::ALL.into_iter().enumerate() {
-            let flags = if setting.is_on() {
-                MF_STRING | MF_CHECKED
-            } else {
-                MF_STRING
-            };
-            let label = wide(setting.menu_label());
-            AppendMenuW(menu, flags, ID_SETTING + i, PCWSTR(label.as_ptr())).log_err();
-        }
-        AppendMenuW(menu, MF_STRING, ID_SETTINGS, w!("Se&ttings…")).log_err();
-        AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null()).log_err();
-        if let Some(version) = crate::update::ready() {
-            let label = wide(format!("&Restart to update ({})", version.short()));
-            AppendMenuW(menu, MF_STRING, ID_UPDATE, PCWSTR(label.as_ptr())).log_err();
-        }
-        AppendMenuW(menu, MF_STRING, ID_QUIT, w!("&Quit topsy")).log_err();
-
-        // The owner has to be foreground or the menu won't close when you click elsewhere.
-        // This is the hidden window, so it takes focus from nothing visible; it is handed back
-        // afterwards, or keys would go nowhere until the next click.
-        let previous = crate::win32::foreground_window();
         #[expect(
             clippy::let_underscore_must_use,
             reason = "Windows may refuse the foreground; the menu still opens"
         )]
         let _ = SetForegroundWindow(hwnd);
-        let choice = TrackPopupMenu(
-            menu,
-            TPM_RETURNCMD | TPM_RIGHTBUTTON,
-            at.x,
-            at.y,
-            None,
-            hwnd,
-            None,
-        );
-        // Documented companion to the above: lets the menu dismiss properly next time.
-        PostMessageW(Some(hwnd), WM_NULL, WPARAM(0), LPARAM(0)).log_err();
-        DestroyMenu(menu).log_err();
-        // The settings window takes foreground itself, which needs the app to still hold it.
-        if choice.0 as usize != ID_SETTINGS {
-            crate::win32::restore_foreground(previous);
-        }
-
-        match choice.0 as usize {
-            ID_SHOW => send(TrayEvent::Show),
-            ID_CLEAR => send(TrayEvent::ClearShelf),
-            ID_BASKET => send(TrayEvent::ShowBasket),
-            ID_UPDATE => send(TrayEvent::Update),
-            ID_QUIT => send(TrayEvent::Quit),
-            ID_SETTINGS => send(TrayEvent::OpenSettings(previous.0 as usize)),
-            id => {
-                if let Some(&setting) = id.checked_sub(ID_SETTING).and_then(|i| Setting::ALL.get(i))
-                    && let Some(on) = setting.toggle()
-                {
-                    send(TrayEvent::Setting(setting, on));
-                }
-            }
-        }
     }
+    send(TrayEvent::Menu {
+        at: (at.x, at.y),
+        previous: previous.0 as usize,
+    });
 }
 
 /// The exe's own icon (resource 1, written by `build.rs`) at the shell's small-icon size.

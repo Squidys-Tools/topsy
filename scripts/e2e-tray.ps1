@@ -1,6 +1,6 @@
 # End-to-end check of the tray icon, its menu and start-with-Windows on a live desktop:
 #   the icon is registered in the notification area -> left click toggles the shelf -> right click
-#   opens the menu -> "Start with Windows" writes and then removes the real HKCU Run value ->
+#   opens the menu (a glass window of topsy's own) and its Options submenu of settings -> "Start with Windows" writes and then removes the real HKCU Run value ->
 #   "Black notch" saves the look and turns it back -> "Show in Send to" writes and removes the
 #   SendTo shortcut -> Show shelf / Clear shelf -> right-clicking the notch opens the same menu ->
 #   Quit exits the app and takes the icon out of the notification area -> without a tray
@@ -27,6 +27,16 @@ public static class Native {
   [DllImport("user32.dll")] public static extern int GetClassName(IntPtr h, StringBuilder s, int n);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
   [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr e);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+  // The process's visible window titled `title` (the menu is "topsy menu", its submenu "topsy submenu").
+  public static IntPtr Titled(uint pid, string title) {
+    IntPtr found = IntPtr.Zero;
+    EnumWindows((h, l) => {
+      uint p; GetWindowThreadProcessId(h, out p); if (p != pid || !IsWindowVisible(h)) return true;
+      var s = new StringBuilder(256); GetWindowText(h, s, 256); if (s.ToString() != title) return true;
+      found = h; return false; }, IntPtr.Zero);
+    return found;
+  }
   [DllImport("shell32.dll")] public static extern int Shell_NotifyIconGetRect(ref NOTIFYICONIDENTIFIER id, out RECT r);
   // First window of `pid` with this class (hidden ones included when `visibleOnly` is false).
   public static IntPtr WindowOf(uint pid, string cls, bool visibleOnly) {
@@ -44,7 +54,9 @@ public static class Native {
     EnumWindows((h, l) => {
       uint p; GetWindowThreadProcessId(h, out p); if (p != pid || !IsWindowVisible(h)) return true;
       var s = new StringBuilder(256); GetClassName(h, s, 256);
-      if (s.ToString() == "#32768" || s.ToString() == "topsy-tray") return true;
+      if (s.ToString() == "topsy-tray") return true;
+      var t = new StringBuilder(256); GetWindowText(h, t, 256);
+      if (t.ToString() == "topsy menu" || t.ToString() == "topsy submenu") return true;
       found = h; return false; }, IntPtr.Zero);
     return found;
   }
@@ -70,7 +82,8 @@ function Island-Rect {
     $r = New-Object Native+RECT; [void][Native]::GetWindowRect($h, [ref]$r); $r
 }
 function Island-Open { $r = Island-Rect; $r.Bottom - $r.Top -ge 100 * $scale }
-function Menu-Visible { [Native]::WindowOf($app.Id, '#32768', $true) -ne [IntPtr]::Zero }
+function Menu-Visible { [Native]::Titled($app.Id, 'topsy menu') -ne [IntPtr]::Zero }
+function Submenu-Visible { [Native]::Titled($app.Id, 'topsy submenu') -ne [IntPtr]::Zero }
 function Run-Value { (Get-ItemProperty -Path $RunKey -Name topsy -ErrorAction SilentlyContinue).topsy }
 
 # Where the notification-area icon is, as the shell reports it; throws if it was never added.
@@ -128,13 +141,25 @@ function Shot-Screen($path) {
     $g = [System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($screen.X, $screen.Y, 0, 0, $bmp.Size); $g.Dispose()
     $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png); $bmp.Dispose()
 }
-# Run `$open` (which right-clicks something), wait for the menu, press `key` (a mnemonic) or Escape.
-function Use-Menu([scriptblock]$open, [byte]$key, $what) {
+# Run `$open` (which right-clicks something), wait for the menu, then press `keys` in turn: access
+# keys, with O for the Options submenu of settings. A 0 takes a screenshot of what is open and
+# backs out with Escape.
+function Use-Menu([scriptblock]$open, [byte[]]$keys, $what) {
     & $open
     if (-not (Wait-Until { Menu-Visible } 2500)) { throw "the menu did not open ($what)" }
     Start-Sleep -Milliseconds 250
-    if ($key -eq 0) { Shot-Screen (Join-Path $shots "tray-menu-$what.png"); Tap-Key 0x1B } else { Tap-Key $key }
-    if (-not (Wait-Until { -not (Menu-Visible) } 2000)) { throw "the menu did not close ($what)" }
+    foreach ($key in $keys) {
+        if ($key -eq 0) {
+            Start-Sleep -Milliseconds 250
+            Shot-Screen (Join-Path $shots "tray-menu-$what.png")
+            for ($i = 0; $i -lt 2 -and (Menu-Visible); $i++) { Tap-Key 0x1B; Start-Sleep -Milliseconds 200 }
+            break
+        }
+        Tap-Key $key
+        if ($key -eq 0x4F -and -not (Wait-Until { Submenu-Visible } 2000)) { throw "the Options submenu did not open ($what)" }
+        Start-Sleep -Milliseconds 150
+    }
+    if (-not (Wait-Until { -not (Menu-Visible) -and -not (Submenu-Visible) } 2000)) { throw "the menu did not close ($what)" }
 }
 
 # The shell's per-icon "show in the taskbar" flag; new icons otherwise start in the overflow flyout.
@@ -200,58 +225,58 @@ try {
     if (-not (Wait-Until { -not (Island-Open) } 3000)) { throw 'the shelf did not close from the icon' }
 
     # 3. Start with Windows: the menu item writes the real Run value, and clears it again.
-    Use-Menu $IconMenu 0x57 'autostart-on'          # W
+    Use-Menu $IconMenu (0x4F, 0x57) 'autostart-on'          # W
     if (-not (Wait-Until { $null -ne (Run-Value) } 3000)) { throw 'Start with Windows did not write the Run value' }
     if ((Run-Value) -ne ('"' + $Exe + '"')) { throw "the Run value is not the quoted exe path: $(Run-Value)" }
-    Use-Menu $IconMenu 0 'autostart-checked'        # look at it (checked), then Escape
+    Use-Menu $IconMenu (0x4F, 0) 'autostart-checked'        # look at it (checked), then Escape
     if ($null -eq (Run-Value)) { throw 'dismissing the menu must not change start-with-Windows' }
-    Use-Menu $IconMenu 0x57 'autostart-off'         # W again
+    Use-Menu $IconMenu (0x4F, 0x57) 'autostart-off'         # W again
     if (-not (Wait-Until { $null -eq (Run-Value) } 3000)) { throw 'Start with Windows did not remove the Run value' }
 
     # 3b. Black notch: saved, applied straight away, checked in the menu, and turned back.
-    Use-Menu $IconMenu 0x42 'black-on'              # B
+    Use-Menu $IconMenu (0x4F, 0x42) 'black-on'              # B
     if (-not (Wait-Until { (Look-Value) -eq 'black' } 3000)) { throw 'Black notch did not save the look' }
     if (-not (Wait-Log $appLog 'tray Setting\(Black, true\)' 3000)) { throw 'Black notch did not reach the island' }
-    Use-Menu $IconMenu 0 'black-checked'            # look at it (checked), then Escape
+    Use-Menu $IconMenu (0x4F, 0) 'black-checked'            # look at it (checked), then Escape
     Icon-Click
     if (-not (Wait-Until { Island-Open } 3000)) { throw 'the shelf did not open from the icon' }
     Start-Sleep -Milliseconds 500
     & "$PSScriptRoot\shot.ps1" -Out (Join-Path $shots 'tray-black.png')
     Icon-Click
     if (-not (Wait-Until { -not (Island-Open) } 3000)) { throw 'the shelf did not close from the icon' }
-    Use-Menu $IconMenu 0x42 'black-off'             # B again
+    Use-Menu $IconMenu (0x4F, 0x42) 'black-off'             # B again
     if (-not (Wait-Until { $null -eq (Look-Value) } 3000)) { throw 'Black notch did not turn back to glass' }
     if (-not (Wait-Log $appLog 'tray Setting\(Black, false\)' 3000)) { throw 'turning Black notch off did not reach the island' }
 
     # 3c. Show in Send to: the menu item writes the SendTo shortcut to this exe, checked, and removes it.
-    Use-Menu $IconMenu 0x44 'sendto-on'             # D
+    Use-Menu $IconMenu (0x4F, 0x44) 'sendto-on'             # D
     if (-not (Wait-Until { Test-Path $SendToLink } 3000)) { throw 'Show in Send to did not write the shortcut' }
     $target = (New-Object -ComObject WScript.Shell).CreateShortcut($SendToLink).TargetPath
     if ($target -ne $Exe) { throw "the Send to shortcut points at $target" }
-    Use-Menu $IconMenu 0 'sendto-checked'           # look at it (checked), then Escape
-    Use-Menu $IconMenu 0x44 'sendto-off'            # D again
+    Use-Menu $IconMenu (0x4F, 0) 'sendto-checked'           # look at it (checked), then Escape
+    Use-Menu $IconMenu (0x4F, 0x44) 'sendto-off'            # D again
     if (-not (Wait-Until { -not (Test-Path $SendToLink) } 3000)) { throw 'Show in Send to did not remove the shortcut' }
 
     # 4. Show shelf opens it (a closed island), Clear shelf empties it.
-    Use-Menu $IconMenu 0x53 'show'                  # S
+    Use-Menu $IconMenu @(0x53) 'show'                  # S
     if (-not (Wait-Log $appLog 'tray Show' 3000)) { throw 'Show shelf did nothing' }
     if (-not (Wait-Until { Island-Open } 3000)) { throw 'Show shelf did not open the shelf' }
-    Use-Menu $IconMenu 0x43 'clear'                 # C
+    Use-Menu $IconMenu @(0x43) 'clear'                 # C
     if (-not (Wait-Log $appLog 'tray ClearShelf' 3000)) { throw 'Clear shelf did nothing' }
     if (-not (Wait-Log $appLog 'shelf now 0' 3000)) { throw 'Clear shelf did not empty the shelf' }
-    Use-Menu $IconMenu 0 'empty'                    # Clear is greyed out now; look, then Escape
+    Use-Menu $IconMenu @(0) 'empty'                    # Clear is greyed out now; look, then Escape
     if ((Log-Count $appLog 'tray ClearShelf') -ne 1) { throw 'dismissing the menu must not clear anything' }
 
     # 5. Right-clicking the notch itself opens the same menu.
     if (Island-Open) { Icon-Click; [void](Wait-Until { -not (Island-Open) } 3000) }   # fold it so the peek is what is on screen
     Move-Cursor ($screen.Width / 2) 300; Start-Sleep -Milliseconds 400
-    Use-Menu { $r = Island-Rect; Click (($r.Left + $r.Right) / 2) (($r.Top + $r.Bottom) / 2) -Right } 0 'notch'
+    Use-Menu { $r = Island-Rect; Click (($r.Left + $r.Right) / 2) (($r.Top + $r.Bottom) / 2) -Right } @(0) 'notch'
 
     # 6. Quit exits the app and takes the icon out of the notification area.
     [void](Reveal-Taskbar)
     $blue = Blue-Pixels $ir
     if ($blue -lt 30) { throw "the tray icon vanished before Quit ($blue blue pixels)" }
-    Use-Menu $IconMenu 0x51 'quit'                  # Q
+    Use-Menu $IconMenu @(0x51) 'quit'                  # Q
     if (-not (Wait-Until { $app.HasExited } 5000)) { throw 'Quit did not end the process' }
     if ($app.ExitCode -ne 0) { throw "the app exited with code $($app.ExitCode)" }
     Start-Sleep -Milliseconds 700
