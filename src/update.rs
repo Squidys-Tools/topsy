@@ -220,6 +220,8 @@ fn install(new: &Path) -> io::Result<()> {
     fs::remove_file(&old).missing_ok()?;
     fs::rename(&exe, &old)?;
     if let Err(err) = fs::copy(new, &exe) {
+        // A failed copy can leave part of the new exe behind, which the rename back can't replace.
+        fs::remove_file(&exe).missing_ok().log_err();
         fs::rename(&old, &exe).log_err();
         return Err(err);
     }

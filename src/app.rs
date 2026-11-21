@@ -144,7 +144,7 @@ pub fn run() {
     // An update's restart: the topsy it replaces lets go of the hooks, the tray icon and the
     // shelf's file first.
     if let Some(pid) = config.replaces {
-        win32::process::wait_for_exit(pid, Duration::from_secs(10));
+        win32::process::wait_for_exit(pid);
     }
     // Explorer's Send to starts topsy with the selected paths: a topsy already running takes
     // them, and this one is done.
