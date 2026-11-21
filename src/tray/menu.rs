@@ -361,7 +361,10 @@ impl Menu {
             match opened {
                 Ok(handle) => {
                     let kept = this.update(cx, |menu, _| {
-                        if menu.closed || menu.highlight_item() != Some(Item::Options) {
+                        if menu.closed
+                            || menu.sub.is_some()
+                            || menu.highlight_item() != Some(Item::Options)
+                        {
                             false
                         } else {
                             menu.sub = Some(handle);
