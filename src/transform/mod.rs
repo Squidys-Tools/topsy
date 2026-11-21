@@ -169,7 +169,7 @@ pub fn open(cx: &mut App, island: &Entity<Island>, paths: Vec<PathBuf>) {
     let opened = cx.open_window(options, |window, cx| {
         let raw = hwnd(window).map_or(0, |hwnd| hwnd.0 as usize);
         if let Some(hwnd) = hwnd(window) {
-            win32::apply_strip_styles(hwnd);
+            win32::apply_focus_styles(hwnd);
             win32::bring_to_front(hwnd);
             cx.defer(move |_| {
                 let hwnd = HWND(raw as *mut _);

@@ -5,13 +5,11 @@
 //! Nothing polls; the device is looked at again only when asked to ([`Watch::refresh`]).
 
 use std::collections::HashMap;
-use std::ffi::OsString;
-use std::os::windows::ffi::OsStringExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, mpsc};
 
 use gpui::RenderImage;
-use windows::Win32::Foundation::{CloseHandle, PROPERTYKEY, S_OK};
+use windows::Win32::Foundation::S_OK;
 use windows::Win32::Media::Audio::{
     AudioSessionDisconnectReason, AudioSessionState, AudioSessionStateExpired,
     IAudioSessionControl, IAudioSessionControl2, IAudioSessionEvents, IAudioSessionEvents_Impl,
@@ -21,22 +19,15 @@ use windows::Win32::Media::Audio::{
 use windows::Win32::System::Com::{
     CLSCTX_ALL, COINIT_MULTITHREADED, CoCreateInstance, CoTaskMemFree,
 };
-use windows::Win32::System::Threading::{
-    OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
-};
-use windows::Win32::UI::Shell::{IShellItem2, SHCreateItemFromParsingName};
-use windows::core::{BOOL, GUID, HSTRING, Interface, PCWSTR, PWSTR, Ref, implement};
+use windows::core::{BOOL, GUID, Interface, PCWSTR, PWSTR, Ref, implement};
 
+use super::process::exe_of;
+use super::shell::exe_description;
 use crate::log::LogErr;
 use model::mixer::Session;
 
 /// Marks topsy's own volume changes, so their echoes are told apart from other apps'.
 const OURS: GUID = GUID::from_u128(0x5f1c2b7e_9a43_4d0e_b8a1_3c6e2d7f9a10);
-/// `PKEY_FileDescription`: the name an exe gives itself ("Google Chrome").
-const DESCRIPTION: PROPERTYKEY = PROPERTYKEY {
-    fmtid: GUID::from_u128(0x0cef7d53_fa64_11d1_a203_0000f81fedee),
-    pid: 3,
-};
 /// The app icon's side in physical pixels, enough for the row's icon at 200%.
 const ICON: i32 = 40;
 
@@ -252,7 +243,7 @@ impl Device {
             if self.sessions.contains_key(&id) {
                 return Ok(None);
             }
-            let Some(exe) = process_exe(control2.GetProcessId()?) else {
+            let Some(exe) = exe_of(control2.GetProcessId()?) else {
                 return Ok(None);
             };
             let volume: ISimpleAudioVolume = control.cast()?;
@@ -333,38 +324,11 @@ unsafe fn name(control: &IAudioSessionControl, exe: &Path) -> String {
     let given = unsafe { control.GetDisplayName() }
         .ok()
         .map(|name| unsafe { take(name) });
-    let described = || {
-        let item: IShellItem2 =
-            unsafe { SHCreateItemFromParsingName(&HSTRING::from(exe.as_os_str()), None) }.ok()?;
-        Some(unsafe { take(item.GetString(&DESCRIPTION).ok()?) })
-    };
     let stem = || exe.file_stem().map(|s| s.to_string_lossy().into_owned());
     (given.filter(|name| !name.is_empty() && !name.starts_with('@')))
-        .or_else(|| described().filter(|name| !name.trim().is_empty()))
+        .or_else(|| exe_description(exe))
         .or_else(stem)
         .unwrap_or_default()
-}
-
-/// The exe of process `pid`, or `None` if it is gone or out of reach.
-fn process_exe(pid: u32) -> Option<PathBuf> {
-    if pid == 0 {
-        return None;
-    }
-    // SAFETY: the handle is closed before returning; the buffer outlives the call.
-    unsafe {
-        let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
-        let mut buf = [0u16; 1024];
-        let mut len = buf.len() as u32;
-        let named = QueryFullProcessImageNameW(
-            process,
-            PROCESS_NAME_WIN32,
-            PWSTR(buf.as_mut_ptr()),
-            &mut len,
-        );
-        CloseHandle(process).log_err();
-        named.ok()?;
-        Some(PathBuf::from(OsString::from_wide(&buf[..len as usize])))
-    }
 }
 
 /// A string COM allocated, read and freed.

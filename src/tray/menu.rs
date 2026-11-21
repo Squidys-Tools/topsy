@@ -12,8 +12,7 @@ use gpui::{
 use windows::Win32::Foundation::HWND;
 
 use super::TrayEvent;
-use super::menu_window::open_window;
-use crate::frame::Frame;
+use crate::frame::{Frame, open_window};
 use crate::settings::Setting;
 use crate::{clipboard, log, update, win32};
 use model::menu;

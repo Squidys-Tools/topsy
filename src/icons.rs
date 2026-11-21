@@ -53,7 +53,6 @@ icons! {
     Minus => "minus",
     Moon => "moon",
     MoonCloud => "moon-cloud",
-    More => "more",
     Next => "next",
     Open => "open",
     Pause => "pause",

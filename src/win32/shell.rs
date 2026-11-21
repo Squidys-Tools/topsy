@@ -3,17 +3,25 @@
 use std::io;
 use std::path::Path;
 
+use windows::Win32::Foundation::PROPERTYKEY;
 use windows::Win32::Storage::FileSystem::{MOVE_FILE_FLAGS, MoveFileExW};
 
 use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoTaskMemFree};
 use windows::Win32::UI::Shell::{
-    FOLDERID_AppsFolder, ILCreateFromPathW, ILFree, IShellItem, KF_FLAG_DEFAULT,
-    SHCreateItemInKnownFolder, SHOpenFolderAndSelectItems, SIGDN_NORMALDISPLAY, ShellExecuteW,
+    FOLDERID_AppsFolder, ILCreateFromPathW, ILFree, IShellItem, IShellItem2, KF_FLAG_DEFAULT,
+    SHCreateItemFromParsingName, SHCreateItemInKnownFolder, SHOpenFolderAndSelectItems,
+    SIGDN_NORMALDISPLAY, ShellExecuteW,
 };
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
-use windows::core::{HSTRING, PCWSTR, w};
+use windows::core::{GUID, HSTRING, PCWSTR, w};
 
 use super::{wide, with_com};
+
+/// `PKEY_FileDescription`: the name an exe gives itself ("Google Chrome").
+const DESCRIPTION: PROPERTYKEY = PROPERTYKEY {
+    fmtid: GUID::from_u128(0x0cef7d53_fa64_11d1_a203_0000f81fedee),
+    pid: 3,
+};
 
 /// Open a file or folder with its default handler, as a double-click would.
 ///
@@ -74,5 +82,18 @@ pub fn app_name(app_id: &str) -> Option<String> {
         let text = name.to_string().ok();
         CoTaskMemFree(Some(name.0 as _));
         text.filter(|t| !t.is_empty())
+    }
+}
+
+/// The name an exe gives itself (`chrome.exe` reads `Google Chrome`), if it gives one. Wants
+/// COM on the calling thread.
+pub fn exe_description(exe: &Path) -> Option<String> {
+    unsafe {
+        let item: IShellItem2 =
+            SHCreateItemFromParsingName(&HSTRING::from(exe.as_os_str()), None).ok()?;
+        let name = item.GetString(&DESCRIPTION).ok()?;
+        let text = name.to_string().ok();
+        CoTaskMemFree(Some(name.0 as _));
+        text.filter(|t| !t.trim().is_empty())
     }
 }

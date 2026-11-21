@@ -146,9 +146,9 @@ pub fn apply_overlay_styles(hwnd: HWND) {
     }
 }
 
-/// The clipboard strip: a bare, topmost popup like the island (see [`apply_overlay_styles`]),
-/// but one that takes focus, since it is typed into.
-pub fn apply_strip_styles(hwnd: HWND) {
+/// A bare, topmost popup like the island (see [`apply_overlay_styles`]), but one that takes
+/// focus, since it is typed into: the clipboard palette, the tray icon's menu.
+pub fn apply_focus_styles(hwnd: HWND) {
     unsafe {
         SetWindowLongPtrW(hwnd, GWL_STYLE, (WS_POPUP.0 | WS_VISIBLE.0) as isize);
         SetWindowPos(

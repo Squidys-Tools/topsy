@@ -1,15 +1,17 @@
 //! Clipboard history on disk. One thread owns the history and its folder
 //! (`%LOCALAPPDATA%\topsy\clipboard`): each entry is `<id>.json`, an image's pixels
 //! `<id>.png` beside it, a link's site icon `icons\<host>.png`. Copies arrive from the
-//! clipboard watcher and changes from the strip; the thread wakes otherwise only when the
-//! oldest entry is due to expire. It publishes each new state for the strip to read. The rules
-//! are in `model::clipboard`.
+//! clipboard watcher and changes from the palette; the thread wakes otherwise only when the
+//! oldest entry is due to expire. It publishes each new state for the palette to read. The
+//! rules are in `model::clipboard`.
 
-mod card;
+mod actions;
+mod detail;
 mod favicon;
+pub mod palette;
 mod pictures;
 mod preview;
-pub mod strip;
+mod view;
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
@@ -41,7 +43,7 @@ pub enum Command {
     Wake,
 }
 
-/// What the strip hears from the clipboard's threads.
+/// What the palette hears from the clipboard's threads.
 pub enum Event {
     /// The hotkey, with the window that was in front.
     Hotkey(usize),
@@ -132,7 +134,7 @@ pub fn data(entry: &Entry) -> Option<Data> {
 }
 
 /// Start watching the clipboard and keeping its history in `dir` (`None`: history is off for
-/// this run, as in scripted runs). The strip listens on what comes back.
+/// this run, as in scripted runs). The palette listens on what comes back.
 pub fn start(dir: Option<PathBuf>) -> Option<async_channel::Receiver<Event>> {
     let dir = dir?;
     if !watcher::claim(&dir) {

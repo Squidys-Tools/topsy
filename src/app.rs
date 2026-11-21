@@ -38,7 +38,7 @@ impl Island {
                 cx.defer(move |cx| tray::menu::open(cx, at, previous))
             }
             TrayEvent::Clipboard(previous) => {
-                cx.defer(move |cx| crate::clipboard::strip::show(cx, previous))
+                cx.defer(move |cx| crate::clipboard::palette::show(cx, previous))
             }
             TrayEvent::Setting(setting, on) => {
                 self.on_setting(setting, on, cx);
@@ -332,7 +332,7 @@ pub fn run() {
             crate::transform::open(cx, &island, files);
         }
         if let Some(events) = crate::clipboard::start(config.clipboard.clone()) {
-            crate::clipboard::strip::listen(cx, events);
+            crate::clipboard::palette::listen(cx, events);
         }
 
         // Real input: the global mouse hook reports jiggles, the top edge and button releases.

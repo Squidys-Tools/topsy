@@ -3,6 +3,9 @@
 //! The OS window is always exactly the shape (docs/internals/notch.md, glass.md).
 
 mod paint;
+mod window;
+
+pub(crate) use window::open_window;
 
 use gpui::{App, Pixels, Size};
 use windows::Win32::Foundation::HWND;
@@ -189,6 +192,13 @@ impl Frame {
         frame.radius = MENU_RADIUS;
         frame.even = true;
         frame
+    }
+
+    /// A floating window with corners of `radius` logical pixels.
+    pub fn rounded(mut self, radius: f32) -> Self {
+        self.radius = radius;
+        self.applied = None;
+        self
     }
 
     /// Centre the floating window on `center` (physical screen pixels), on a monitor of `scale`.

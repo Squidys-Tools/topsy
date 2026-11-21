@@ -1,6 +1,6 @@
-//! A link card's site icon: the site's `/favicon.ico` or the icon its home page names, asked once per host and kept as a small
+//! A link's site icon: the site's `/favicon.ico` or the icon its home page names, asked once per host and kept as a small
 //! PNG in `icons\` beside the history. An empty file there means the site has none. Only
-//! public names are asked (see `model::favicon`), and only when a link card is shown.
+//! public names are asked (see `model::favicon`), and only when a link is listed.
 
 use std::collections::HashSet;
 use std::io::Cursor;
@@ -23,7 +23,7 @@ const MAX_BYTES: usize = 512 * 1024;
 const MAX_PAGE: usize = 256 * 1024;
 const MAX_REDIRECTS: usize = 3;
 
-/// Hosts already asked this run, so a strip opened twice doesn't ask twice.
+/// Hosts already asked this run, so a palette opened twice doesn't ask twice.
 static ASKED: Mutex<Option<HashSet<String>>> = Mutex::new(None);
 
 /// The icon for `host`, from `cache` or else from the site. Blocks on the network: call it from

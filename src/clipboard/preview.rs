@@ -1,6 +1,6 @@
-//! The text a card previews: the start of a copy, cut after the lines the card has room for and
-//! ended with an ellipsis. GPUI's line clamp can't do the ellipsis (see `model::clamp`), so the
-//! text system lays the text out here and the cut is made before the card ever sees it.
+//! The text the palette previews: the start of a copy, cut after the lines there is room for
+//! and ended with an ellipsis. GPUI's line clamp can't do the ellipsis (see `model::clamp`), so
+//! the text system lays the text out here and the cut is made before the view ever sees it.
 
 use std::ops::Range;
 
@@ -8,7 +8,7 @@ use gpui::{Pixels, Rems, TextRun, Window, black, px, rems};
 
 use model::clamp::{ELLIPSIS, clamp};
 
-/// How much of a long text is laid out at all, so a card never shapes a whole copied log.
+/// How much of a long text is laid out at all, so a preview never shapes a whole copied log.
 const LINES: usize = 12;
 const CHARS: usize = 400;
 /// An ellipsis that fits to the fraction of a pixel would still wrap on rounding.
@@ -21,9 +21,9 @@ pub struct Face {
     pub rems: f32,
     /// Logical pixels.
     pub width: f32,
-    /// Lines the card has room for.
+    /// Lines there is room for.
     pub lines: usize,
-    /// Whether a long line wraps, or runs off the card.
+    /// Whether a long line wraps, or runs off the edge.
     pub wrap: bool,
 }
 

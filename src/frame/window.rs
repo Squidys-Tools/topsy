@@ -1,4 +1,5 @@
-//! The tray icon's menu's windows: bare topmost popups with the notch's glass behind them.
+//! A floating glass window of its own: a bare topmost popup with the notch's glass behind it, as
+//! the tray icon's menu and the clipboard palette are.
 
 use gpui::{
     App, Bounds, Context, TitlebarOptions, Window, WindowBackgroundAppearance, WindowBounds,
@@ -7,8 +8,8 @@ use gpui::{
 use raw_window_handle::HasWindowHandle;
 use windows::Win32::Foundation::HWND;
 
+use super::{ACRYLIC_TINT, Frame, Glass};
 use crate::backdrop::Backdrop;
-use crate::frame::{ACRYLIC_TINT, Frame, Glass};
 use crate::{config, log, look, win32};
 
 fn hwnd(window: &Window) -> Option<HWND> {
@@ -16,9 +17,10 @@ fn hwnd(window: &Window) -> Option<HWND> {
     win32::hwnd_from_raw(handle.as_raw())
 }
 
-/// One of the menu's windows, `size` logical pixels: transparent, topmost, and either taking the
-/// focus (`activate`) or never, with the notch's glass behind it. `build` makes its view.
-pub(super) fn open_window<V: 'static + Render>(
+/// A glass window at `origin` (physical screen pixels), `size` logical pixels: transparent,
+/// topmost, and either taking the focus (`activate`) or never, evenly glazed like a menu.
+/// `build` makes its view.
+pub(crate) fn open_window<V: 'static + Render>(
     cx: &mut App,
     title: &'static str,
     origin: (i32, i32),
@@ -57,7 +59,7 @@ pub(super) fn open_window<V: 'static + Render>(
         let mut backdrop = None;
         if let Some(hwnd) = hwnd {
             if activate {
-                win32::apply_strip_styles(hwnd);
+                win32::apply_focus_styles(hwnd);
             } else {
                 win32::apply_overlay_styles(hwnd);
             }
@@ -65,7 +67,7 @@ pub(super) fn open_window<V: 'static + Render>(
                 match Backdrop::new(hwnd, kind, cx) {
                     Ok(made) => backdrop = Some(made),
                     Err(err) => {
-                        log(&format!("menu glass unavailable ({err}); acrylic"));
+                        log(&format!("{title} glass unavailable ({err}); acrylic"));
                         glass = Glass::Acrylic;
                     }
                 }
