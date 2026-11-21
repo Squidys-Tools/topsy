@@ -33,6 +33,13 @@ impl Island {
         match event {
             TrayEvent::Toggle if self.mode == Mode::Tray => self.fold(cx),
             TrayEvent::Toggle | TrayEvent::Show => self.open_tray(TrayCause::Opened, cx),
+            // Out of the island's update: a new window must not be made while it is leased.
+            TrayEvent::Menu { at, previous } => {
+                cx.defer(move |cx| tray::menu::open(cx, at, previous))
+            }
+            TrayEvent::Clipboard(previous) => {
+                cx.defer(move |cx| crate::clipboard::strip::show(cx, previous))
+            }
             TrayEvent::Setting(setting, on) => {
                 self.on_setting(setting, on, cx);
                 settings_window::refresh(cx);

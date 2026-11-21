@@ -36,8 +36,8 @@ pub use picker::pick_files;
 pub use shell::{app_name, move_new, open_path, show_in_folder};
 pub use window::{
     Capsule, Clip, apply_overlay_styles, apply_strip_styles, cursor_monitor, cursor_over,
-    foreground_window, fullscreen_over, monitor_top_center, move_window, restore_foreground,
-    round_corners, set_acrylic, set_clip, set_visible, window_rect,
+    foreground_window, fullscreen_over, monitor_at, monitor_top_center, move_window,
+    restore_foreground, round_corners, set_acrylic, set_clip, set_visible, window_rect,
 };
 
 use std::ffi::c_void;

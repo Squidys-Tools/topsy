@@ -26,6 +26,8 @@ const CAPSULE_EDGE: u32 = 0xffffff24;
 const DWM_RADIUS: f32 = 8.0;
 /// The basket's corners, rounded all round.
 const FLOAT_RADIUS: f32 = 26.0;
+/// The tray icon's menu's corners.
+const MENU_RADIUS: f32 = 12.0;
 
 /// The acrylic fallback's own tint (0xRRGGBBAA).
 pub const ACRYLIC_TINT: u32 = 0x0c101c8c;
@@ -36,6 +38,8 @@ const BLACK_UNTIL: f32 = 0.45;
 const GLASS_FLOOR: u32 = 0x00000070;
 /// The open notch's floor over the lens glass: lighter, so the bend shows.
 const LENS_FLOOR: u32 = 0x00000040;
+/// The tray icon's menu: one even shade of glass, dark enough that it only just shows.
+const MENU_FLOOR: u32 = 0x000000c4;
 /// The basket's floor, sampled from Droppy's: about 88% black at the bottom edge.
 pub const BASKET_FLOOR: u32 = 0x000000e0;
 /// A light rim along the bottom edge, fading out up the sides where the notch turns black.
@@ -135,6 +139,10 @@ pub struct Frame {
     strips: Vec<(i32, f32)>,
     /// The lens glass is behind the open notch.
     lensed: bool,
+    /// The corners of a floating window.
+    radius: f32,
+    /// One shade of glass at the floor all the way down, without the black band at the top.
+    even: bool,
 }
 
 impl Frame {
@@ -158,6 +166,8 @@ impl Frame {
             floor: GLASS_FLOOR,
             strips: Vec::new(),
             lensed: false,
+            radius: FLOAT_RADIUS,
+            even: false,
         }
     }
 
@@ -170,6 +180,15 @@ impl Frame {
         };
         self.floor = BASKET_FLOOR;
         self
+    }
+
+    /// Floating, evenly glazed, with a menu's corners: the tray icon's menu.
+    pub fn menu(self) -> Self {
+        let mut frame = self.floating();
+        frame.floor = MENU_FLOOR;
+        frame.radius = MENU_RADIUS;
+        frame.even = true;
+        frame
     }
 
     /// Centre the floating window on `center` (physical screen pixels), on a monitor of `scale`.
@@ -252,7 +271,7 @@ impl Frame {
         if self.look() == Glass::Acrylic {
             DWM_RADIUS
         } else {
-            FLOAT_RADIUS.min(height / 2.0)
+            self.radius.min(height / 2.0)
         }
     }
 

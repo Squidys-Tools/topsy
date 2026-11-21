@@ -24,7 +24,17 @@ public static class Native {
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
   [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr e);
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
-  // The process's visible window of class `cls` (a menu is #32768).
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+  // The process's visible window titled `title` (the tray icon's menu is "topsy menu").
+  public static IntPtr Titled(uint pid, string title) {
+    IntPtr found = IntPtr.Zero;
+    EnumWindows((h, l) => {
+      uint p; GetWindowThreadProcessId(h, out p); if (p != pid || !IsWindowVisible(h)) return true;
+      var s = new StringBuilder(256); GetWindowText(h, s, 256); if (s.ToString() != title) return true;
+      found = h; return false; }, IntPtr.Zero);
+    return found;
+  }
+  // The process's visible window of class `cls` (a chip's or a tile's menu is #32768).
   public static IntPtr WindowOf(uint pid, string cls) {
     IntPtr found = IntPtr.Zero;
     EnumWindows((h, l) => {
@@ -59,6 +69,8 @@ public static class Native {
       if (p != pid || !IsWindowVisible(h) || !GetWindowRect(h, out r)) return true;
       var s = new StringBuilder(256); GetClassName(h, s, 256);
       if (s.ToString() == "#32768" || s.ToString() == "topsy-tray") return true;
+      var t = new StringBuilder(256); GetWindowText(h, t, 256);
+      if (t.ToString() == "topsy menu" || t.ToString() == "topsy submenu") return true;
       if (island ? (r.Top == 0 && r.Right - r.Left > 20) : r.Top > 0) { found = h; return false; }
       return true; }, IntPtr.Zero);
     return found;
@@ -102,6 +114,14 @@ function Use-Menu([scriptblock]$open, [byte]$key, $what) {
     Tap-Key $key
     if (-not (Wait-Until { [Native]::WindowOf($app.Id, '#32768') -eq [IntPtr]::Zero } 2000)) { throw "the menu did not close ($what)" }
 }
+# The tray icon's menu (here from the notch): a window of topsy's own, not a Win32 menu.
+function Use-TrayMenu([scriptblock]$open, [byte]$key, $what) {
+    & $open
+    if (-not (Wait-Until { [Native]::Titled($app.Id, 'topsy menu') -ne [IntPtr]::Zero } 2500)) { throw "the menu did not open ($what)" }
+    Start-Sleep -Milliseconds 200
+    Tap-Key $key
+    if (-not (Wait-Until { [Native]::Titled($app.Id, 'topsy menu') -eq [IntPtr]::Zero } 2000)) { throw "the menu did not close ($what)" }
+}
 function Start-App {
     $script:app = Start-Topsy -Exe $Exe -Env $topsyEnv -Log $appLog
     if (-not (Wait-Log $appLog 'restored' 8000)) { throw 'the app never started' }
@@ -120,7 +140,7 @@ try {
 
     # 2. "Show basket" in the notch's menu (the tray icon's menu) brings it up, without the focus.
     $r = Rect-Of $true
-    Use-Menu { Click (($r.Left + $r.Right) / 2) (($r.Top + $r.Bottom) / 2) -Right } 0x4B 'show-basket'   # K
+    Use-TrayMenu { Click (($r.Left + $r.Right) / 2) (($r.Top + $r.Bottom) / 2) -Right } 0x4B 'show-basket'   # K
     if (-not (Wait-Log $appLog 'basket at' 2000)) { throw '"Show basket" did not bring the basket up' }
     if (-not (Wait-Until { Basket-Open } 2000)) { throw 'the basket did not open' }
     Start-Sleep -Milliseconds 500

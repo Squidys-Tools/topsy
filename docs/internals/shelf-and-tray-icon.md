@@ -24,6 +24,13 @@ Decisions behind [the shelf](../user/shelf.md) and [the tray icon and settings](
 
 - The icon lives on its own thread with a hidden window, re-adds itself when Explorer restarts
   (`TaskbarCreated`), and is removed on Quit.
+- **The menu is a glass window of topsy's own**, not a Win32 menu, so it can have the notch's glass. Unlike the
+  island it takes the focus while it is up, as a menu does: the click on the icon lets the tray thread make its
+  hidden window foreground, the menu takes it from there, and it closes when it loses it. The *Options*
+  submenu is a second window that never activates, so the menu keeps the keyboard; while it is being made it
+  takes the foreground for a moment, so the menu checks what is in front a frame later before closing. A
+  choice that opens a window of topsy's (*Settings…*, *Clipboard history*) leaves the foreground with the
+  hidden window, so that window may come to the front; any other hands it back.
 - **One list of settings.** The menu and the settings window are both built from the list in
   `src/settings/mod.rs`, and each reads its value from where it is saved, so a switch in one shows in the other. A new
   toggle is a variant there, an arm in each of its matches, and what the island does about it
