@@ -4,7 +4,7 @@
 pub(crate) mod window;
 
 use crate::win32::sendto;
-use crate::{activity, autostart, clipboard, hud, look};
+use crate::{activity, autostart, clipboard, hud, look, update};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Setting {
@@ -20,11 +20,13 @@ pub enum Setting {
     LiveActivities,
     /// The open notch's glass follows the screen (`look`).
     LiveGlass,
+    /// A nightly checks for a newer one and downloads it (`update`).
+    Updates,
 }
 
 impl Setting {
     /// In the order the menu and the window show them.
-    pub const ALL: [Setting; 7] = [
+    pub const ALL: [Setting; 8] = [
         Setting::Black,
         Setting::LiveGlass,
         Setting::Autostart,
@@ -32,6 +34,7 @@ impl Setting {
         Setting::Clipboard,
         Setting::VolumeHud,
         Setting::LiveActivities,
+        Setting::Updates,
     ];
 
     /// The label, with `&` before the menu's mnemonic.
@@ -44,6 +47,7 @@ impl Setting {
             Setting::Clipboard => "Clipboard &history",
             Setting::VolumeHud => "&Volume HUD",
             Setting::LiveActivities => "&Live Activities",
+            Setting::Updates => "Check for &updates",
         }
     }
 
@@ -61,6 +65,7 @@ impl Setting {
             Setting::Clipboard => clipboard::is_enabled(),
             Setting::VolumeHud => hud::takes_volume_keys(),
             Setting::LiveActivities => activity::is_enabled(),
+            Setting::Updates => update::is_enabled(),
         }
     }
 
@@ -79,6 +84,7 @@ impl Setting {
             Setting::Clipboard => clipboard::set_enabled(on),
             Setting::VolumeHud => hud::set_volume_keys(on),
             Setting::LiveActivities => activity::set_enabled(on),
+            Setting::Updates => update::set_enabled(on),
         }
     }
 

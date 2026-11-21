@@ -7,9 +7,9 @@ use gpui::{ClickEvent, Context, Div, ScrollWheelEvent, div, prelude::*, px, rgb,
 
 use crate::island::PEEK_LINGER;
 use crate::widgets::{self, Effect};
-use crate::{Island, Mode, activity, frame, hud, now_playing, win32};
+use crate::{Island, Mode, activity, frame, hud, now_playing, tray, win32};
 use model::activity::{Activity, Key};
-use model::tray_cause::Sections;
+use model::tray_cause::{Sections, TrayCause};
 
 /// Between chips.
 const GAP: f32 = 8.0;
@@ -71,6 +71,16 @@ impl Island {
             Some(now_playing::Effect::Pressed) => self.press = None,
             Some(now_playing::Effect::Refit) => self.fit_tray(),
             None => {}
+        }
+    }
+
+    /// A click on the notch opens the tray, or the settings while the update HUD offers them.
+    pub(crate) fn clicked(&mut self, cx: &mut Context<Self>) {
+        if self.hud.shows_update() {
+            let previous = win32::foreground_window().0 as usize;
+            self.on_tray(tray::TrayEvent::OpenSettings(previous), cx);
+        } else if self.mode != Mode::Tray {
+            self.open_tray(TrayCause::Opened, cx);
         }
     }
 

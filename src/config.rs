@@ -55,7 +55,12 @@ pub struct Config {
     /// `%LOCALAPPDATA%\topsy\clipboard`. A run with `TOPSY_STATE` set is scripted and keeps
     /// none unless `TOPSY_CLIPBOARD` says where, so a live check never writes the real history.
     pub clipboard: Option<PathBuf>,
+    /// `TOPSY_REPLACES=<pid>`: set by an update's restart. This topsy waits for that one to exit
+    /// before it starts.
+    pub replaces: Option<u32>,
 }
+
+pub const REPLACES: &str = "TOPSY_REPLACES";
 
 impl Config {
     fn parse(var: impl Fn(&str) -> Option<OsString>) -> Self {
@@ -100,6 +105,7 @@ impl Config {
                 None => var("LOCALAPPDATA").map(|d| PathBuf::from(d).join(r"topsy\clipboard")),
             },
             state: var("TOPSY_STATE"),
+            replaces: text(REPLACES).and_then(|v| v.parse().ok()),
         }
     }
 }
@@ -130,7 +136,8 @@ mod tests {
         assert!(!c.no_widgets && config(&[("TOPSY_NO_WIDGETS", "1")]).no_widgets);
         assert!(config(&[("TOPSY_NO_MEDIA", "1")]).no_media);
         assert!(c.seed.is_none() && c.exit_after.is_none() && c.state.is_none());
-        assert!(c.transform.is_none());
+        assert!(c.transform.is_none() && c.replaces.is_none());
+        assert_eq!(config(&[("TOPSY_REPLACES", "4242")]).replaces, Some(4242));
         assert_eq!(c.lens, Lens::Setting);
         assert_eq!(config(&[("TOPSY_LENS", "off")]).lens, Lens::Off);
         assert_eq!(config(&[("TOPSY_LENS", "live")]).lens, Lens::Live);

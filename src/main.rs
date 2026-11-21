@@ -23,6 +23,7 @@ mod settings;
 mod state;
 mod transform;
 mod tray;
+mod update;
 mod widgets;
 mod win32;
 

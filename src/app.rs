@@ -22,13 +22,13 @@ use crate::settings::window::{self as settings_window, Change, OnChange};
 use crate::tray::{self, TrayEvent};
 use crate::win32::DropEvent;
 use crate::win32::sendto;
-use crate::{Island, Mode, activity, autostart, backdrop, config, log, look, state, win32};
+use crate::{Island, Mode, activity, autostart, backdrop, config, log, look, state, update, win32};
 use model::edge::EdgeZone;
 use model::jiggle::JiggleConfig;
 use model::tray_cause::TrayCause;
 
 impl Island {
-    fn on_tray(&mut self, event: TrayEvent, cx: &mut Context<Self>) {
+    pub(crate) fn on_tray(&mut self, event: TrayEvent, cx: &mut Context<Self>) {
         log(&format!("tray {event:?} (mode {:?})", self.mode));
         match event {
             TrayEvent::Toggle if self.mode == Mode::Tray => self.fold(cx),
@@ -59,6 +59,7 @@ impl Island {
                     basket.update(cx, |basket, cx| basket.show(cx));
                 }
             }
+            TrayEvent::Update => update::restart(cx),
             TrayEvent::Quit => cx.quit(),
         }
     }
@@ -99,7 +100,11 @@ impl Island {
             Setting::LiveActivities => {
                 self.update_activities(cx, |_| Some(activity::Effect::Changed(Instant::now())))
             }
-            Setting::Autostart | Setting::SendTo | Setting::Clipboard | Setting::VolumeHud => {}
+            Setting::Autostart
+            | Setting::SendTo
+            | Setting::Clipboard
+            | Setting::VolumeHud
+            | Setting::Updates => {}
         }
     }
 
@@ -135,6 +140,12 @@ pub(crate) fn forward<V: 'static, E: 'static>(
 }
 
 pub fn run() {
+    let config = config::get();
+    // An update's restart: the topsy it replaces lets go of the hooks, the tray icon and the
+    // shelf's file first.
+    if let Some(pid) = config.replaces {
+        win32::process::wait_for_exit(pid, Duration::from_secs(10));
+    }
     // Explorer's Send to starts topsy with the selected paths: a topsy already running takes
     // them, and this one is done.
     let sent: Vec<PathBuf> = std::env::args_os()
@@ -144,11 +155,13 @@ pub fn run() {
     if !sent.is_empty() && win32::inbox::hand_off(&sent) {
         return;
     }
+    if update::install_downloaded() {
+        return;
+    }
     // Up before GPUI, so a second Send to during startup is buffered rather than missed.
     let inbox = win32::inbox::spawn();
     // The shelf comes back before the window opens, without touching the disk for its files
     // (a dead share would stall launch); `settle_restored` checks them in the background.
-    let config = config::get();
     let (persistence, saved_basket) = state::start(config.state.as_deref());
     log(&format!(
         "restored {} (basket {})",
@@ -307,6 +320,7 @@ pub fn run() {
         crate::now_playing::start(cx, &island);
         crate::hud::start(cx, &island);
         activity::start(cx, &island);
+        update::start(cx, &island);
         if let Some(files) = config.transform.clone() {
             crate::transform::open(cx, &island, files);
         }

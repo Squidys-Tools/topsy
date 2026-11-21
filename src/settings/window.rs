@@ -14,7 +14,7 @@ use windows::Win32::Foundation::HWND;
 use crate::icons::{self, Icon};
 use crate::log::LogErr;
 use crate::settings::Setting;
-use crate::{clipboard, widgets, win32};
+use crate::{clipboard, update, widgets, win32};
 use model::widgets::Lineup;
 
 /// What the window changed, after it is saved.
@@ -26,12 +26,7 @@ pub enum Change {
 /// Told about every change the window makes, so the app can apply it.
 pub type OnChange = Rc<dyn Fn(Change, &mut App)>;
 
-/// A nightly build is stamped with its release version (`.github/workflows/nightly.yml`).
-const VERSION: &str = match option_env!("TOPSY_RELEASE_VERSION") {
-    Some(version) => version,
-    None => env!("CARGO_PKG_VERSION"),
-};
-const SIZE: (f32, f32) = (340.0, 600.0);
+const SIZE: (f32, f32) = (340.0, 720.0);
 const BACKGROUND: u32 = 0x202020;
 const ACCENT: u32 = 0x4c8dff;
 
@@ -297,6 +292,19 @@ impl Render for SettingsWindow {
             .child("Keep clipboard for")
             .child(div().flex().gap(px(6.0)).child(keep).child(clear));
         let quit = button("quit", "Quit topsy".into()).on_click(|_, _, cx| cx.quit());
+        let update = update::ready().map(|version| {
+            div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .px(px(12.0))
+                .py(px(8.0))
+                .child(format!("Update ready: {}", version.short()))
+                .child(
+                    button("update", "Restart to update".into())
+                        .on_click(|_, _, cx| update::restart(cx)),
+                )
+        });
         div()
             .size_full()
             .flex()
@@ -308,6 +316,10 @@ impl Render for SettingsWindow {
             .text_sm()
             .child(
                 div()
+                    .id("settings")
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
                     .flex()
                     .flex_col()
                     .children(rows)
@@ -315,18 +327,20 @@ impl Render for SettingsWindow {
                     .child(self.widget_rows(cx)),
             )
             .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .px(px(12.0))
-                    .py(px(8.0))
-                    .child(
-                        div()
-                            .text_color(rgba(0xffffff80))
-                            .child(format!("topsy {VERSION}")),
-                    )
-                    .child(quit),
+                div().flex().flex_col().children(update).child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .px(px(12.0))
+                        .py(px(8.0))
+                        .child(
+                            div()
+                                .text_color(rgba(0xffffff80))
+                                .child(format!("topsy {}", update::VERSION)),
+                        )
+                        .child(quit),
+                ),
             )
     }
 }

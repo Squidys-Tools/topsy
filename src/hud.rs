@@ -13,10 +13,13 @@ use crate::log::LogErr;
 use crate::win32::{battery, brightness, volume};
 use crate::{Island, config, log};
 use model::hud::{Battery, BatteryWatch, Hud, Power, SEGMENTS, lit};
+use model::update::Nightly;
 
 const VOLUME_KEYS: RegString<'static> = RegString::new(r"Software\topsy", "VolumeKeys");
 /// How long a HUD stays after the last change.
 const LINGER: Duration = Duration::from_millis(1500);
+/// An update says so once, so it stays long enough to read and click.
+const UPDATE_LINGER: Duration = Duration::from_secs(6);
 /// The notch's body while it shows a HUD: the peek's height, wider for the bar.
 pub const SIZE: (f32, f32) = (280.0, PEEK.1);
 const UNLIT: u32 = 0xffffff33;
@@ -35,6 +38,14 @@ impl State {
     pub fn is_shown(&self) -> bool {
         self.shown.is_some()
     }
+
+    /// The update HUD is up: a click on the notch opens the settings, where the restart is.
+    pub fn shows_update(&self) -> bool {
+        match self.shown {
+            Some(Hud::Update(_)) => true,
+            Some(Hud::Volume { .. } | Hud::Brightness(_) | Hud::Battery(_)) | None => false,
+        }
+    }
 }
 
 /// What the island must do in turn for a change the HUD made.
@@ -49,6 +60,7 @@ pub enum Event {
     Volume { level: f32, muted: bool },
     Brightness(u8),
     Power(Power),
+    Update(Nightly),
 }
 
 /// topsy has the volume keys unless switched off (`VolumeKeys` = `off`).
@@ -98,13 +110,18 @@ impl State {
             Event::Volume { level, muted } => Hud::Volume { level, muted },
             Event::Brightness(percent) => Hud::Brightness(f32::from(percent) / 100.0),
             Event::Power(power) => Hud::Battery(self.battery.read(power)?),
+            Event::Update(version) => Hud::Update(version),
+        };
+        let linger = match hud {
+            Hud::Update(_) => UPDATE_LINGER,
+            Hud::Volume { .. } | Hud::Brightness(_) | Hud::Battery(_) => LINGER,
         };
         log(&format!("hud {hud:?} (mode {mode:?})"));
         self.shown = Some(hud);
         self.generation += 1;
         let generation = self.generation;
         cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(LINGER).await;
+            cx.background_executor().timer(linger).await;
             this.update(cx, |island, cx| {
                 island.update_hud(cx, |hud, _, _| hud.expire(generation));
             })
@@ -200,6 +217,20 @@ fn row(hud: Hud) -> Div {
                 )
                 .child(cell(percent, fill))
         }
+        Hud::Update(version) => base
+            .text_xs()
+            .child(icon(Icon::Download))
+            .child(
+                div()
+                    .flex_1()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child("Update ready"),
+            )
+            .child(
+                div()
+                    .text_color(rgba(0xffffffb3))
+                    .child(format!("topsy {}", version.short())),
+            ),
     }
 }
 

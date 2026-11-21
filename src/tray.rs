@@ -45,6 +45,8 @@ pub enum TrayEvent {
     /// was foreground before the menu (as an address: `HWND` can't cross threads), to hand
     /// foreground back to when the settings window closes.
     OpenSettings(usize),
+    /// "Restart to update": install the downloaded nightly and start it.
+    Update,
     Quit,
 }
 
@@ -60,6 +62,7 @@ const ID_CLEAR: usize = 2;
 const ID_QUIT: usize = 3;
 const ID_SETTINGS: usize = 4;
 const ID_BASKET: usize = 5;
+const ID_UPDATE: usize = 6;
 /// `Setting::ALL[i]` is item `ID_SETTING + i`.
 const ID_SETTING: usize = 100;
 
@@ -287,6 +290,10 @@ unsafe fn open_menu(hwnd: HWND, at: POINT) {
         }
         AppendMenuW(menu, MF_STRING, ID_SETTINGS, w!("Se&ttings…")).log_err();
         AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null()).log_err();
+        if let Some(version) = crate::update::ready() {
+            let label = wide(format!("&Restart to update ({})", version.short()));
+            AppendMenuW(menu, MF_STRING, ID_UPDATE, PCWSTR(label.as_ptr())).log_err();
+        }
         AppendMenuW(menu, MF_STRING, ID_QUIT, w!("&Quit topsy")).log_err();
 
         // The owner has to be foreground or the menu won't close when you click elsewhere.
@@ -319,6 +326,7 @@ unsafe fn open_menu(hwnd: HWND, at: POINT) {
             ID_SHOW => send(TrayEvent::Show),
             ID_CLEAR => send(TrayEvent::ClearShelf),
             ID_BASKET => send(TrayEvent::ShowBasket),
+            ID_UPDATE => send(TrayEvent::Update),
             ID_QUIT => send(TrayEvent::Quit),
             ID_SETTINGS => send(TrayEvent::OpenSettings(previous.0 as usize)),
             id => {
