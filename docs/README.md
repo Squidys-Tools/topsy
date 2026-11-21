@@ -45,5 +45,5 @@ not explain. Most code changes need no internal doc change. Follow the
 - [Building](./operations/building.md)
 - [Running with test switches](./operations/running.md)
 - [Live-desktop checks](./operations/live-checks.md)
-- [CI and the artifact](./operations/ci.md)
+- [CI, the artifact and nightlies](./operations/ci.md)
 - [Measurements](./operations/measurements.md)

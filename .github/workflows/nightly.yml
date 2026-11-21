@@ -1,0 +1,107 @@
+name: nightly
+
+# Publishes main as an unsigned nightly prerelease, v<next patch>-nightly.<UTC date>.<run>, with
+# topsy.exe and its SHA256SUMS. Scheduled runs publish only when main has moved since the last
+# nightly. Run by hand (`gh workflow run nightly.yml`) to publish main now. Set the repository
+# variable PAUSE_NIGHTLY to true to stop scheduled runs.
+
+on:
+  schedule:
+    # Every 8 hours from midnight US Eastern standard time (cron is UTC, so 1 am, 9 am and 5 pm
+    # during daylight saving). Off minute zero, when GitHub's scheduled jobs are busiest.
+    - cron: "8 5,13,21 * * *"
+  workflow_dispatch:
+
+# One nightly at a time, so two runs cannot publish the same commit or publish out of order.
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    if: >-
+      github.repository == 'Squidys-Tools/topsy' && github.ref == 'refs/heads/main' &&
+      (github.event_name != 'schedule' || vars.PAUSE_NIGHTLY != 'true')
+    runs-on: ubuntu-latest
+    outputs:
+      due: ${{ steps.plan.outputs.due }}
+      version: ${{ steps.plan.outputs.version }}
+      previous_tag: ${{ steps.plan.outputs.previous_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: Cargo.toml
+          sparse-checkout-cone-mode: false
+
+      - id: plan
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          previous=$(gh release list -R "$GITHUB_REPOSITORY" --exclude-drafts --limit 100 \
+            --json tagName,publishedAt \
+            --jq '[.[] | select(.tagName | test("-nightly\\."))] | sort_by(.publishedAt) | last | .tagName // ""')
+          due=true
+          if [[ -n $previous && $GITHUB_EVENT_NAME == schedule ]]; then
+            status=$(gh api "repos/$GITHUB_REPOSITORY/compare/$previous...$GITHUB_SHA" --jq .status)
+            if [[ $status != ahead ]]; then
+              due=false
+              echo "::notice::main is $status relative to $previous. Skipping."
+            fi
+          fi
+          # A nightly previews the next patch release, as T3 Code's do.
+          current=$(awk -F'"' '/^version = /{print $2; exit}' Cargo.toml)
+          IFS=. read -r major minor patch <<< "${current%%[-+]*}"
+          version="$major.$minor.$((patch + 1))-nightly.$(date -u +%Y%m%d).$GITHUB_RUN_NUMBER"
+          echo "Nightly $version, after ${previous:-no earlier nightly}."
+          {
+            echo "due=$due"
+            echo "version=$version"
+            echo "previous_tag=$previous"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: plan
+    if: needs.plan.outputs.due == 'true'
+    uses: ./.github/workflows/build.yml
+    with:
+      version: ${{ needs.plan.outputs.version }}
+
+  publish:
+    needs: [plan, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: topsy-windows-gnu
+          path: dist
+
+      - shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          PREVIOUS_TAG: ${{ needs.plan.outputs.previous_tag }}
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum topsy.exe > SHA256SUMS
+          notes="Nightly build of \`main\` at ${GITHUB_SHA::12}. It may be broken.
+
+          topsy is not code-signed, so Windows SmartScreen warns the first time it runs: choose
+          **More info**, then **Run anyway**. To update, quit topsy from its tray icon, replace
+          \`topsy.exe\` with this one in the same place, and start it again."
+          start_tag=()
+          if [[ -n $PREVIOUS_TAG ]]; then start_tag=(--notes-start-tag "$PREVIOUS_TAG"); fi
+          gh release create "v$VERSION" topsy.exe SHA256SUMS \
+            -R "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "topsy Nightly $VERSION (${GITHUB_SHA::12})" \
+            --prerelease --latest=false \
+            --notes "$notes" \
+            --generate-notes "${start_tag[@]}"

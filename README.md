@@ -29,14 +29,18 @@ that holds your files, shows what is playing and keeps your clipboard. Native Ru
 
 ## Install
 
-topsy is not released yet. To try it, download the latest build from CI:
+topsy has no stable release yet. A nightly build of `main` comes out every 8 hours when something has changed:
 
-1. Open the repository's **Actions** tab, pick the latest successful **build** run on `main`.
-2. Download the `topsy-windows-gnu` artifact and unzip it.
-3. Run `topsy.exe`. No installer and no admin rights are needed.
+1. Download `topsy.exe` from the newest **Nightly** on the
+   [releases page](https://github.com/Squidys-Tools/topsy/releases).
+2. Put it somewhere it can stay, such as `%LOCALAPPDATA%\Programs\topsy`, and run it. No installer and no admin
+   rights are needed.
+3. topsy is not code-signed, so Windows SmartScreen warns the first time: choose **More info**, then **Run
+   anyway**.
 
-Turn on *Start with Windows* from the tray icon's menu to keep it running. [CI and the
-artifact](./docs/operations/ci.md) explains how to build one for any branch.
+Turn on *Start with Windows* from the tray icon's menu to keep it running. To update, quit topsy from the tray
+icon, replace `topsy.exe` in the same place, and start it again. The settings window shows which build you run.
+[CI, the artifact and nightlies](./docs/operations/ci.md) explains how to build one for any branch.
 
 ## Build from source
 
