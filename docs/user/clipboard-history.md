@@ -1,8 +1,9 @@
 # Clipboard history
 
 topsy keeps what you copy: text, links, colours, code, images and files, each with the app it came from. Press
-**Ctrl+Alt+V** to open the **palette** on the monitor under the cursor: a search field over a list of your copies,
-pinned ones first and the rest by day, with a preview of the selected one beside it.
+**Ctrl+Alt+V** and the **palette** drops out of the top of the monitor under the cursor, like the notch: a search
+field over a list of your copies, pinned ones first and the rest by day, with a preview of the selected one beside
+it.
 
 ## Using it
 
@@ -11,10 +12,10 @@ pinned ones first and the rest by day, with a preview of the selected one beside
   **Ctrl+Enter** or **Ctrl+C** only copies.
 - **Ctrl+P** pins an entry, **Delete** removes it, **Tab** shows only the pinned ones.
 - **Ctrl+K**, the footer's *Actions* or a right-click opens the same actions in a panel; type to narrow it.
-- **Esc** clears the search, then closes the palette.
+- **Esc** or the ✕ clears the search, then folds the palette away.
 
 The preview shows the whole start of a text, code coloured, a link's site, a colour's swatch, the image or the
-files, and below it the app, the size and when it was copied.
+files, with the app and when it was copied in its tag and the size below it.
 
 ## Settings
 

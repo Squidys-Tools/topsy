@@ -1,48 +1,50 @@
-//! The palette's right-hand pane: a large preview of the selected copy (its text, code
-//! coloured, a link's site, a colour's swatch, the image, the files) over what is known about it.
+//! The palette's right-hand pane: the selected copy as one of Droppy's cards, grown to fill it
+//! (a white tag naming the app, the kind and how long ago, over a large preview: its text, code
+//! coloured, a link's site, a colour's swatch, the image, the files), and its facts as pills.
 
 use std::path::Path;
 
 use gpui::{
-    Div, FontStyle, FontWeight, HighlightStyle, ObjectFit, SharedString, StyledText, Window, div,
-    img, prelude::*, px, rgb, rgba,
+    AnyElement, Div, FontStyle, FontWeight, HighlightStyle, ObjectFit, SharedString, StyledText,
+    Window, div, img, prelude::*, px, rgb, rgba,
 };
 
 use super::pictures::{Pictures, Want};
 use super::preview::Face;
-use super::view::{DIM, RULE, TEXT};
+use super::view::{self, DIM, ON_PILL, PAD, PILL, SMALL_ICON, TEXT};
+use crate::icons::{Icon, icon};
 use model::clip_kind::{self, Kind};
-use model::clip_list::facts;
+use model::clip_list::{ago, details, kind_label};
 use model::clipboard::{Content, Entry};
 use model::favicon::icon_host;
 use model::highlight::{Token, highlight};
 
-/// The pane's width and the preview's height, in logical pixels.
-pub const WIDTH: f32 = 463.0;
-const PREVIEW: f32 = 222.0;
-const PAD: f32 = 18.0;
-const INNER: f32 = WIDTH - 2.0 * PAD;
-/// Pictures the preview asks for: a copied image across the pane, a file's icon.
+/// The pane's width, beside the list, and the card's room round its preview.
+pub const WIDTH: f32 = 444.0;
+const INSET: f32 = 16.0;
+const INNER: f32 = WIDTH - 2.0 * INSET;
+/// Pictures the preview asks for: a copied image across the card, a file's icon.
 const IMAGE: f32 = INNER;
-const FILE_ICON: f32 = 56.0;
-const SITE_ICON: f32 = 40.0;
-const FACT: f32 = 24.0;
-const LABEL: f32 = 100.0;
+const FILE_ICON: f32 = 64.0;
+const SITE_ICON: f32 = 60.0;
+/// Droppy's card, a shade above the glass.
+const CARD: u32 = 0x1c1c1e;
+const FACT: u32 = 0xffffff14;
 const CODE_INK: u32 = 0xd6deeb;
 const MONO: &str = "Consolas";
-/// Whole lines that fit the preview, so none is cut through.
+/// Whole lines that fit the card, so none is cut through.
 const TEXT_FACE: Face = Face {
     family: None,
-    rems: 0.8125,
+    rems: 0.875,
     width: INNER,
-    lines: 8,
+    lines: 11,
     wrap: true,
 };
 const CODE_FACE: Face = Face {
     family: Some(MONO),
     rems: 0.75,
     width: INNER,
-    lines: 9,
+    lines: 12,
     wrap: false,
 };
 const LINK_FACE: Face = Face {
@@ -53,9 +55,12 @@ const LINK_FACE: Face = Face {
     wrap: true,
 };
 
-/// What the pane wants looked up for `entry`: its picture and the name of the app it came from.
+/// What the pane wants looked up for `entry`: its picture, and the icon and name of the app it
+/// came from.
 pub fn wants(entry: &Entry) -> Vec<Want> {
-    let mut wants: Vec<Want> = entry.app.iter().map(|a| Want::Name(a.clone())).collect();
+    let mut wants: Vec<Want> = (entry.app.iter())
+        .flat_map(|a| [Want::Name(a.clone()), Want::Shell(a.clone(), SMALL_ICON)])
+        .collect();
     match &entry.content {
         Content::Image { .. } => {
             wants.extend(super::image_path(entry.id).map(|p| Want::Shell(p, IMAGE)));
@@ -68,67 +73,96 @@ pub fn wants(entry: &Entry) -> Vec<Want> {
     wants
 }
 
-pub fn pane(entry: &Entry, kind: Kind, now: u64, pictures: &Pictures, window: &Window) -> Div {
-    let app = entry.app.as_deref().map(|exe| pictures.name(exe));
-    let rows = facts(entry, kind, app.as_deref(), now)
-        .into_iter()
-        .map(|(label, value)| {
+/// Droppy's white tag: the app's icon and name, the kind, how long ago, and a star if pinned.
+fn tag(entry: &Entry, kind: Kind, now: u64, pictures: &Pictures) -> Div {
+    let app = entry.app.as_deref();
+    let app_icon = app.and_then(|exe| pictures.get(exe, SMALL_ICON));
+    let name = app.map(|exe| pictures.name(exe)).filter(|n| !n.is_empty());
+    let mut said = kind_label(&entry.content, kind).to_string();
+    if let Some(name) = name {
+        said = format!("{name} \u{b7} {said}");
+    }
+    div()
+        .flex()
+        .items_center()
+        .gap(px(6.0))
+        .pl(px(if app_icon.is_some() { 5.0 } else { 10.0 }))
+        .pr(px(10.0))
+        .py(px(4.0))
+        .rounded_full()
+        .bg(rgb(PILL))
+        .text_color(rgb(ON_PILL))
+        .text_size(px(11.5))
+        .children(app_icon.map(|image| img(image).size(px(SMALL_ICON)).flex_none()))
+        .child(div().font_weight(FontWeight::SEMIBOLD).child(said))
+        .child(
             div()
-                .h(px(FACT))
-                .flex_none()
-                .flex()
-                .items_center()
-                .child(
-                    div()
-                        .w(px(LABEL))
-                        .flex_none()
-                        .text_color(rgba(DIM))
-                        .child(label),
-                )
-                .child(
-                    // Not `truncate`: GPUI keeps a no-wrap text's first measure, taken before
-                    // the row knows its width. One wrapped line, of a set width, is cut.
-                    div()
-                        .w(px(INNER - LABEL))
-                        .text_right()
-                        .line_clamp(1)
-                        .text_ellipsis()
-                        .child(value),
-                )
-        });
-    let information = div()
+                .text_color(rgba(0x1c1c1e99))
+                .child(format!("\u{b7} {}", ago(now.saturating_sub(entry.copied)))),
+        )
+        .when(entry.pinned, |tag| {
+            tag.child(icon(Icon::Star, 11.0, rgb(0xe0453a)))
+        })
+}
+
+fn fact(label: &'static str, value: String) -> AnyElement {
+    div()
+        .flex()
+        .gap(px(5.0))
+        .max_w(px(WIDTH))
+        .overflow_hidden()
+        .whitespace_nowrap()
+        .px(px(10.0))
+        .py(px(5.0))
+        .rounded_full()
+        .bg(rgba(FACT))
+        .child(div().text_color(rgba(DIM)).child(label))
+        .child(value)
+        .into_any_element()
+}
+
+pub fn pane(entry: &Entry, kind: Kind, now: u64, pictures: &Pictures, window: &Window) -> Div {
+    let card = div()
         .flex_1()
         .min_h_0()
         .flex()
         .flex_col()
-        .px(px(PAD))
-        .pt(px(10.0))
-        .text_size(px(12.0))
+        .rounded(px(18.0))
+        .overflow_hidden()
+        .bg(rgb(CARD))
+        .border_1()
+        .border_color(rgba(0xffffff0f))
         .child(
             div()
-                .h(px(FACT))
                 .flex_none()
-                .text_color(rgba(DIM))
-                .font_weight(FontWeight::SEMIBOLD)
-                .child("Information"),
+                .flex()
+                .p(px(10.0))
+                .child(tag(entry, kind, now, pictures)),
         )
-        .children(rows);
+        .child(
+            div()
+                .flex_1()
+                .min_h_0()
+                .overflow_hidden()
+                .px(px(INSET))
+                .pt(px(4.0))
+                .pb(px(INSET))
+                .child(preview(entry, kind, pictures, window)),
+        );
+    let facts = details(&entry.content, kind)
+        .into_iter()
+        .map(|(label, value)| fact(label, value));
     div()
         .w(px(WIDTH))
         .h_full()
         .flex_none()
         .flex()
         .flex_col()
-        .child(
-            div()
-                .h(px(PREVIEW))
-                .flex_none()
-                .overflow_hidden()
-                .p(px(PAD))
-                .child(preview(entry, kind, pictures, window)),
-        )
-        .child(div().h(px(1.0)).flex_none().mx(px(PAD)).bg(rgba(RULE)))
-        .child(information)
+        .gap(px(8.0))
+        .pb(px(PAD))
+        .text_size(px(12.0))
+        .child(card)
+        .child(div().flex().flex_wrap().gap(px(6.0)).children(facts))
 }
 
 fn centred() -> Div {
@@ -148,14 +182,7 @@ fn preview(entry: &Entry, kind: Kind, pictures: &Pictures, window: &Window) -> D
                 .children(
                     (icon_host(text).and_then(|host| super::icon_path(&host)))
                         .and_then(|path| pictures.site(&path))
-                        .map(|icon| {
-                            // On a light tile: many sites draw theirs dark, for light pages.
-                            div()
-                                .p(px(7.0))
-                                .rounded(px(11.0))
-                                .bg(rgb(0xf2f2f2))
-                                .child(img(icon).size(px(SITE_ICON)))
-                        }),
+                        .map(|icon| view::site_tile(icon, SITE_ICON)),
                 )
                 .child(
                     div()

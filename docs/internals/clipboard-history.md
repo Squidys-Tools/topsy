@@ -8,8 +8,11 @@ Decisions behind [clipboard history](../user/clipboard-history.md).
   wherever the focus is. Being a copy, a paste moves the entry to the front.
 - **Its actions are a panel drawn in the palette, not a Win32 menu.** A popup menu takes the foreground, which
   closes a palette that closes on losing it, and is drawn light on the dark glass.
-- **It is a glass window of its own** (`frame::open_window`, as the tray icon's menu is), not the island: it is
-  centred on a monitor, not hung from the top edge, and its size never changes, so nothing springs.
+- **It is a notch of its own, not the island** (`frame::open_window` with `Shape::Hanging`): the same frame,
+  hung from the top edge of the monitor under the cursor with the notch's ears, fill and rim, and sprung open and
+  folded with the island's spring. It isn't the island because it takes the focus, which the island never may.
+  Its content is laid out at full height and revealed as the notch grows, so nothing reflows while it springs.
+  Esc folds it before the window goes; a paste or losing the focus closes it at once.
 - **A preview is cut by topsy, not by GPUI's `line_clamp`.** `line_clamp` draws no ellipsis and counts only
   soft wraps, so a text of short lines is not clamped at all and a line is cut through; adding `text_ellipsis`
   truncates the whole string to `width × lines` before it wraps, which lands past the last visible line

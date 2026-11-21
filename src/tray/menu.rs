@@ -12,7 +12,7 @@ use gpui::{
 use windows::Win32::Foundation::HWND;
 
 use super::TrayEvent;
-use crate::frame::{Frame, open_window};
+use crate::frame::{Frame, Popup, Shape, open_window};
 use crate::settings::Setting;
 use crate::{clipboard, log, update, win32};
 use model::menu;
@@ -175,11 +175,14 @@ pub fn open(cx: &mut App, at: (i32, i32), previous: usize) {
     log(&format!("menu at {origin:?}"));
     let opened = open_window(
         cx,
-        "topsy menu",
-        origin,
-        size_px,
-        scale,
-        true,
+        Popup {
+            title: "topsy menu",
+            origin,
+            size: size_px,
+            scale,
+            activate: true,
+            shape: Shape::Floating,
+        },
         move |hwnd, frame, window, cx| {
             if let Some(hwnd) = hwnd {
                 win32::bring_to_front(hwnd);
@@ -344,11 +347,14 @@ impl Menu {
         cx.defer(move |cx| {
             let opened = open_window(
                 cx,
-                "topsy submenu",
-                origin,
-                size_px,
-                scale,
-                false,
+                Popup {
+                    title: "topsy submenu",
+                    origin,
+                    size: size_px,
+                    scale,
+                    activate: false,
+                    shape: Shape::Floating,
+                },
                 move |_, frame, _, cx| {
                     if let Some(menu) = menu.upgrade() {
                         cx.observe(&menu, |_, _, cx| cx.notify()).detach();

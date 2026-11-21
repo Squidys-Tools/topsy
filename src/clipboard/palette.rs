@@ -1,11 +1,13 @@
-//! The clipboard palette: Ctrl+Alt+V opens a launcher-style window of glass on the screen the
-//! cursor is on, a search over a list of what was copied (pinned first, then by day) beside a
-//! preview of the selected copy. Unlike the island it takes the focus, since it is typed into:
-//! arrows choose, Enter or a double-click pastes into the app that was in front, typing
-//! searches. It closes when it loses the focus. There is at most one.
+//! The clipboard palette: Ctrl+Alt+V drops a launcher out of the top edge of the screen the
+//! cursor is on, a notch of glass of its own that springs open as the tray does: a search over
+//! a list of what was copied (pinned first, then by day) beside a preview of the selected copy.
+//! Unlike the island it takes the focus, since it is typed into: arrows choose, Enter or a
+//! double-click pastes into the app that was in front, typing searches. It closes when it loses
+//! the focus. There is at most one.
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Instant;
 
 use gpui::{
     App, Context, FocusHandle, Global, KeyDownEvent, ScrollHandle, Subscription, Window,
@@ -17,27 +19,37 @@ use super::actions::Panel;
 use super::pictures::Pictures;
 use super::view::{self, HEIGHT, WIDTH};
 use super::{Command, Event, detail};
-use crate::frame::{Frame, open_window};
+use crate::frame::{Frame, Popup, Shape, open_window};
 use crate::log;
 use crate::log::LogErr;
 use crate::win32::{self, clock, paste};
 use model::clip_kind::Kind;
 use model::clip_list::{Section, listed, section};
 use model::clipboard::Entry;
+use model::spring::{Spring, SpringConfig};
 
 /// A row per copy would be thousands of rows; older ones are a search away.
 const MAX_SHOWN: usize = 100;
-/// The palette's corners.
-const RADIUS: f32 = 14.0;
 
 struct Open(WindowHandle<Palette>);
 
 impl Global for Open {}
 
+/// The palette's height, springing out of the top edge to its full height.
+fn opening() -> Spring {
+    let mut height = Spring::new(0.0, SpringConfig::ISLAND);
+    height.set_target(HEIGHT);
+    height
+}
+
 pub struct Palette {
     pub(super) focus: FocusHandle,
     pub(super) scroll: ScrollHandle,
     pub(super) frame: Frame,
+    pub(super) height: Spring,
+    last_frame: Option<Instant>,
+    /// Folding back into the top edge, to close once it is in.
+    folding: bool,
     pub(super) entries: Arc<[Entry]>,
     /// Each entry's kind, worked out once per change to the history.
     pub(super) kinds: Vec<Kind>,
@@ -85,8 +97,8 @@ fn toggle(cx: &mut App, previous: usize) {
     let open = cx.try_global::<Open>().map(|open| open.0);
     if let Some(handle) = open
         && handle
-            .update(cx, |palette, window, _| palette.close(window, true))
-            .is_ok()
+            .update(cx, |palette, _, cx| palette.fold(cx))
+            .unwrap_or(false)
     {
         return;
     }
@@ -94,19 +106,19 @@ fn toggle(cx: &mut App, previous: usize) {
     let Some((_, work, scale)) = win32::cursor_monitor() else {
         return;
     };
-    let to_px = |v: f32| (v * scale).round() as i32;
-    let (w, h) = (to_px(WIDTH), to_px(HEIGHT));
-    // Centred across, a little above the middle, where a launcher sits.
-    let x = work.left + (work.right - work.left - w) / 2;
-    let y = work.top + ((work.bottom - work.top - h) / 3).max(0);
+    // Anywhere on the monitor's top edge: the frame hangs it from the middle.
+    let origin = ((work.left + work.right) / 2, work.top);
     let target = win32::window_exe(HWND(previous as *mut _));
     let opened = open_window(
         cx,
-        "topsy clipboard",
-        (x, y),
-        (WIDTH, HEIGHT),
-        scale,
-        true,
+        Popup {
+            title: "topsy clipboard",
+            origin,
+            size: (WIDTH, HEIGHT),
+            scale,
+            activate: true,
+            shape: Shape::Hanging,
+        },
         move |hwnd, frame, window, cx| {
             if let Some(hwnd) = hwnd {
                 win32::bring_to_front(hwnd);
@@ -117,14 +129,17 @@ fn toggle(cx: &mut App, previous: usize) {
                 window,
                 |palette: &mut Palette, window: &mut Window, _| {
                     if !window.is_window_active() {
-                        palette.close(window, false);
+                        palette.close(window);
                     }
                 },
             );
             let mut palette = Palette {
                 focus,
                 scroll: ScrollHandle::new(),
-                frame: frame.rounded(RADIUS),
+                frame,
+                height: opening(),
+                last_frame: None,
+                folding: false,
                 entries: Arc::new([]),
                 kinds: Vec::new(),
                 shown: Vec::new(),
@@ -241,13 +256,46 @@ impl Palette {
         (at + headers).saturating_sub(usize::from(first))
     }
 
-    /// Close the palette; `give_back` returns the focus to the app it came from.
-    fn close(&mut self, window: &mut Window, give_back: bool) {
+    /// Close the palette at once, leaving the focus where it is: a paste is about to hand it
+    /// back, or something else took it.
+    fn close(&mut self, window: &mut Window) {
         self._activation = None;
-        if give_back && self.hwnd == Some(win32::foreground_window()) {
+        window.remove_window();
+    }
+
+    /// Give the focus back to the app the palette came from and fold it up into the top edge,
+    /// as the tray folds; the window goes once it is folded. False if it was already folding.
+    pub(super) fn fold(&mut self, cx: &mut Context<Self>) -> bool {
+        if self.folding {
+            return false;
+        }
+        self.folding = true;
+        self._activation = None;
+        if self.hwnd == Some(win32::foreground_window()) {
             win32::restore_foreground(HWND(self.previous as *mut _));
         }
-        window.remove_window();
+        self.height.set_target(0.0);
+        cx.notify();
+        true
+    }
+
+    /// Step the spring for this frame: whether the palette is still moving.
+    pub(super) fn step(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        let now = Instant::now();
+        let dt = (self.last_frame).map_or(1.0 / 120.0, |t| now.duration_since(t).as_secs_f32());
+        let moving = self.height.step(dt);
+        self.last_frame = moving.then_some(now);
+        if moving {
+            window.request_animation_frame();
+        } else if self.folding {
+            // Not from inside the draw: the window is gone once this update ends.
+            cx.spawn_in(window, async move |this, cx| {
+                this.update_in(cx, |this, window, _| this.close(window))
+                    .log_err();
+            })
+            .detach();
+        }
+        moving
     }
 
     /// Put the entry back on the clipboard and, with `paste`, paste it into the app that was
@@ -257,7 +305,7 @@ impl Palette {
             return;
         };
         let previous = self.previous;
-        self.close(window, false);
+        self.close(window);
         log(&format!("clipboard take {} paste {paste}", entry.id));
         std::thread::spawn(move || {
             let put = super::data(&entry).is_some_and(|data| paste::put(&data));
@@ -313,6 +361,9 @@ impl Palette {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.folding {
+            return;
+        }
         if self.panel.is_some() {
             return self.on_panel_key(event, window, cx);
         }
@@ -322,7 +373,10 @@ impl Palette {
         let mut refilter = true;
         match key.key.as_str() {
             "escape" if !self.query.is_empty() => self.query.clear(),
-            "escape" => return self.close(window, true),
+            "escape" => {
+                self.fold(cx);
+                return;
+            }
             "enter" => return self.take(self.selected, !ctrl, window),
             "c" if ctrl => return self.take(self.selected, false, window),
             "p" if ctrl => return self.pin(self.selected),

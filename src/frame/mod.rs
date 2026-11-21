@@ -5,7 +5,7 @@
 mod paint;
 mod window;
 
-pub(crate) use window::open_window;
+pub(crate) use window::{Popup, Shape, open_window};
 
 use gpui::{App, Pixels, Size};
 use windows::Win32::Foundation::HWND;
@@ -194,10 +194,10 @@ impl Frame {
         frame
     }
 
-    /// A floating window with corners of `radius` logical pixels.
-    pub fn rounded(mut self, radius: f32) -> Self {
-        self.radius = radius;
-        self.applied = None;
+    /// A notch of its own hanging from the top edge, glazed down to the basket's darker floor so
+    /// the text low in it reads over any backdrop: the clipboard palette.
+    pub fn hanging(mut self) -> Self {
+        self.floor = BASKET_FLOOR;
         self
     }
 

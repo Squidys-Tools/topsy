@@ -9,14 +9,14 @@ use gpui::{
 };
 
 use super::palette::Palette;
-use super::view::{DIM, FAINT, FOOTER, RULE, SELECT, TEXT, key};
+use super::view::{DIM, FAINT, FOOTER, SELECT, TEXT, key};
 use model::clip_actions::{Action, actions};
 use model::clip_kind::Kind;
 use model::clip_list::title;
 use model::menu::step;
 
 const WIDTH: f32 = 300.0;
-const ROW: f32 = 32.0;
+const ROW: f32 = 34.0;
 const PAD: f32 = 6.0;
 const RED: u32 = 0xff6961ff;
 /// Darker than the palette's glass, so the panel lifts off what it covers.
@@ -132,8 +132,9 @@ impl Palette {
             .flex()
             .items_center()
             .gap(px(8.0))
-            .px(px(10.0))
-            .rounded(px(7.0))
+            .pl(px(12.0))
+            .pr(px(7.0))
+            .rounded_full()
             .when(lit, |row| row.bg(rgba(SELECT)))
             .when(action.destructive(), |row| row.text_color(rgba(RED)))
             .child(div().flex_1().child(action.label()))
@@ -158,7 +159,11 @@ impl Palette {
         let mut rows = Vec::new();
         for (row, action) in listed.iter().enumerate() {
             if action.destructive() && row > 0 {
-                let rule = div().h(px(1.0)).my(px(4.0)).mx(px(4.0)).bg(rgba(RULE));
+                let rule = div()
+                    .h(px(1.0))
+                    .my(px(4.0))
+                    .mx(px(12.0))
+                    .bg(rgba(0xffffff17));
                 rows.push(rule.into_any_element());
             }
             rows.push(self.panel_row(row, *action, panel.highlight == Some(row), cx));
@@ -180,12 +185,13 @@ impl Palette {
         let card = div()
             .id("panel")
             .absolute()
-            .right(px(10.0))
-            .bottom(px(FOOTER + 8.0))
+            .right(px(12.0))
+            .bottom(px(FOOTER))
             .w(px(WIDTH))
             .flex()
             .flex_col()
-            .rounded(px(12.0))
+            .p(px(PAD))
+            .rounded(px(20.0))
             .bg(rgba(FILL))
             .border_1()
             .border_color(rgba(0xffffff1f))
@@ -196,32 +202,28 @@ impl Palette {
             .child(
                 // One line at a set width; see the detail pane's values.
                 div()
-                    .px(px(16.0))
-                    .pt(px(10.0))
-                    .pb(px(4.0))
-                    .w(px(WIDTH))
-                    .text_size(px(11.5))
+                    .px(px(12.0))
+                    .py(px(6.0))
+                    .w(px(WIDTH - 2.0 * PAD))
+                    .text_size(px(11.0))
                     .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(rgba(DIM))
+                    .text_color(rgba(FAINT))
                     .line_clamp(1)
                     .text_ellipsis()
-                    .child(SharedString::from(title(&entry.content, kind))),
+                    .child(SharedString::from(
+                        title(&entry.content, kind).to_uppercase(),
+                    )),
             )
+            .child(div().flex().flex_col().children(rows).children(empty))
             .child(
                 div()
-                    .flex()
-                    .flex_col()
-                    .p(px(PAD))
-                    .children(rows)
-                    .children(empty),
-            )
-            .child(div().h(px(1.0)).bg(rgba(RULE)))
-            .child(
-                div()
-                    .h(px(38.0))
+                    .mt(px(6.0))
+                    .h(px(34.0))
                     .flex()
                     .items_center()
-                    .px(px(16.0))
+                    .px(px(14.0))
+                    .rounded_full()
+                    .bg(rgba(0xffffff12))
                     .child(search),
             );
         let close =

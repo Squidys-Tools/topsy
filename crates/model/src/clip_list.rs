@@ -1,5 +1,5 @@
-//! How the clipboard palette lists and describes a copy: its row's title, its section, the
-//! order of the list, what a search finds, and the facts beside its preview.
+//! How the clipboard palette lists and describes a copy: its row's title and age, its section,
+//! the order of the list, what a search finds, and the facts under its preview.
 
 use super::clip_kind::{Kind, color, host};
 use super::clipboard::{Content, Entry};
@@ -47,24 +47,29 @@ pub fn title(content: &Content, kind: Kind) -> String {
     }
 }
 
-/// What the detail pane says about an entry, label and value, in order: the app that copied
-/// it (`app`, its name), what it is, how big, and how long ago it was copied.
-pub fn facts(
-    entry: &Entry,
-    kind: Kind,
-    app: Option<&str>,
-    now: u64,
-) -> Vec<(&'static str, String)> {
-    let mut facts = Vec::new();
-    if let Some(app) = app {
-        facts.push(("Application", app.to_string()));
+/// How long ago, as a row says it beside its title: "now", "4m", "2h", "3d".
+pub fn short_ago(secs: u64) -> String {
+    match secs {
+        0..60 => "now".into(),
+        60..3_600 => format!("{}m", secs / 60),
+        3_600..DAY => format!("{}h", secs / 3_600),
+        _ => format!("{}d", secs / DAY),
     }
-    let label = match &entry.content {
+}
+
+/// What the preview's tag calls a copy: its kind, and one file as a file.
+pub fn kind_label(content: &Content, kind: Kind) -> &'static str {
+    match content {
         Content::Files(files) if files.len() == 1 => "File",
         Content::Files(_) | Content::Text(_) | Content::Image { .. } => kind.label(),
-    };
-    facts.push(("Content type", label.to_string()));
-    match &entry.content {
+    }
+}
+
+/// The facts under the preview, label and value: how big a copy is and what it is made of.
+/// The app and how long ago are in the preview's tag.
+pub fn details(content: &Content, kind: Kind) -> Vec<(&'static str, String)> {
+    let mut facts = Vec::new();
+    match content {
         Content::Text(text) => {
             let t = text.trim();
             let lines = t.lines().count();
@@ -101,7 +106,6 @@ pub fn facts(
             }
         }
     }
-    facts.push(("Copied", ago(now.saturating_sub(entry.copied))));
     facts
 }
 
@@ -198,6 +202,11 @@ mod tests {
         assert_eq!(ago(3 * 3_600), "3 hr. ago");
         assert_eq!(ago(86_400 + 5), "1 day ago");
         assert_eq!(ago(9 * 86_400), "9 days ago");
+        assert_eq!(short_ago(5), "now");
+        assert_eq!(short_ago(14 * 60 + 30), "14m");
+        assert_eq!(short_ago(3 * 3_600), "3h");
+        assert_eq!(short_ago(DAY - 1), "23h");
+        assert_eq!(short_ago(9 * DAY), "9d");
     }
 
     fn entry(id: u64, content: Content, copied: u64, pinned: bool) -> Entry {
@@ -237,32 +246,26 @@ mod tests {
 
     #[test]
     fn each_kind_has_its_own_facts() {
-        let facts = |c: Content, app| {
-            let kind = c.kind();
-            facts(&entry(1, c, 100, false), kind, app, 100 + 14 * 60)
-        };
+        let details = |c: Content| details(&c, c.kind());
         let text = |s: &str| Content::Text(s.into());
         assert_eq!(
-            facts(text(" Launch review\nmoved é "), Some("Notepad")),
+            details(text(" Launch review\nmoved é ")),
             [
-                ("Application", "Notepad".into()),
-                ("Content type", "Text".into()),
                 ("Characters", "23".into()),
                 ("Words", "4".into()),
                 ("Lines", "2".into()),
-                ("Copied", "14 min. ago".into()),
             ]
         );
         assert_eq!(
-            facts(text("rgb(110, 123, 242)"), None)[1..3],
+            details(text("rgb(110, 123, 242)")),
             [("Hex", "#6E7BF2".into()), ("RGB", "110, 123, 242".into())]
         );
         assert_eq!(
-            facts(text("https://www.getdroppy.app/blog"), None)[1],
-            ("Site", "getdroppy.app".into())
+            details(text("https://www.getdroppy.app/blog")),
+            [("Site", "getdroppy.app".into())]
         );
         assert_eq!(
-            facts(text("fn a() {\n}\n"), None)[1..3],
+            details(text("fn a() {\n}\n")),
             [("Lines", "2".into()), ("Characters", "11".into())]
         );
         let image = Content::Image {
@@ -270,23 +273,13 @@ mod tests {
             height: 1050,
             hash: 0,
         };
-        assert_eq!(
-            facts(image, None)[1],
-            ("Dimensions", "1400 \u{d7} 1050".into())
-        );
-        let one = facts(Content::Files(vec![r"C:\a\notes.txt".into()]), None);
-        assert_eq!(
-            one[..2],
-            [("Content type", "File".into()), ("Folder", r"C:\a".into())]
-        );
-        let two = facts(
-            Content::Files(vec![r"C:\a\b".into(), r"C:\a\c".into()]),
-            None,
-        );
-        assert_eq!(
-            two[..2],
-            [("Content type", "Files".into()), ("Items", "2".into())]
-        );
+        assert_eq!(details(image), [("Dimensions", "1400 \u{d7} 1050".into())]);
+        let one = Content::Files(vec![r"C:\a\notes.txt".into()]);
+        assert_eq!(kind_label(&one, one.kind()), "File");
+        assert_eq!(details(one), [("Folder", r"C:\a".into())]);
+        let two = Content::Files(vec![r"C:\a\b".into(), r"C:\a\c".into()]);
+        assert_eq!(kind_label(&two, two.kind()), "Files");
+        assert_eq!(details(two)[0], ("Items", "2".into()));
     }
 
     #[test]
