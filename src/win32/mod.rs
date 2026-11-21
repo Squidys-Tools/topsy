@@ -38,7 +38,8 @@ pub use shell::{app_name, exe_description, move_new, open_path, show_in_folder};
 pub use window::{
     Capsule, Clip, apply_focus_styles, apply_overlay_styles, cursor_monitor, cursor_over,
     foreground_window, fullscreen_over, monitor_at, monitor_top_center, move_window,
-    restore_foreground, round_corners, set_acrylic, set_clip, set_visible, window_rect,
+    move_window_under, restore_foreground, round_corners, set_acrylic, set_clip, set_visible,
+    window_rect,
 };
 
 use std::ffi::c_void;

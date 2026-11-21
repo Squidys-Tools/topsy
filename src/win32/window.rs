@@ -283,10 +283,20 @@ pub fn monitor_top_center(hwnd: HWND) -> Option<(i32, i32)> {
 /// `raise` also puts it above every other topmost window: the one given foreground back at
 /// launch, or any that came along while the notch was hidden, would otherwise cover it.
 pub fn move_window(hwnd: HWND, x: i32, y: i32, w: i32, h: i32, raise: bool) {
-    let (after, order) = if raise {
-        (Some(HWND_TOPMOST), Default::default())
+    place_window(hwnd, x, y, w, h, raise.then_some(HWND_TOPMOST));
+}
+
+/// [`move_window`], raised to just under `above` rather than above everything: a window of
+/// topsy's that must stay in front of it.
+pub fn move_window_under(hwnd: HWND, x: i32, y: i32, w: i32, h: i32, above: HWND) {
+    place_window(hwnd, x, y, w, h, Some(above));
+}
+
+fn place_window(hwnd: HWND, x: i32, y: i32, w: i32, h: i32, after: Option<HWND>) {
+    let order = if after.is_some() {
+        Default::default()
     } else {
-        (None, SWP_NOZORDER)
+        SWP_NOZORDER
     };
     unsafe {
         SetWindowPos(hwnd, after, x, y, w, h, SWP_NOACTIVATE | order).log_err();

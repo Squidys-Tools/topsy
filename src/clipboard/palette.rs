@@ -19,7 +19,7 @@ use super::actions::Panel;
 use super::pictures::Pictures;
 use super::view::{self, HEIGHT, WIDTH};
 use super::{Command, Event, detail};
-use crate::frame::{Frame, Popup, Shape, open_window};
+use crate::frame::{self, Frame, Popup, Shape, open_window};
 use crate::log;
 use crate::log::LogErr;
 use crate::win32::{self, clock, paste};
@@ -122,6 +122,8 @@ fn toggle(cx: &mut App, previous: usize) {
         move |hwnd, frame, window, cx| {
             if let Some(hwnd) = hwnd {
                 win32::bring_to_front(hwnd);
+                // It hangs where the island does: an island appearing now goes under it.
+                frame::keep_on_top(hwnd);
             }
             let focus = cx.focus_handle();
             window.focus(&focus);
@@ -221,7 +223,7 @@ impl Palette {
         self.selected = at.min(self.shown.len().saturating_sub(1));
         self.scroll.scroll_to_item(self.child_of(self.selected));
         if let Some(entry) = self.entry(self.selected) {
-            let wants = detail::wants(entry);
+            let wants = detail::wants(entry, self.kinds[self.shown[self.selected]]);
             self.fetch(wants, cx);
         }
         cx.notify();
@@ -260,6 +262,9 @@ impl Palette {
     /// back, or something else took it.
     fn close(&mut self, window: &mut Window) {
         self._activation = None;
+        if let Some(hwnd) = self.hwnd {
+            frame::release_top(hwnd);
+        }
         window.remove_window();
     }
 

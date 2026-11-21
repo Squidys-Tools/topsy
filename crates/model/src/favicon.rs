@@ -93,7 +93,7 @@ pub fn page_icon(html: &str) -> Option<&str> {
 }
 
 /// An attribute's value in one tag, quoted or not.
-fn attribute<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
+pub(crate) fn attribute<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
     let lower = tag.to_ascii_lowercase();
     let mut from = 0;
     while let Some(found) = lower[from..].find(name) {

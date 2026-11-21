@@ -36,5 +36,8 @@ History is kept in `%LOCALAPPDATA%\topsy\clipboard`.
   there yourself.
 - If another app holds Ctrl+Alt+V, the palette can't open, and the hotkey can't be changed.
 - Rich text and HTML are kept as plain text. The palette lists the newest 100 matches.
-- Links show their site's icon, fetched once, over https, from public sites only; that is the only network
-  traffic history makes. *Clear unpinned* leaves the saved icons, which name the sites you copied from.
+- Links show their site's icon, and a selected link shows its page's preview: its picture, title and
+  description. Both are fetched once, over https, from public sites only; that is the only network traffic
+  history makes. A link with a query (`?…`) or what looks like a key in it is never opened, as some links act
+  when opened. *Clear unpinned* removes the previews but leaves the saved icons, which name the sites you
+  copied from.

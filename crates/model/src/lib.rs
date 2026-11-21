@@ -30,6 +30,7 @@ pub mod jiggle;
 pub mod jpeg;
 pub mod lens;
 pub mod levels;
+pub mod link_preview;
 pub mod magick;
 pub mod marquee;
 pub mod matte;

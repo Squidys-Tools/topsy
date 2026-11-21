@@ -7,6 +7,8 @@ mod window;
 
 pub(crate) use window::{Popup, Shape, open_window};
 
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use gpui::{App, Pixels, Size};
 use windows::Win32::Foundation::HWND;
 
@@ -47,6 +49,23 @@ const MENU_FLOOR: u32 = 0x000000c4;
 pub const BASKET_FLOOR: u32 = 0x000000e0;
 /// A light rim along the bottom edge, fading out up the sides where the notch turns black.
 const RIM: u32 = 0xffffff38;
+
+/// The window that stays in front of every other frame while it is open (the clipboard palette,
+/// which hangs where the island does), as a raw handle; 0 for none. A frame that appears is
+/// raised to just under it rather than over it.
+static ON_TOP: AtomicUsize = AtomicUsize::new(0);
+
+/// Keep `hwnd` in front of every other frame until [`release_top`].
+pub(crate) fn keep_on_top(hwnd: HWND) {
+    ON_TOP.store(hwnd.0 as usize, Ordering::Relaxed);
+}
+
+/// `hwnd` no longer stays in front; a newer one that took its place does.
+pub(crate) fn release_top(hwnd: HWND) {
+    ON_TOP
+        .compare_exchange(hwnd.0 as usize, 0, Ordering::Relaxed, Ordering::Relaxed)
+        .ok();
+}
 
 /// How the notch is filled. `TOPSY_GLASS` can force one, for A/B comparison and for the
 /// automated blur check (`tint` and `clear` are its controls).
@@ -429,7 +448,13 @@ impl Frame {
             if let Some(shape) = &shape {
                 shape.set(origin, size, s, glass, open);
             }
-            win32::move_window(hwnd, origin.0, origin.1, size.0, size.1, appearing);
+            let on_top = ON_TOP.load(Ordering::Relaxed);
+            if appearing && on_top != 0 && on_top != hwnd.0 as usize {
+                let above = HWND(on_top as *mut _);
+                win32::move_window_under(hwnd, origin.0, origin.1, size.0, size.1, above);
+            } else {
+                win32::move_window(hwnd, origin.0, origin.1, size.0, size.1, appearing);
+            }
             win32::set_clip(hwnd, clip);
             if let Some(shape) = &shape {
                 shape.restack();

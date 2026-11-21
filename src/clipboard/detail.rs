@@ -9,6 +9,7 @@ use gpui::{
     Window, div, img, prelude::*, px, rgb, rgba,
 };
 
+use super::link::{ASPECT, LinkPreview};
 use super::pictures::{Pictures, Want};
 use super::preview::Face;
 use super::view::{self, DIM, ON_PILL, PAD, PILL, SMALL_ICON, TEXT};
@@ -54,10 +55,22 @@ const LINK_FACE: Face = Face {
     lines: 3,
     wrap: true,
 };
+/// A link's page: its title over a couple of lines of its description.
+const TITLE_FACE: Face = Face {
+    family: None,
+    rems: 0.9375,
+    width: INNER,
+    lines: 2,
+    wrap: true,
+};
+const DESCRIPTION_FACE: Face = Face {
+    lines: 2,
+    ..LINK_FACE
+};
 
 /// What the pane wants looked up for `entry`: its picture, and the icon and name of the app it
 /// came from.
-pub fn wants(entry: &Entry) -> Vec<Want> {
+pub fn wants(entry: &Entry, kind: Kind) -> Vec<Want> {
     let mut wants: Vec<Want> = (entry.app.iter())
         .flat_map(|a| [Want::Name(a.clone()), Want::Shell(a.clone(), SMALL_ICON)])
         .collect();
@@ -68,7 +81,14 @@ pub fn wants(entry: &Entry) -> Vec<Want> {
         Content::Files(files) => {
             wants.extend(files.first().map(|f| Want::Shell(f.clone(), FILE_ICON)));
         }
-        Content::Text(_) => {}
+        // Only once it is selected: reading a page is more than asking a site for its icon.
+        Content::Text(text) => match kind {
+            Kind::Link => {
+                let page = super::preview_path(text).map(|path| Want::Link(path, text.clone()));
+                wants.extend(page);
+            }
+            Kind::Text | Kind::Color | Kind::Code | Kind::Image | Kind::Files => {}
+        },
     }
     wants
 }
@@ -174,9 +194,48 @@ fn centred() -> Div {
         .justify_center()
 }
 
+/// A link whose page has been read: its picture, title and description. Its site is a fact
+/// under the card.
+fn page_card(page: &LinkPreview, window: &Window) -> Div {
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(8.0))
+        .children(page.image.clone().map(|image| {
+            div()
+                .w(px(INNER))
+                .h(px(INNER / ASPECT))
+                .flex_none()
+                .rounded(px(12.0))
+                .overflow_hidden()
+                .child(img(image).size_full().object_fit(ObjectFit::Contain))
+        }))
+        .child(
+            div()
+                .w(px(TITLE_FACE.width))
+                .text_size(TITLE_FACE.size())
+                .text_color(rgba(TEXT))
+                .child(TITLE_FACE.preview(window, &page.title)),
+        )
+        .children(page.description.as_deref().map(|description| {
+            div()
+                .w(px(LINK_FACE.width))
+                .text_size(LINK_FACE.size())
+                .text_color(rgba(DIM))
+                .child(DESCRIPTION_FACE.preview(window, description))
+        }))
+}
+
 fn preview(entry: &Entry, kind: Kind, pictures: &Pictures, window: &Window) -> Div {
     match &entry.content {
         Content::Text(text) => match kind {
+            Kind::Link
+                if let Some(page) = super::preview_path(text)
+                    .as_deref()
+                    .and_then(|path| pictures.link(path)) =>
+            {
+                page_card(page, window)
+            }
             Kind::Link => centred()
                 .gap(px(10.0))
                 .children(

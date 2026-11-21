@@ -50,9 +50,10 @@ Keep this honest: remove a gap you close, add one you find and leave.
   changed. Paste sends Ctrl+V, which a terminal that pastes on Ctrl+Shift+V ignores (the entry is still on the
   clipboard). Rich text and HTML are kept as plain text. The cap counts entries, not bytes, so a long history of
   big images kept forever can grow large. The palette lists the newest 100 matches. The day sections ignore a clock
-  change to or from daylight saving within the week. The palette hangs where the island does on that monitor; the
-  island revealed from the top edge while it is open is raised over its black top. Tested on one 100% display
-  only. Site icons: an SVG-only icon isn't drawn; a site unreachable or busy when first shown is asked again next
+  change to or from daylight saving within the week. Link previews: a page that builds its tags in script, or
+  serves them only to a browser's user agent, shows none; a link with a query is never previewed, so most search
+  and video links show their site only; a page unreachable when first selected is asked again next run. Tested
+  on one 100% display only. Site icons: an SVG-only icon isn't drawn; a site unreachable or busy when first shown is asked again next
   run, not sooner; a name can still re-resolve to a private address between the check and WinHTTP's own lookup;
   and *Clear unpinned* leaves the kept icons, which name the sites copied.
 - **HUDs.** Brightness shows only for displays whose driver reports to WMI (a laptop's own panel, not an external

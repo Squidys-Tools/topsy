@@ -33,7 +33,17 @@ Decisions behind [clipboard history](../user/clipboard-history.md).
   removes those (and a half-written site icon) when it starts. At most 2000 unpinned entries are kept, and text
   over 1 MB is not. One topsy keeps a folder; a second one started on it keeps no history, since both would
   number and expire the same files.
-- **Site icons are the only network traffic.** A link that is listed asks its site for `/favicon.ico`, else the
+- **It stays in front of the island.** It hangs where the island does, and the island raises itself over every
+  topmost window whenever it appears (see [Notch](notch.md)). While the palette is open, every frame that
+  appears is raised to just under it instead (`frame::keep_on_top`), which covers the edge reveal, HUDs and
+  activities alike.
+- **A link's preview reads the page itself, so it is asked for only when the link is selected**, and only for a
+  link that is safe to open unasked (`model::link_preview::fetchable`): a public https name, and no query, user
+  name or token-like path segment, since some links act when opened (a one-time sign-in, a password reset). Its
+  Open Graph title, description and picture are kept in `previews\<hash>.json` and `.png`, the picture cut to
+  the preview's shape before it is drawn. Whenever the history changes, previews of links no longer in it are
+  removed: they hold the pages' titles.
+- **Site icons and link previews are the only network traffic.** A link that is listed asks its site for `/favicon.ico`, else the
   icon its home page names, once per host, through WinHTTP (the system's TLS, no crate of our own). Only https
   and public names: never a bare name, an address, a local-network suffix, or a name that resolves to a private
   address, and a redirect or icon link is vetted the same way. The icon is kept as a small PNG in

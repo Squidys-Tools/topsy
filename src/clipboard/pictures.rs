@@ -1,6 +1,6 @@
-//! What the palette shows that Windows has to look up: app icons, copied images, file
-//! thumbnails, site icons, and the names apps give themselves. Each is loaded once, off the UI
-//! thread, as it is first shown.
+//! What the palette shows that Windows or the network has to look up: app icons, copied images,
+//! file thumbnails, site icons, links' previews, and the names apps give themselves. Each is
+//! loaded once, off the UI thread, as it is first shown.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -10,6 +10,7 @@ use gpui::{Context, RenderImage};
 use windows::Win32::System::Com::COINIT_MULTITHREADED;
 
 use super::favicon;
+use super::link::{self, LinkPreview};
 use crate::{icon, win32};
 
 /// Something the palette wants looked up.
@@ -20,18 +21,22 @@ pub enum Want {
     Site(PathBuf, String),
     /// The name an exe gives itself.
     Name(PathBuf),
+    /// A link's preview, kept at the path (without its extension).
+    Link(PathBuf, String),
 }
 
-/// One picture at one size, or one name; a file is wanted at more than one size.
+/// One picture at one size, one name, or one preview; a file is wanted at more than one size.
 #[derive(Clone, PartialEq, Eq, Hash)]
 enum Key {
     Picture(PathBuf, u32),
     Name(PathBuf),
+    Link(PathBuf),
 }
 
 enum Got {
     Picture(Arc<RenderImage>),
     Name(String),
+    Link(LinkPreview),
 }
 
 impl Want {
@@ -40,6 +45,7 @@ impl Want {
             Want::Shell(path, size) => Key::Picture(path.clone(), size.round() as u32),
             Want::Site(path, _) => Key::Picture(path.clone(), 0),
             Want::Name(exe) => Key::Name(exe.clone()),
+            Want::Link(path, _) => Key::Link(path.clone()),
         }
     }
 
@@ -48,7 +54,7 @@ impl Want {
         match self {
             Want::Name(_) => 0,
             Want::Shell(..) => 1,
-            Want::Site(..) => 2,
+            Want::Site(..) | Want::Link(..) => 2,
         }
     }
 
@@ -59,6 +65,7 @@ impl Want {
             }
             Want::Site(path, host) => favicon::load(path, host).map(Got::Picture),
             Want::Name(exe) => win32::exe_description(exe).map(Got::Name),
+            Want::Link(path, url) => link::load(path, url).map(Got::Link),
         }
     }
 }
@@ -83,7 +90,15 @@ impl Pictures {
     fn picture(&self, key: Key) -> Option<Arc<RenderImage>> {
         match self.loaded.get(&key)? {
             Got::Picture(picture) => Some(picture.clone()),
-            Got::Name(_) => None,
+            Got::Name(_) | Got::Link(_) => None,
+        }
+    }
+
+    /// A link's preview kept at `path`, once its page has been read.
+    pub fn link(&self, path: &Path) -> Option<&LinkPreview> {
+        match self.loaded.get(&Key::Link(path.to_path_buf()))? {
+            Got::Link(preview) => Some(preview),
+            Got::Picture(_) | Got::Name(_) => None,
         }
     }
 
@@ -91,7 +106,7 @@ impl Pictures {
     pub fn name(&self, exe: &Path) -> String {
         match self.loaded.get(&Key::Name(exe.to_path_buf())) {
             Some(Got::Name(name)) => name.clone(),
-            Some(Got::Picture(_)) | None => (exe.file_stem())
+            Some(Got::Picture(_) | Got::Link(_)) | None => (exe.file_stem())
                 .map_or_else(String::new, |stem| stem.to_string_lossy().into_owned()),
         }
     }
