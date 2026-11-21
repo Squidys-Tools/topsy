@@ -43,8 +43,9 @@ Decisions behind [clipboard history](../user/clipboard-history.md).
   Open Graph title, description and picture are kept in `previews\<hash>.json` and `.png`, the picture cut to
   the preview's shape before it is drawn. Whenever the history changes, previews of links no longer in it are
   removed: they hold the pages' titles.
-- **Site icons and link previews are the only network traffic.** A link that is listed asks its site for `/favicon.ico`, else the
-  icon its home page names, once per host, through WinHTTP (the system's TLS, no crate of our own). Only https
-  and public names: never a bare name, an address, a local-network suffix, or a name that resolves to a private
-  address, and a redirect or icon link is vetted the same way. The icon is kept as a small PNG in
-  `icons\<host>.png` beside the history; an empty file there means the site has none, so it isn't asked again.
+- **Site icons and link previews are the only network traffic.** A link that is listed asks its site for
+  `/favicon.ico`, else the icon its home page names, once per host, through WinHTTP (the system's TLS, no crate
+  of our own). Only https and public names: never a bare name, an address, a local-network suffix, or a name that
+  resolves to a private address, and a redirect, icon link or preview picture is vetted the same way. The icon is
+  kept as a small PNG in `icons\<host>.png` beside the history; an empty file there means the site has none, so
+  it isn't asked again.

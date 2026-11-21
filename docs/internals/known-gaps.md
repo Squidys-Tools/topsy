@@ -53,9 +53,9 @@ Keep this honest: remove a gap you close, add one you find and leave.
   change to or from daylight saving within the week. Link previews: a page that builds its tags in script, or
   serves them only to a browser's user agent, shows none; a link with a query is never previewed, so most search
   and video links show their site only; a page unreachable when first selected is asked again next run. Tested
-  on one 100% display only. Site icons: an SVG-only icon isn't drawn; a site unreachable or busy when first shown is asked again next
-  run, not sooner; a name can still re-resolve to a private address between the check and WinHTTP's own lookup;
-  and *Clear unpinned* leaves the kept icons, which name the sites copied.
+  on one 100% display only. Site icons: an SVG-only icon isn't drawn; a site unreachable or busy when first shown
+  is asked again next run, not sooner; a name can still re-resolve to a private address between the check and
+  WinHTTP's own lookup; and *Clear unpinned* leaves the kept icons, which name the sites copied.
 - **HUDs.** Brightness shows only for displays whose driver reports to WMI (a laptop's own panel, not an external
   monitor), and next to Windows' own brightness flyout. Volume keys that a keyboard's own software handles
   without sending the standard key codes don't reach topsy, and with no output device a volume key does nothing.
