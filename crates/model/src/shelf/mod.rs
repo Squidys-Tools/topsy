@@ -53,18 +53,18 @@ impl Shelf {
         added
     }
 
-    /// Merge stat answers (`path` → is-dir, size) into the chips still parked. Answers are
+    /// Merge stat answers (`path` → is-dir, size if the stat worked) into the chips still parked. Answers are
     /// matched by path, never position, so a chip removed or cleared before its
     /// answer arrived is skipped instead of reappearing. Returns how many applied.
     pub fn resolve_kinds(
         &mut self,
-        resolved: impl IntoIterator<Item = (PathBuf, bool, u64)>,
+        resolved: impl IntoIterator<Item = (PathBuf, bool, Option<u64>)>,
     ) -> usize {
         let mut applied = 0;
         for (path, is_dir, bytes) in resolved {
             if let Some(item) = self.items.iter_mut().find(|i| same_path(&i.path, &path)) {
                 item.kind = if is_dir { Kind::Dir } else { Kind::File };
-                item.bytes = (!is_dir).then_some(bytes);
+                item.bytes = bytes.filter(|_| !is_dir);
                 applied += 1;
             }
         }
@@ -73,7 +73,7 @@ impl Shelf {
 
     pub fn remove(&mut self, index: usize) -> Option<Item> {
         let removed = (index < self.items.len()).then(|| self.items.remove(index));
-        self.selection.keep(&self.items);
+        self.keep_selection();
         removed
     }
 
@@ -81,8 +81,16 @@ impl Shelf {
     pub fn remove_path(&mut self, path: &Path) -> bool {
         let before = self.items.len();
         self.items.retain(|i| !same_path(&i.path, path));
-        self.selection.keep(&self.items);
+        self.keep_selection();
         self.items.len() != before
+    }
+
+    /// Forget picks whose chips left; an emptied shelf leaves picking too.
+    fn keep_selection(&mut self) {
+        self.selection.keep(&self.items);
+        if self.items.is_empty() {
+            self.picking = false;
+        }
     }
 
     pub fn clear(&mut self) {
@@ -106,7 +114,7 @@ impl Shelf {
     pub fn prune(&mut self, exists: impl Fn(&Path) -> bool) -> usize {
         let before = self.items.len();
         self.items.retain(|i| exists(&i.path));
-        self.selection.keep(&self.items);
+        self.keep_selection();
         before - self.items.len()
     }
 
@@ -219,9 +227,9 @@ mod tests {
     }
 
     /// Stat answers as the background read returns them: `(path, is_dir, size)`.
-    fn resolved(list: &[(&str, bool)]) -> Vec<(PathBuf, bool, u64)> {
+    fn resolved(list: &[(&str, bool)]) -> Vec<(PathBuf, bool, Option<u64>)> {
         list.iter()
-            .map(|(p, d)| (PathBuf::from(p), *d, 2_400_000))
+            .map(|(p, d)| (PathBuf::from(p), *d, Some(2_400_000)))
             .collect()
     }
 
@@ -353,6 +361,15 @@ mod tests {
         assert!(shelf.is_picking());
         shelf.toggle_picking();
         assert!(!shelf.is_picking() && !shelf.is_selected(1));
+
+        // Picking on a shelf that empties: the next file opens on a click again.
+        shelf.toggle_picking();
+        shelf.clear();
+        shelf.add(paths(&[r"C:\d.txt"]));
+        assert!(!shelf.is_picking());
+        shelf.toggle_picking();
+        shelf.remove(0);
+        assert!(!shelf.is_picking());
     }
 
     #[test]

@@ -224,6 +224,8 @@ impl Island {
         for item in items {
             self.shelf.remove_path(&item.path);
         }
+        // What was picked has gone: the bin must not go on to empty the rest.
+        self.shelf.deselect();
         self.shelf_changed(cx);
     }
 }
