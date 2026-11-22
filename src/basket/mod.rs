@@ -218,6 +218,12 @@ impl Basket {
         }
     }
 
+    /// Files sent over from the shelf: into the basket, which comes up under the pointer.
+    pub(crate) fn take(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+        self.add(paths, cx);
+        self.show(cx);
+    }
+
     fn add(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
         let added = self.files.add(paths);
         log(&format!("basket +{} = {}", added.len(), self.files.len()));
@@ -232,9 +238,9 @@ impl Basket {
         }
         let rx = crate::icon::resolve(paths, (THUMB * self.scale).round() as i32);
         cx.spawn(async move |this, cx| {
-            while let Ok((path, is_dir, icon)) = rx.recv().await {
+            while let Ok((path, is_dir, bytes, icon)) = rx.recv().await {
                 let updated = this.update(cx, |this, cx| {
-                    if this.files.resolve_kinds([(path.clone(), is_dir)]) == 0 {
+                    if this.files.resolve_kinds([(path.clone(), is_dir, bytes)]) == 0 {
                         return;
                     }
                     if let Some(icon) = icon

@@ -3,10 +3,11 @@
 Decisions behind [Shelf widgets](../user/widgets.md). The row lives in `src/widgets/`, its rules in
 `crates/model` (`widgets`, `calendar`, `pomodoro`, `stats`, `weather`).
 
-- **They live on Home, a page of their own.** A tray opened to look, with something for Home, has two pages,
-  Home and the shelf, as Droppy's has (`src/island/pager.rs`, rules in `model::pager`; `TrayCause::sections` says
-  what each page shows). A drag or a drop is about the shelf, so it shows the shelf alone, with no pages. Each page has
-  its own size, so the tray's width comes from `size_for` as its height does, and `retarget` springs both.
+- **They live on Home, a page of their own.** Every open tray has two pages, Home and the shelf, as Droppy's has
+  (`src/island/pager.rs`, rules in `model::pager`; `tray_cause::sections` says what each page shows), and the
+  capsule always hangs under it, so there is always a way to the other page. `TrayCause::page` picks the first:
+  a drag or a drop is about the shelf, a look opens on Home unless it has nothing to show. Each page has its own
+  size, so the tray's width comes from `size_for` as its height does, and `retarget` springs both.
 - **The page capsule hangs below the notch, outside it.** The window grows by a strip under the notch for it,
   sprung out from under the notch and back, and its region and compositor glass take a second rounded pane
   (`win32::Capsule`, `Backdrop::capsule`). The window takes a new size a frame after it is asked for, so the

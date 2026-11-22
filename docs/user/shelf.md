@@ -1,7 +1,7 @@
 # The shelf
 
 The shelf holds files on the notch until you need them. Drop files on the notch and they wait in the tray as
-**chips**: the file's thumbnail or icon, as Explorer shows it, and its name. Chips are references, not copies;
+**chips**: the file's thumbnail or icon, as Explorer shows it, its name and its size. Chips are references, not copies;
 the file itself is never touched.
 
 ## Using it
@@ -12,11 +12,15 @@ the file itself is never touched.
 - **Take a file out** by dragging its chip onto any window, as you would from Explorer. The window you drop on
   decides whether the file is copied or moved, as in Explorer, so a drag to a folder on the same drive moves
   it. A chip leaves the shelf once a drop is accepted.
-- **Click a chip** to open the file. The cross on a chip removes it from the shelf. **Clear** empties the
-  shelf.
-- **Pick several chips** as in Explorer: **Ctrl-click** picks a chip or puts it back, **Shift-click** picks the
-  run up to it. Click an empty part of the shelf to let them go; folding the tray lets them go too. Dragging a
-  picked chip takes all of them out at once, and the right-click menu acts on them all.
+- **Click a chip** to open the file. The cross on a chip removes it from the shelf.
+- **Pick several chips** with the tick button at the top left: each chip then shows a circle, and a click
+  picks it or puts it back. Ctrl-click and Shift-click pick as in Explorer without it. Click the tick button
+  again, or an empty part of the shelf, to let them go; folding the tray lets them go too. Dragging a picked
+  chip takes all of them out at once, and the right-click menu acts on them all. With chips picked, the
+  buttons beside the tick compress them to a zip and show the first in its folder.
+- **The buttons at the top right** act on the picked chips, or on the whole shelf when none are picked:
+  [Transform](transform.md), send them to the [basket](basket.md) (they leave the shelf and the basket comes up
+  under the pointer), and the bin, which takes them off the shelf. The files themselves are never touched.
 - **Right-click a chip** for *Transform…*, *Share…* (Windows' share sheet), *Show in folder*, *Copy as path*
   (quoted, as Explorer copies it, one per line for several), *Compress to ZIP file* and *Remove from shelf*. A
   zip also has *Extract here*, and several chips from the same folder have *New folder with selection*.

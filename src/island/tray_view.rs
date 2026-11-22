@@ -1,23 +1,36 @@
 //! What the island shows: the peek's line, and the tray's layout (Home's player and widgets, or
-//! the shelf's header and its chips, as the page and `TrayCause::sections` say).
+//! the shelf's header and its chips, as the page and `tray_cause::sections` say).
+
+mod shelf_view;
 
 use std::time::Instant;
 
-use gpui::{ClickEvent, Context, Div, ScrollWheelEvent, div, prelude::*, px, rgb, rgba};
+use gpui::{Context, Div, ScrollWheelEvent, div, prelude::*, px, rgba};
 
 use crate::island::PEEK_LINGER;
 use crate::widgets::{self, Effect};
 use crate::{Island, Mode, activity, frame, hud, now_playing, tray, win32};
 use model::activity::{Activity, Key};
-use model::tray_cause::{Sections, TrayCause};
-
-/// Between chips.
-const GAP: f32 = 8.0;
+use model::tray_cause::{self, Sections, TrayCause};
 
 impl Island {
     pub(crate) fn sections(&self) -> Sections {
         let playing = self.media.now.card().is_some();
-        (self.tray_cause).sections(self.pager.page(), playing, self.widgets.is_on())
+        tray_cause::sections(self.pager.page(), playing, self.widgets.is_on())
+    }
+
+    /// Home has something to show: a player or widgets.
+    fn home_has_content(&self) -> bool {
+        self.media.now.card().is_some() || self.widgets.is_on()
+    }
+
+    /// Open the tray for `cause`, or, already open, turn to the page a drag or a drop is about.
+    pub(crate) fn show_tray_for(&mut self, cause: TrayCause, cx: &mut Context<Self>) {
+        self.tray_cause = cause;
+        if self.mode == Mode::Tray && cause != TrayCause::Opened {
+            self.turn_to(cause.page(self.home_has_content()), cx);
+        }
+        self.set_mode(Mode::Tray, cx);
     }
 
     /// The widgets' row is on screen: a card's redraws are worth booking.
@@ -217,7 +230,8 @@ impl Island {
             false => (0.0, w),
         };
         let shelf = if sections.shelf { h } else { 0.0 };
-        (w, player + row + shelf)
+        let empty = if sections.is_empty() { EMPTY_HOME } else { 0.0 };
+        (w, player + row + shelf + empty)
     }
 
     /// Spring to the size the mode and its sections want, and the page capsule out or away.
@@ -225,14 +239,15 @@ impl Island {
         let (w, h) = self.size_for(self.mode);
         self.width.set_target(w);
         self.height.set_target(h);
-        let capsule = self.mode == Mode::Tray && self.sections().pager;
-        self.pager.show_capsule(capsule);
+        self.pager.show_capsule(self.mode == Mode::Tray);
     }
 
-    /// The tray has just opened: Home, this month's calendar, nothing picked on the shelf.
+    /// The tray has just opened: on the page its cause wants, this month's calendar, nothing
+    /// picked on the shelf.
     pub(crate) fn opened(&mut self, cx: &mut Context<Self>) {
         self.shelf.deselect();
-        self.pager.opened();
+        self.pager
+            .opened(self.tray_cause.page(self.home_has_content()));
         self.widgets.opened(cx);
     }
 
@@ -272,126 +287,23 @@ impl Island {
             )
             .children((sections.widgets).then(|| self.widgets.row(self.widgets_visible(), cx)))
             .children(sections.shelf.then(|| self.shelf_section(cx)))
+            .children(sections.is_empty().then(empty_home))
             .children(self.hud.over_tray())
     }
+}
 
-    /// The shelf's header and its chips, or the hint when it is empty.
-    fn shelf_section(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        let count = self.shelf.len();
-        let title = if count == 0 {
-            "Shelf".to_string()
-        } else {
-            format!("Shelf · {count}")
-        };
-        let clear = (count > 0).then(|| {
-            div()
-                .id("clear")
-                .px(px(6.0))
-                .rounded(px(4.0))
-                .text_xs()
-                .text_color(rgba(0xffffffb3))
-                .cursor_pointer()
-                .hover(|style| style.bg(rgba(0xffffff1a)).text_color(rgb(0xffffff)))
-                .child("Clear")
-                .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| this.clear_shelf(cx)))
-        });
-        let files: Vec<_> = (self.shelf.items().iter())
-            .filter(|item| item.kind == model::shelf::Kind::File)
-            .map(|item| item.path.clone())
-            .collect();
-        let transform = (!files.is_empty()).then(|| {
-            div()
-                .id("transform")
-                .px(px(6.0))
-                .rounded(px(4.0))
-                .text_xs()
-                .text_color(rgba(0xffffffb3))
-                .cursor_pointer()
-                .hover(|style| style.bg(rgba(0xffffff1a)).text_color(rgb(0xffffff)))
-                .child("Transform")
-                .on_click(cx.listener(move |_, _: &ClickEvent, _window, cx| {
-                    let island = cx.entity();
-                    crate::transform::open(cx, &island, files.clone());
-                }))
-        });
+/// Home's height with nothing on it.
+const EMPTY_HOME: f32 = 80.0;
 
-        let body = if self.shelf.is_empty() {
-            div()
-                .flex_1()
-                .flex()
-                .items_center()
-                .justify_center()
-                .text_sm()
-                .child("Drop files to park them")
-                .into_any_element()
-        } else {
-            let scroll = self.pager.chips.clone();
-            // A chip cut by the row's edge fades with how much of it is out of sight, so a full
-            // shelf shows there is more past the edge. Scrolling re-renders the tray.
-            let (x, row) = (
-                f32::from(scroll.offset().x),
-                f32::from(scroll.bounds().size.width),
-            );
-            let chips: Vec<_> = (self.shelf.items().iter().enumerate())
-                .map(|(i, item)| {
-                    let left = i as f32 * (crate::island::chip::CHIP.0 + GAP) + x;
-                    let right = left + crate::island::chip::CHIP.0;
-                    let seen =
-                        (right.min(row) - left.max(0.0)).max(0.0) / crate::island::chip::CHIP.0;
-                    let opacity = if row <= 0.0 || seen >= 1.0 {
-                        1.0
-                    } else {
-                        0.15 + 0.5 * seen
-                    };
-                    div().opacity(opacity).child(self.chip(i, item, cx))
-                })
-                .collect();
-            div()
-                .id("chips")
-                .w_full()
-                .flex()
-                .flex_row()
-                .gap(px(GAP))
-                .overflow_x_scroll()
-                .track_scroll(&scroll)
-                .children(chips)
-                .into_any_element()
-        };
-
-        let (_, h) = Mode::Tray.size();
-        div()
-            .id("shelf")
-            .w_full()
-            .h(px(h))
-            .flex_shrink_0()
-            .flex()
-            .flex_col()
-            .p(px(10.0))
-            .gap(px(6.0))
-            .child(
-                div()
-                    .w_full()
-                    .h(px(16.0))
-                    .flex()
-                    .flex_row()
-                    .items_center()
-                    .justify_between()
-                    .child(div().text_xs().text_color(rgba(0xffffffb3)).child(title))
-                    .child(
-                        div()
-                            .flex()
-                            .gap(px(4.0))
-                            .children(transform)
-                            .children(clear),
-                    ),
-            )
-            .child(body)
-            // A chip's click stops here; one anywhere else on the shelf lets the selection go.
-            .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                if !this.shelf.selection().is_empty() {
-                    this.shelf.deselect();
-                    cx.notify();
-                }
-            }))
-    }
+/// Home turned to with nothing playing and every widget off.
+fn empty_home() -> Div {
+    div()
+        .w_full()
+        .h(px(EMPTY_HOME))
+        .flex()
+        .items_center()
+        .justify_center()
+        .text_sm()
+        .text_color(rgba(0xffffff8c))
+        .child("Nothing playing")
 }

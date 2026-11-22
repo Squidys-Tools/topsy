@@ -4,77 +4,21 @@
 //! and `win32::drag_files_out` drags items back out. Items are references to the original
 //! files, not copies.
 
+mod item;
+
 use std::path::{Path, PathBuf};
 
 use crate::selection::Selection;
 
-/// What a chip is on disk. A dropped path starts `Unknown`: the stat runs off the
-/// UI thread (a dead network share can stall it for its timeout) and
-/// `Shelf::resolve_kinds` merges the answer back, so the chip never waits on it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Kind {
-    Unknown,
-    File,
-    Dir,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Item {
-    pub path: PathBuf,
-    pub kind: Kind,
-}
-
-impl Item {
-    /// The file name, or the whole path for something without one (a drive root).
-    pub fn name(&self) -> String {
-        self.path
-            .file_name()
-            .unwrap_or(self.path.as_os_str())
-            .to_string_lossy()
-            .into_owned()
-    }
-
-    /// Up to four capital letters for the badge: the extension, `DIR` for a folder,
-    /// `FILE` for a file with no extension, `…` until the stat comes back.
-    pub fn badge_label(&self) -> String {
-        match self.kind {
-            Kind::Dir => return "DIR".into(),
-            Kind::Unknown => return "…".into(),
-            Kind::File => {}
-        }
-        match self.path.extension().and_then(|e| e.to_str()) {
-            Some(ext) if !ext.is_empty() => ext.chars().take(4).collect::<String>().to_uppercase(),
-            _ => "FILE".into(),
-        }
-    }
-
-    /// A stable hue in `0.0..1.0` for the badge, so the same type always has the same colour.
-    pub fn badge_hue(&self) -> f32 {
-        // FNV-1a over the label: spread out, and the same on every run.
-        let mut hash: u32 = 0x811c_9dc5;
-        for byte in self.badge_label().bytes() {
-            hash ^= u32::from(byte);
-            hash = hash.wrapping_mul(0x0100_0193);
-        }
-        (hash % 360) as f32 / 360.0
-    }
-
-    /// A file with the `.zip` extension, which the shelf offers to extract.
-    pub fn is_zip(&self) -> bool {
-        self.kind == Kind::File
-            && (self.path.extension()).is_some_and(|ext| ext.eq_ignore_ascii_case("zip"))
-    }
-}
-
-/// Windows paths compare case-insensitively, accents and all.
-pub(crate) fn same_path(a: &Path, b: &Path) -> bool {
-    a.to_string_lossy().to_lowercase() == b.to_string_lossy().to_lowercase()
-}
+pub(crate) use item::same_path;
+pub use item::{Item, Kind};
 
 #[derive(Default)]
 pub struct Shelf {
     items: Vec<Item>,
     selection: Selection,
+    /// The select button is on: a plain click picks a chip instead of opening it.
+    picking: bool,
 }
 
 impl Shelf {
@@ -102,20 +46,25 @@ impl Shelf {
             self.items.push(Item {
                 path: path.clone(),
                 kind: Kind::Unknown,
+                bytes: None,
             });
             added.push(path);
         }
         added
     }
 
-    /// Merge stat answers (`path` → is-dir) into the chips still parked. Answers are
+    /// Merge stat answers (`path` → is-dir, size) into the chips still parked. Answers are
     /// matched by path, never position, so a chip removed or cleared before its
     /// answer arrived is skipped instead of reappearing. Returns how many applied.
-    pub fn resolve_kinds(&mut self, resolved: impl IntoIterator<Item = (PathBuf, bool)>) -> usize {
+    pub fn resolve_kinds(
+        &mut self,
+        resolved: impl IntoIterator<Item = (PathBuf, bool, u64)>,
+    ) -> usize {
         let mut applied = 0;
-        for (path, is_dir) in resolved {
+        for (path, is_dir, bytes) in resolved {
             if let Some(item) = self.items.iter_mut().find(|i| same_path(&i.path, &path)) {
                 item.kind = if is_dir { Kind::Dir } else { Kind::File };
+                item.bytes = (!is_dir).then_some(bytes);
                 applied += 1;
             }
         }
@@ -138,7 +87,7 @@ impl Shelf {
 
     pub fn clear(&mut self) {
         self.items.clear();
-        self.selection.clear();
+        self.deselect();
     }
 
     /// A file was renamed on disk: its chip follows, where it was. False if it isn't parked.
@@ -179,8 +128,49 @@ impl Shelf {
         self.selection.extend(&self.items, index);
     }
 
+    /// Let the picked chips go, and leave picking.
     pub fn deselect(&mut self) {
         self.selection.clear();
+        self.picking = false;
+    }
+
+    /// Picking chips: the select button is on, or some are picked with Ctrl or Shift.
+    pub fn is_picking(&self) -> bool {
+        self.picking || !self.selection.is_empty()
+    }
+
+    /// The select button: start picking, or let the picked chips go.
+    pub fn toggle_picking(&mut self) {
+        if self.is_picking() {
+            self.deselect();
+        } else {
+            self.picking = true;
+        }
+    }
+
+    /// A click on the chip at `index`, with Ctrl or Shift held: true if it opens the file.
+    /// Ctrl, or any click while picking, picks the chip or puts it back; Shift picks the run up
+    /// to it; a plain click opens it.
+    pub fn click(&mut self, index: usize, ctrl: bool, shift: bool) -> bool {
+        if shift {
+            self.select_through(index);
+        } else if ctrl || self.picking {
+            self.toggle_selected(index);
+        } else {
+            self.deselect();
+            return true;
+        }
+        false
+    }
+
+    /// What the shelf's buttons act on: the picked chips, in shelf order, or all of them when
+    /// none are.
+    pub fn picked_or_all(&self) -> Vec<Item> {
+        let none = self.selection.is_empty();
+        (self.items.iter())
+            .filter(|i| none || self.selection.contains(&i.path))
+            .cloned()
+            .collect()
     }
 
     /// What dragging or a menu on the chip at `index` acts on: the selection, in shelf order,
@@ -228,9 +218,11 @@ mod tests {
         list.iter().map(PathBuf::from).collect()
     }
 
-    /// Stat answers as the background read returns them: `(path, is_dir)`.
-    fn resolved(list: &[(&str, bool)]) -> Vec<(PathBuf, bool)> {
-        list.iter().map(|(p, d)| (PathBuf::from(p), *d)).collect()
+    /// Stat answers as the background read returns them: `(path, is_dir, size)`.
+    fn resolved(list: &[(&str, bool)]) -> Vec<(PathBuf, bool, u64)> {
+        list.iter()
+            .map(|(p, d)| (PathBuf::from(p), *d, 2_400_000))
+            .collect()
     }
 
     #[test]
@@ -270,6 +262,7 @@ mod tests {
             paths(&[r"C:\a.txt", r"C:\dir"])
         );
         assert_eq!(shelf.items()[0].badge_label(), "…");
+        assert_eq!(shelf.items()[0].detail(), "");
 
         // Answers can come back in any order; only the kind changes, not the position.
         assert_eq!(
@@ -278,6 +271,8 @@ mod tests {
         );
         assert_eq!(shelf.items()[0].badge_label(), "TXT");
         assert_eq!(shelf.items()[1].badge_label(), "DIR");
+        assert_eq!(shelf.items()[0].detail(), "2.4 MB");
+        assert_eq!(shelf.items()[1].detail(), "Folder");
     }
 
     #[test]
@@ -329,50 +324,43 @@ mod tests {
     }
 
     #[test]
+    fn picking_turns_a_click_into_a_pick_until_let_go() {
+        let mut shelf = Shelf::default();
+        shelf.add(paths(&[r"C:\a.txt", r"C:\b.txt", r"C:\c.txt"]));
+        assert!(shelf.click(0, false, false), "a plain click opens");
+        assert!(!shelf.is_picking());
+
+        shelf.toggle_picking();
+        assert!(shelf.is_picking(), "on before anything is picked");
+        assert!(!shelf.click(0, false, false));
+        assert!(!shelf.click(2, false, false));
+        assert!(shelf.is_selected(0) && !shelf.is_selected(1) && shelf.is_selected(2));
+        assert_eq!(shelf.picked_or_all().len(), 2);
+        assert!(!shelf.click(2, false, false), "a second click puts it back");
+        assert!(!shelf.is_selected(2));
+        assert_eq!(shelf.picked_or_all()[0].name(), "a.txt");
+
+        shelf.toggle_picking();
+        assert!(!shelf.is_picking() && shelf.selection().is_empty());
+        assert_eq!(
+            shelf.picked_or_all().len(),
+            3,
+            "none picked: the whole shelf"
+        );
+
+        // Ctrl-picking lights the button, which then lets them go.
+        assert!(!shelf.click(1, true, false));
+        assert!(shelf.is_picking());
+        shelf.toggle_picking();
+        assert!(!shelf.is_picking() && !shelf.is_selected(1));
+    }
+
+    #[test]
     fn clear_empties_the_shelf() {
         let mut shelf = Shelf::default();
         shelf.add(paths(&[r"C:\a.txt"]));
         shelf.clear();
         assert!(shelf.is_empty());
-    }
-
-    #[test]
-    fn badge_labels() {
-        let item = |p: &str, kind| Item {
-            path: PathBuf::from(p),
-            kind,
-        };
-        assert_eq!(item(r"C:\x\pic.png", Kind::File).badge_label(), "PNG");
-        assert_eq!(item(r"C:\x\a.torrent", Kind::File).badge_label(), "TORR");
-        assert_eq!(item(r"C:\x\Makefile", Kind::File).badge_label(), "FILE");
-        assert_eq!(item(r"C:\x\folder", Kind::Dir).badge_label(), "DIR");
-        assert_eq!(item(r"C:\x\pic.png", Kind::Unknown).badge_label(), "…");
-        assert!(item(r"C:\x\a.ZIP", Kind::File).is_zip());
-        assert!(!item(r"C:\x\a.zip", Kind::Dir).is_zip());
-        assert!(!item(r"C:\x\zip", Kind::File).is_zip());
-    }
-
-    #[test]
-    fn badge_hue_is_stable_and_in_range() {
-        let a = Item {
-            path: PathBuf::from(r"C:\x\a.png"),
-            kind: Kind::File,
-        };
-        let b = Item {
-            path: PathBuf::from(r"D:\y\b.PNG"),
-            kind: Kind::File,
-        };
-        assert_eq!(a.badge_hue(), b.badge_hue());
-        assert!((0.0..1.0).contains(&a.badge_hue()));
-    }
-
-    #[test]
-    fn name_falls_back_to_the_path_for_a_drive_root() {
-        let item = Item {
-            path: PathBuf::from(r"C:\"),
-            kind: Kind::Dir,
-        };
-        assert_eq!(item.name(), r"C:\");
     }
 
     #[test]
@@ -404,10 +392,12 @@ mod tests {
             Item {
                 path: weird,
                 kind: Kind::File,
+                bytes: None,
             },
             Item {
                 path: PathBuf::from(r"C:\ok.txt"),
                 kind: Kind::File,
+                bytes: None,
             },
         ];
         assert_eq!(serialize(&items), "C:\\ok.txt\n");

@@ -18,7 +18,7 @@ use model::notch::Notch;
 
 /// The notch's body when it peeks down from the top edge, and when it holds the tray.
 pub const PEEK: (f32, f32) = (200.0, 32.0);
-pub const TRAY: (f32, f32) = (400.0, 118.0);
+pub const TRAY: (f32, f32) = (460.0, 152.0);
 /// The page capsule under the open tray, and the strip of window it hangs in: Droppy's, a gap
 /// below the notch.
 pub const CAPSULE: (f32, f32) = (94.0, 32.0);

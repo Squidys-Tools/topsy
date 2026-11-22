@@ -1,7 +1,7 @@
 //! The open tray's pages, after Droppy's: Home (Now Playing and the widgets) and the shelf, one
-//! at a time. A capsule hanging under the notch shows which is up and switches them, and a
+//! at a time. A capsule hanging under every open tray shows which is up and switches them, and a
 //! sideways swipe (a touchpad, a tilt wheel, Shift and the wheel) turns them. The rules are in
-//! `model::pager`; which page shows what is `TrayCause::sections`.
+//! `model::pager`; which page shows what is `tray_cause::sections`.
 
 use std::time::Instant;
 
@@ -68,9 +68,9 @@ impl State {
         self.slide.step(dt) | self.strip.step(dt)
     }
 
-    /// The tray opened: Home first, as Droppy does.
-    pub fn opened(&mut self) {
-        self.page = Page::Home;
+    /// The tray opened, on `page`.
+    pub fn opened(&mut self, page: Page) {
+        self.page = page;
         self.slide = Spring::new(0.0, SpringConfig::ISLAND);
     }
 
@@ -101,7 +101,7 @@ impl Island {
         window: &Window,
         cx: &mut Context<Self>,
     ) {
-        if self.mode != Mode::Tray || !self.sections().pager {
+        if self.mode != Mode::Tray {
             return;
         }
         let delta = event.delta.pixel_delta(window.line_height());

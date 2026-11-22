@@ -267,7 +267,10 @@ pub fn run() {
         // The restored count reaches the tray icon's menu before the first shelf change.
         island.update(cx, |island, cx| {
             tray::set_shelf_count(island.shelf.len());
-            // A tray it rests in (`TOPSY_IDLE=tray`) starts at the plain tray's size.
+            // A tray it rests in (`TOPSY_IDLE=tray`) starts as one just opened, at its size.
+            if island.mode == Mode::Tray {
+                island.opened(cx);
+            }
             island.fit_tray();
             island.settle_restored(cx);
         });

@@ -1,7 +1,7 @@
 # End-to-end check of the shelf on a live desktop, driving the real input chain:
 #   click the pill to open the tray -> drag a chip out onto a separate app (it must receive the
 #   file and the chip must leave the shelf) -> Escape mid-drag (the chip must stay) -> remove a
-#   chip with its cross -> click a chip to open it -> Clear -> drop a file from another app onto
+#   chip with its cross -> click a chip to open it -> the bin -> drop a file from another app onto
 #   the island (it must still be a drop target after being dragged out of).
 # Moves the real cursor for ~30s. Opens (and closes) one Explorer window for the open check.
 # usage: e2e-shelf.ps1 [-Exe target\release\topsy.exe]
@@ -71,10 +71,11 @@ function Ensure-Open {
     }
 }
 # Where things are inside the open tray, from its layout: the window leaves 16px either side for
-# the notch's ears, then 10px padding, 16px header, 6px gap, and a row of 72x70 chips 8px apart.
+# the notch's ears, then 10px padding, a 28px row of round buttons, 6px gap, and a row of 104px
+# chips 6px apart, each a 66px picture frame (2px down, centred) over its name.
 $ear = 16   # notch::EAR
-function Chip-Center($i) { $r = Pill-Rect; @(($r.Left + ($ear + 10 + 80 * $i + 36) * $scale), ($r.Top + 67 * $scale)) }
-function Cross-Center($i) { $r = Pill-Rect; @(($r.Left + ($ear + 10 + 80 * $i + 62) * $scale), ($r.Top + 42 * $scale)) }
+function Chip-Center($i) { $r = Pill-Rect; @(($r.Left + ($ear + 10 + 110 * $i + 52) * $scale), ($r.Top + 79 * $scale)) }
+function Cross-Center($i) { $r = Pill-Rect; @(($r.Left + ($ear + 10 + 110 * $i + 78) * $scale), ($r.Top + 53 * $scale)) }
 function Assert-Ours($x, $y, $what) {
     $pt = New-Object Native+POINT; $pt.X = [int]$x; $pt.Y = [int]$y
     $ownerPid = 0; [void][Native]::GetWindowThreadProcessId([Native]::WindowFromPoint($pt), [ref]$ownerPid)
@@ -158,12 +159,12 @@ try {
     # Close only a window that is new (a folder opened as a tab of an existing window is left alone).
     foreach ($h in [Native]::VisibleWindowsOfClass('CabinetWClass')) { if ($before -notcontains $h) { [void][Native]::SendMessage($h, 0x10, [IntPtr]::Zero, [IntPtr]::Zero) } }
 
-    # 6. Clear empties the shelf.
+    # 6. The bin, with nothing picked, empties the shelf.
     Ensure-Open
-    $r = Pill-Rect; $cx = $r.Left + ($ear + 372) * $scale; $cy = $r.Top + 18 * $scale
-    Assert-Ours $cx $cy 'the Clear button'
+    $r = Pill-Rect; $cx = $r.Left + ($ear + 436) * $scale; $cy = $r.Top + 24 * $scale
+    Assert-Ours $cx $cy 'the bin button'
     Click $cx $cy
-    if (-not (Wait-Log $appLog 'shelf now 0' 2000)) { throw 'Clear did not empty the shelf' }
+    if (-not (Wait-Log $appLog 'shelf now 0' 2000)) { throw 'the bin did not empty the shelf' }
     Start-Sleep -Milliseconds 300
     & "$PSScriptRoot\shot.ps1" -Out (Join-Path $shots 'shelf-3-empty.png')
 

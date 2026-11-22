@@ -16,7 +16,7 @@ capsule under the notch or a sideways swipe (see [The notch](notch.md)).
   set its volume, or click the speaker beside it to mute it; moving a muted app's slider unmutes it. It is the
   same volume as in Windows' volume mixer, so a change in either shows in both.
 
-A drag or a drop opens the tray on the shelf alone, without the widgets.
+A drag or a drop opens the tray on the shelf; the capsule turns back to the widgets.
 
 ## Choosing them
 
