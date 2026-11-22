@@ -63,8 +63,11 @@ Keep this honest: remove a gap you close, add one you find and leave.
   backlight or device HUDs yet.
 - **Live Activities.** Only the Downloads folder is watched, so a download saved elsewhere doesn't show, and a
   file any app writes there as `.part` or `.crdownload` counts as a download. Earbuds' battery changes are
-  followed with a `DeviceWatcher`, not checked with real Bluetooth devices yet. No timers, calls or coding
-  agents yet.
+  followed with a `DeviceWatcher`, and models are recognised by product id; neither is checked with real
+  Bluetooth devices yet, and Apple's product ids in the catalog come from public research, not from a device.
+  Headsets are drawn as flat shape icons until the rendered pictures come; only Windows' single battery is
+  read, so the left, right and case rings show only with `TOPSY_FAKE_DEVICE`. A Bluetooth LE device has no
+  class, so it's shaped by its name alone. No timers, calls or coding agents yet.
 - **Shelf widgets.** Weather is untested with Windows' location on (only the *location is off* card was seen
   live) and shows no town name. The calendar has no events and its month and day names are English. The stats'
   graphs hold only what was sampled while the tray was open. The Pomodoro's end shows as a Live Activity, so with

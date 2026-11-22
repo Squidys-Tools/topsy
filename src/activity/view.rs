@@ -1,25 +1,30 @@
 //! How an activity looks in the notch: an icon, its name, and on the right what it's at. Two
-//! share the notch side by side. A finished download shows itself in Explorer when clicked.
+//! share the notch side by side, unless a headset's card has it to itself. A finished download
+//! shows itself in Explorer when clicked.
 
 use gpui::{AnyElement, ClickEvent, Context, Div, div, prelude::*, px, rgb, rgba};
 
-use super::State;
+use super::{State, card};
 use crate::Island;
 use crate::frame::PEEK;
 use crate::hud::{GREEN, RED, cell};
 use crate::icons::{self, Icon};
 use model::activity::{Activity, Key};
+use model::headset::{Form, Power};
 use model::pomodoro::Phase;
 use model::transform::size;
 
 const ONE: f32 = 280.0;
 const TWO: f32 = 440.0;
-const DIM: u32 = 0xffffff99;
+pub(super) const DIM: u32 = 0xffffff99;
 const ORANGE: u32 = 0xff9f0a;
 
 impl State {
     /// The peek's size while it shows activities.
     pub(crate) fn size(&self) -> Option<(f32, f32)> {
+        if let Some((_, Activity::Connected { power, .. })) = self.list.card() {
+            return Some(card::size(*power));
+        }
         match self.list.shown().count() {
             0 => None,
             1 => Some((ONE, PEEK.1)),
@@ -29,6 +34,9 @@ impl State {
 
     /// The activities in the dropped notch, if any are on. A peek opened to look shows them too.
     pub(crate) fn peek(&self, cx: &mut Context<Island>) -> Option<Div> {
+        if let Some((_, Activity::Connected { name, form, power })) = self.list.card() {
+            return Some(card::card(name, *form, *power));
+        }
         let (w, h) = self.size()?;
         Some(
             div()
@@ -82,23 +90,23 @@ fn row(activity: &Activity) -> Div {
             name.as_str(),
             div().text_color(rgba(DIM)).child("Done"),
         ),
-        Activity::Connected { name, battery } => (
-            Icon::Headphones,
+        Activity::Connected { name, form, power } => (
+            glyph(*form),
             rgb(0xffffff),
             name.as_str(),
-            match battery {
+            match power.and_then(Power::lowest) {
                 Some(p) => div()
                     .flex()
                     .flex_row()
                     .items_center()
                     .gap(px(6.0))
                     .child(div().text_color(rgba(DIM)).child(format!("{p}%")))
-                    .child(cell(*p, if *p <= 20 { RED } else { GREEN })),
+                    .child(cell(p, if p <= 20 { RED } else { GREEN })),
                 None => div().text_color(rgba(DIM)).child("Connected"),
             },
         ),
-        Activity::Disconnected { name } => (
-            Icon::Headphones,
+        Activity::Disconnected { name, form } => (
+            glyph(*form),
             rgba(DIM),
             name.as_str(),
             div().text_color(rgba(DIM)).child("Disconnected"),
@@ -132,4 +140,13 @@ fn row(activity: &Activity) -> Div {
                 .child(name.to_owned()),
         )
         .child(trailing.flex_shrink_0())
+}
+
+pub(super) fn glyph(form: Form) -> Icon {
+    match form {
+        Form::StemBuds => Icon::StemBuds,
+        Form::Buds => Icon::Buds,
+        Form::OverEar => Icon::Headphones,
+        Form::Speaker => Icon::Speaker,
+    }
 }

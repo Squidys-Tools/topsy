@@ -1,0 +1,3 @@
+# `cargo devices`: the headset catalog's tool (docs/operations/devices.md). It builds without topsy.
+[alias]
+devices = "run --quiet --package topsy-devices --"

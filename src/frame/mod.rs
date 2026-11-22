@@ -5,7 +5,7 @@
 mod paint;
 mod window;
 
-pub(crate) use window::{Popup, Shape, open_window};
+pub(crate) use window::{Popup, Shape, open_glass, open_window};
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 

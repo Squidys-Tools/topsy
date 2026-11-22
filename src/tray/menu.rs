@@ -3,7 +3,8 @@
 //! then the update and Quit. Unlike the notch it takes the focus while it is up, as a menu
 //! does, for the arrows, Enter, Escape and the access keys; it closes when it loses it. The
 //! submenu is a second window that never activates, so the menu keeps the keyboard.
-//! Every choice goes to the island as the [`TrayEvent`] the old Win32 menu sent.
+//! Every choice goes to the island as the [`TrayEvent`] the old Win32 menu sent. What it lists
+//! is in `lines`.
 
 use gpui::{
     AnyWindowHandle, App, Context, FocusHandle, Global, KeyDownEvent, Subscription, WeakEntity,
@@ -12,66 +13,11 @@ use gpui::{
 use windows::Win32::Foundation::HWND;
 
 use super::TrayEvent;
+use super::lines::{Item, Line, PAD, ROW, SUB_WIDTH, WIDTH, height, lines, top_of};
 use crate::frame::{Frame, Popup, Shape, open_window};
 use crate::settings::Setting;
-use crate::{clipboard, log, update, win32};
+use crate::{clipboard, log, win32};
 use model::menu;
-use model::update::Nightly;
-
-/// The menu's and the submenu's widths, in logical pixels.
-pub(super) const WIDTH: f32 = 250.0;
-pub(super) const SUB_WIDTH: f32 = 200.0;
-/// Room round the rows, and each kind of line's height.
-pub(super) const PAD: f32 = 6.0;
-pub(super) const HEADER: f32 = 46.0;
-pub(super) const GAP: f32 = 11.0;
-pub(super) const ROW: f32 = 26.0;
-
-/// A command in the menu.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Item {
-    Show,
-    Clear,
-    Basket,
-    Clipboard,
-    Options,
-    Settings,
-    Update(Nightly),
-    Quit,
-}
-
-impl Item {
-    /// The label, with `&` before its access key.
-    pub(super) fn label(self) -> &'static str {
-        match self {
-            Item::Show => "&Show shelf",
-            Item::Clear => "&Clear shelf",
-            Item::Basket => "Show bas&ket",
-            Item::Clipboard => "Clipboard &history",
-            Item::Options => "&Options",
-            Item::Settings => "Se&ttings…",
-            Item::Update(_) => "&Restart to update",
-            Item::Quit => "&Quit topsy",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Line {
-    Header,
-    Gap,
-    Item(Item),
-}
-
-impl Line {
-    pub(super) fn height(self) -> f32 {
-        match self {
-            Line::Header => HEADER,
-            Line::Gap => GAP,
-            Line::Item(_) => ROW,
-        }
-    }
-}
 
 /// What the menu shows, read once as it opens.
 #[derive(Clone, Copy)]
@@ -122,35 +68,6 @@ pub struct Menu {
 pub struct Submenu {
     pub(super) menu: WeakEntity<Menu>,
     pub(super) frame: Frame,
-}
-
-pub(super) fn height(lines: &[Line]) -> f32 {
-    PAD * 2.0 + lines.iter().map(|line| line.height()).sum::<f32>()
-}
-
-/// Where line `at` starts, from the top of the window.
-fn top_of(lines: &[Line], at: usize) -> f32 {
-    PAD + lines[..at].iter().map(|line| line.height()).sum::<f32>()
-}
-
-fn lines() -> Vec<Line> {
-    let mut lines = vec![
-        Line::Header,
-        Line::Gap,
-        Line::Item(Item::Show),
-        Line::Item(Item::Clear),
-        Line::Item(Item::Basket),
-        Line::Item(Item::Clipboard),
-        Line::Gap,
-        Line::Item(Item::Options),
-        Line::Item(Item::Settings),
-        Line::Gap,
-    ];
-    if let Some(version) = update::ready() {
-        lines.push(Line::Item(Item::Update(version)));
-    }
-    lines.push(Line::Item(Item::Quit));
-    lines
 }
 
 /// Open the menu at `at` (physical screen pixels), in place of one already up.
@@ -240,7 +157,12 @@ impl Menu {
             Item::Clear => self.counts.shelf > 0,
             Item::Basket => self.counts.basket > 0,
             Item::Clipboard => self.counts.clipboard,
-            Item::Show | Item::Options | Item::Settings | Item::Update(_) | Item::Quit => true,
+            Item::Show
+            | Item::Options
+            | Item::Settings
+            | Item::AddHeadset
+            | Item::Update(_)
+            | Item::Quit => true,
         }
     }
 
@@ -423,6 +345,7 @@ impl Menu {
                 return;
             }
             Item::Settings => (Hand::Keep, TrayEvent::OpenSettings(previous)),
+            Item::AddHeadset => (Hand::Leave, TrayEvent::AddHeadset),
             Item::Update(_) => (Hand::Back, TrayEvent::Update),
             Item::Quit => (Hand::Back, TrayEvent::Quit),
         };

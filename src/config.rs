@@ -55,6 +55,9 @@ pub struct Config {
     /// `%LOCALAPPDATA%\topsy\clipboard`. A run with `TOPSY_STATE` set is scripted and keeps
     /// none unless `TOPSY_CLIPBOARD` says where, so a live check never writes the real history.
     pub clipboard: Option<PathBuf>,
+    /// `TOPSY_FAKE_DEVICE=slug[:power]`: show a headset connecting at startup, a catalog entry
+    /// or a shape, with `80` or `L80,R75,C40` for its batteries.
+    pub fake_device: Option<String>,
     /// `TOPSY_REPLACES=<pid>`: set by an update's restart. This topsy waits for that one to exit
     /// before it starts.
     pub replaces: Option<u32>,
@@ -105,6 +108,7 @@ impl Config {
                 None => var("LOCALAPPDATA").map(|d| PathBuf::from(d).join(r"topsy\clipboard")),
             },
             state: var("TOPSY_STATE"),
+            fake_device: text("TOPSY_FAKE_DEVICE").filter(|v| !v.is_empty()),
             replaces: text(REPLACES).and_then(|v| v.parse().ok()),
         }
     }
@@ -136,7 +140,9 @@ mod tests {
         assert!(!c.no_widgets && config(&[("TOPSY_NO_WIDGETS", "1")]).no_widgets);
         assert!(config(&[("TOPSY_NO_MEDIA", "1")]).no_media);
         assert!(c.seed.is_none() && c.exit_after.is_none() && c.state.is_none());
-        assert!(c.transform.is_none() && c.replaces.is_none());
+        assert!(c.transform.is_none() && c.replaces.is_none() && c.fake_device.is_none());
+        let fake = config(&[("TOPSY_FAKE_DEVICE", "buds:L80,R75")]).fake_device;
+        assert_eq!(fake.as_deref(), Some("buds:L80,R75"));
         assert_eq!(config(&[("TOPSY_REPLACES", "4242")]).replaces, Some(4242));
         assert_eq!(c.lens, Lens::Setting);
         assert_eq!(config(&[("TOPSY_LENS", "off")]).lens, Lens::Off);

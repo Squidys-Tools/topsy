@@ -1,0 +1,18 @@
+[package]
+name = "topsy-devices"
+version = "0.1.0"
+edition = "2024"
+description = "`cargo devices`: match, add and check topsy's headset catalog, without building topsy"
+license = "MIT"
+publish = false
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "devices"
+path = "src/main.rs"
+
+[dependencies]
+model = { package = "topsy-model", path = "../model" }
+serde_json = "1"

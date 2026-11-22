@@ -5,26 +5,19 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use gpui::{
-    App, Application, Bounds, Context, Entity, Pixels, TitlebarOptions, Window,
-    WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions, point, prelude::*, px,
-    size,
-};
-use raw_window_handle::HasWindowHandle;
-use windows::Win32::Foundation::HWND;
+use gpui::{App, Application, Bounds, Context, Entity, point, prelude::*, px, size};
 
 use crate::basket::Basket;
 use crate::config::Lens;
-use crate::frame::{ACRYLIC_TINT, Frame, Glass, PEEK};
+use crate::frame::{Frame, Glass, PEEK, open_glass};
 use crate::log::LogErr;
 use crate::settings::Setting;
 use crate::settings::window::{self as settings_window, Change, OnChange};
 use crate::tray::{self, TrayEvent};
-use crate::win32::DropEvent;
 use crate::win32::inbox::Delivery;
 use crate::win32::sendto;
 use crate::{
-    Island, Mode, activity, autostart, backdrop, config, install, log, look, state, update, win32,
+    Island, Mode, activity, autostart, config, headset, install, log, look, state, update, win32,
 };
 use model::edge::EdgeZone;
 use model::jiggle::JiggleConfig;
@@ -69,6 +62,7 @@ impl Island {
                     basket.update(cx, |basket, cx| basket.show(cx));
                 }
             }
+            TrayEvent::AddHeadset => headset::report::start(),
             TrayEvent::Update => update::restart(cx),
             TrayEvent::Quit => cx.quit(),
         }
@@ -167,6 +161,12 @@ pub fn run() {
     // shelf's file first.
     if let Some(pid) = config.replaces {
         win32::process::wait_for_exit(pid);
+    }
+    if std::env::args_os()
+        .nth(1)
+        .is_some_and(|arg| arg == "--add-headset")
+    {
+        return headset::report::run();
     }
     // Explorer's Send to starts topsy with the selected paths: a topsy already running takes
     // them, and this one is done.
@@ -420,78 +420,4 @@ pub fn run() {
             .detach();
         }
     });
-}
-
-/// Open one of topsy's glass windows: transparent, never activated, click-through until it is
-/// given a shape, with the compositor's blur behind it (or acrylic where that can't start), and
-/// a drop target that reports refused drags on `refusals`. `build` makes its view.
-fn open_glass<V: 'static + Render>(
-    cx: &mut App,
-    bounds: Bounds<Pixels>,
-    mut glass: Glass,
-    black: bool,
-    refusals: async_channel::Sender<DropEvent>,
-    previous_foreground: HWND,
-    build: impl FnOnce(
-        Option<HWND>,
-        Glass,
-        Option<backdrop::Backdrop>,
-        &mut Window,
-        &mut App,
-    ) -> Entity<V>
-    + 'static,
-) -> gpui::Result<gpui::WindowHandle<V>> {
-    cx.open_window(
-        WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(bounds)),
-            // `appears_transparent: false` stops GPUI insetting the client area by an
-            // invisible resize frame; `apply_overlay_styles` then removes the caption
-            // that Windows would otherwise add.
-            titlebar: Some(TitlebarOptions {
-                title: None,
-                appears_transparent: false,
-                traffic_light_position: None,
-            }),
-            window_min_size: Some(size(px(1.0), px(1.0))),
-            focus: false,
-            show: true,
-            kind: WindowKind::PopUp,
-            // Only lets a `WindowControlArea::Drag` element be a caption (the basket's handle);
-            // every other hit test is still Windows' own.
-            is_movable: true,
-            is_resizable: false,
-            is_minimizable: false,
-            window_background: WindowBackgroundAppearance::Transparent,
-            ..Default::default()
-        },
-        move |window, cx| {
-            let hwnd = window
-                .window_handle()
-                .ok()
-                .and_then(|h| win32::hwnd_from_raw(h.as_raw()));
-            let mut backdrop = None;
-            if let Some(hwnd) = hwnd {
-                win32::apply_overlay_styles(hwnd);
-                if let Some(kind) = glass.backdrop() {
-                    match backdrop::Backdrop::new(hwnd, kind, cx) {
-                        Ok(b) => backdrop = Some(b),
-                        Err(e) => {
-                            log(&format!("compositor glass unavailable ({e}); acrylic"));
-                            glass = Glass::Acrylic;
-                        }
-                    }
-                }
-                if glass == Glass::Acrylic {
-                    win32::round_corners(hwnd);
-                    // After GPUI has applied its own background appearance, so ours wins.
-                    if !black {
-                        win32::set_acrylic(hwnd, Some(ACRYLIC_TINT));
-                    }
-                }
-                win32::watch_drop_refusals(hwnd, refusals);
-                win32::restore_foreground(previous_foreground);
-            }
-            build(hwnd, glass, backdrop, window, cx)
-        },
-    )
 }

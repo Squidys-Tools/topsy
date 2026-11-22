@@ -2,14 +2,15 @@
 //! as the tray icon's menu does, or hanging from the top edge as the clipboard palette does.
 
 use gpui::{
-    App, Bounds, Context, TitlebarOptions, Window, WindowBackgroundAppearance, WindowBounds,
-    WindowHandle, WindowKind, WindowOptions, point, prelude::*, px, size,
+    App, Bounds, Context, Entity, Pixels, TitlebarOptions, Window, WindowBackgroundAppearance,
+    WindowBounds, WindowHandle, WindowKind, WindowOptions, point, prelude::*, px, size,
 };
 use raw_window_handle::HasWindowHandle;
 use windows::Win32::Foundation::HWND;
 
 use super::{ACRYLIC_TINT, Frame, Glass};
 use crate::backdrop::Backdrop;
+use crate::win32::DropEvent;
 use crate::{config, log, look, win32};
 
 fn hwnd(window: &Window) -> Option<HWND> {
@@ -116,4 +117,72 @@ pub(crate) fn open_window<V: 'static + Render>(
         };
         cx.new(|cx| build(hwnd, frame, window, cx))
     })
+}
+
+/// Open one of topsy's glass windows: transparent, never activated, click-through until it is
+/// given a shape, with the compositor's blur behind it (or acrylic where that can't start), and
+/// a drop target that reports refused drags on `refusals`. `build` makes its view.
+pub(crate) fn open_glass<V: 'static + Render>(
+    cx: &mut App,
+    bounds: Bounds<Pixels>,
+    mut glass: Glass,
+    black: bool,
+    refusals: async_channel::Sender<DropEvent>,
+    previous_foreground: HWND,
+    build: impl FnOnce(Option<HWND>, Glass, Option<Backdrop>, &mut Window, &mut App) -> Entity<V>
+    + 'static,
+) -> gpui::Result<gpui::WindowHandle<V>> {
+    cx.open_window(
+        WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(bounds)),
+            // `appears_transparent: false` stops GPUI insetting the client area by an
+            // invisible resize frame; `apply_overlay_styles` then removes the caption
+            // that Windows would otherwise add.
+            titlebar: Some(TitlebarOptions {
+                title: None,
+                appears_transparent: false,
+                traffic_light_position: None,
+            }),
+            window_min_size: Some(size(px(1.0), px(1.0))),
+            focus: false,
+            show: true,
+            kind: WindowKind::PopUp,
+            // Only lets a `WindowControlArea::Drag` element be a caption (the basket's handle);
+            // every other hit test is still Windows' own.
+            is_movable: true,
+            is_resizable: false,
+            is_minimizable: false,
+            window_background: WindowBackgroundAppearance::Transparent,
+            ..Default::default()
+        },
+        move |window, cx| {
+            let hwnd = window
+                .window_handle()
+                .ok()
+                .and_then(|h| win32::hwnd_from_raw(h.as_raw()));
+            let mut backdrop = None;
+            if let Some(hwnd) = hwnd {
+                win32::apply_overlay_styles(hwnd);
+                if let Some(kind) = glass.backdrop() {
+                    match Backdrop::new(hwnd, kind, cx) {
+                        Ok(b) => backdrop = Some(b),
+                        Err(e) => {
+                            log(&format!("compositor glass unavailable ({e}); acrylic"));
+                            glass = Glass::Acrylic;
+                        }
+                    }
+                }
+                if glass == Glass::Acrylic {
+                    win32::round_corners(hwnd);
+                    // After GPUI has applied its own background appearance, so ours wins.
+                    if !black {
+                        win32::set_acrylic(hwnd, Some(ACRYLIC_TINT));
+                    }
+                }
+                win32::watch_drop_refusals(hwnd, refusals);
+                win32::restore_foreground(previous_foreground);
+            }
+            build(hwnd, glass, backdrop, window, cx)
+        },
+    )
 }
