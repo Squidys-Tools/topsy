@@ -21,8 +21,11 @@ use crate::settings::Setting;
 use crate::settings::window::{self as settings_window, Change, OnChange};
 use crate::tray::{self, TrayEvent};
 use crate::win32::DropEvent;
+use crate::win32::inbox::Delivery;
 use crate::win32::sendto;
-use crate::{Island, Mode, activity, autostart, backdrop, config, log, look, state, update, win32};
+use crate::{
+    Island, Mode, activity, autostart, backdrop, config, install, log, look, state, update, win32,
+};
 use model::edge::EdgeZone;
 use model::jiggle::JiggleConfig;
 use model::tray_cause::TrayCause;
@@ -122,6 +125,15 @@ impl Island {
         log(&format!("sent {added}"));
         self.open_tray(TrayCause::Dropped, cx);
     }
+
+    fn on_delivery(&mut self, delivery: Delivery, cx: &mut Context<Self>) {
+        log(&format!("inbox {delivery:?}"));
+        match delivery {
+            Delivery::Paths(paths) => self.on_sent(paths, cx),
+            Delivery::Show => self.open_tray(TrayCause::Opened, cx),
+            Delivery::Quit => cx.quit(),
+        }
+    }
 }
 
 /// Hand each event from a thread's channel to a view (the island, the basket), on the UI
@@ -147,6 +159,9 @@ pub(crate) fn forward<V: 'static, E: 'static>(
 }
 
 pub fn run() {
+    if install::uninstall_if_asked() {
+        return;
+    }
     let config = config::get();
     // An update's restart: the topsy it replaces lets go of the hooks, the tray icon and the
     // shelf's file first.
@@ -159,7 +174,11 @@ pub fn run() {
         .skip(1)
         .filter_map(|arg| std::path::absolute(arg).ok())
         .collect();
-    if !sent.is_empty() && win32::inbox::hand_off(&sent) {
+    if !sent.is_empty() && win32::inbox::hand_off(sent.clone()) {
+        return;
+    }
+    // Started again from Start or a launcher: the island already up is shown instead.
+    if sent.is_empty() && win32::inbox::show() {
         return;
     }
     if update::install_downloaded() {
@@ -305,7 +324,7 @@ pub fn run() {
             });
         }
 
-        forward(cx, &island, inbox, Island::on_sent);
+        forward(cx, &island, inbox, Island::on_delivery);
         if !sent.is_empty() {
             island.update(cx, |island, cx| island.on_sent(sent, cx));
         }
@@ -313,6 +332,7 @@ pub fn run() {
         if !config.no_tray {
             if let Ok(exe) = std::env::current_exe() {
                 autostart::refresh(&exe);
+                install::register(&exe);
                 sendto::refresh(&exe);
             }
             forward(cx, &island, tray::spawn(), Island::on_tray);

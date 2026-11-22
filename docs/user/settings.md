@@ -46,6 +46,17 @@ installed the next time topsy starts.
 
 Only nightlies update. A build from source or from CI never does.
 
+## Start and uninstalling
+
+A nightly puts itself in Start (a `topsy.lnk` in `%APPDATA%\Microsoft\Windows\Start Menu\Programs`) and in
+*Settings > Apps > Installed apps* the first time it runs, so Start's search and launchers such as Raycast find
+it. Starting it again while it runs opens the shelf. If you move `topsy.exe`, both follow it the next time you
+start it.
+
+*Uninstall* in Installed apps quits topsy, removes it from Start, startup and *Send to*, and deletes `topsy.exe`.
+Your shelf, clipboard history and settings stay in `%LOCALAPPDATA%	opsy` and `HKCU\Software	opsy`; delete
+them by hand if you want them gone.
+
 ## Quitting
 
 *Quit topsy* in the menu or the settings window quits and removes the icon.

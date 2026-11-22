@@ -14,6 +14,7 @@ mod frame;
 mod hud;
 mod icon;
 mod icons;
+mod install;
 mod island;
 mod log;
 mod look;

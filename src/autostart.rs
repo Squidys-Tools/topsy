@@ -5,13 +5,13 @@ use std::path::{Path, PathBuf};
 use windows::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_SUCCESS, WIN32_ERROR};
 use windows::Win32::System::Registry::{
     HKEY, HKEY_CURRENT_USER, KEY_QUERY_VALUE, KEY_SET_VALUE, REG_EXPAND_SZ,
-    REG_OPTION_NON_VOLATILE, REG_SZ, REG_VALUE_TYPE, RegCloseKey, RegCreateKeyExW, RegDeleteValueW,
-    RegOpenKeyExW, RegQueryValueExW, RegSetValueExW,
+    REG_OPTION_NON_VOLATILE, REG_SZ, REG_VALUE_TYPE, RegCloseKey, RegCreateKeyExW, RegDeleteKeyW,
+    RegDeleteValueW, RegOpenKeyExW, RegQueryValueExW, RegSetValueExW,
 };
 use windows::core::{PCWSTR, Result};
 
 use crate::log::LogErr;
-use crate::win32::wide;
+use crate::win32::{same_path, wide};
 
 const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 const VALUE_NAME: &str = "topsy";
@@ -171,6 +171,23 @@ pub fn disable() -> Result<()> {
     SYSTEM.remove()
 }
 
+/// Turn start-with-Windows off if it starts `exe`, and leave another exe's entry alone.
+pub fn forget(exe: &Path) -> Result<()> {
+    match SYSTEM.value() {
+        Some(stored) if same_path(&exe_in(&stored), exe) => disable(),
+        Some(_) | None => Ok(()),
+    }
+}
+
+/// Delete a key under `HKEY_CURRENT_USER` that has no subkeys. Succeeds if it was already gone.
+pub fn remove_key(path: &str) -> Result<()> {
+    let path = wide(path);
+    match unsafe { RegDeleteKeyW(HKEY_CURRENT_USER, PCWSTR(path.as_ptr())) } {
+        ERROR_FILE_NOT_FOUND => Ok(()),
+        status => check(status),
+    }
+}
+
 /// If start-with-Windows is on but points at an exe that no longer exists (the app was
 /// moved or reinstalled), point it at this one. A different exe that still exists is left
 /// alone, so running a development build never takes over the installed app's autostart.
@@ -205,13 +222,7 @@ mod tests {
 
     impl Drop for Scratch {
         fn drop(&mut self) {
-            use windows::Win32::System::Registry::RegDeleteKeyW;
-            let path = wide(&self.0);
-            unsafe {
-                RegDeleteKeyW(HKEY_CURRENT_USER, PCWSTR(path.as_ptr()))
-                    .ok()
-                    .log_err();
-            }
+            remove_key(&self.0).log_err();
         }
     }
 
@@ -232,6 +243,10 @@ mod tests {
 
         entry.remove().unwrap();
         assert_eq!(entry.value(), None);
+
+        remove_key(&scratch.0).unwrap();
+        assert!(Key::open(&scratch.0, KEY_QUERY_VALUE).is_err());
+        remove_key(&scratch.0).unwrap();
     }
 
     #[test]
