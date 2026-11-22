@@ -38,3 +38,23 @@ entry connecting at startup, card and all, on a build with the new catalog ([Run
 - **One entry per model.** Variants that look the same (a Lightning and a USB-C case) share an entry with both
   ids.
 - **The shape the user sees.** `stem-buds`, `buds`, `over-ear` or `speaker`, checked with someone who owns it.
+
+## Pictures
+
+A headset's card plays a turntable: 24 renders a full turn apart, starting from a three-quarter view, packed
+six to a row of 128 px squares in a `spin.png`. They are rendered, never drawn live: Blender renders the model
+offline with one studio rig (`devices/render.py`: the camera, the lights and a dark world to reflect), so every
+headset is lit the same way and topsy only shows images.
+
+- **The generic shapes** are built in code by `devices/generic/build.py` (metaballs and primitives with plain PBR
+  materials), saved as `devices/generic/<shape>/model.glb`, and their `spin.png` is compiled into topsy, so
+  every headset has a picture. `cargo devices generic` rebuilds and renders all four.
+- **A model of its own** goes in `devices/<slug>/model.glb`; `cargo devices render devices/<slug>` renders it.
+  Its model must be the contributor's own work or CC0/CC-BY, with a `LICENSE` beside it; never a maker's
+  marketing render or CAD file. topsy doesn't download per-model pictures yet, so for now every headset shows
+  its shape's.
+
+`cargo devices render` and `generic` need [Blender](https://www.blender.org) (`BLENDER=<path to blender.exe>`,
+or it is found on `PATH` or in its installer's folder). Blender is a contributor's tool: topsy never runs,
+downloads or ships it, only the images it made.
+

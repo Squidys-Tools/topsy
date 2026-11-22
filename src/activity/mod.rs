@@ -6,6 +6,7 @@ mod card;
 mod downloads;
 mod view;
 
+use std::cell::Cell;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
@@ -13,6 +14,8 @@ use std::time::Instant;
 use gpui::{App, Context, Entity};
 
 use crate::autostart::RegString;
+use crate::booking::Booking;
+use crate::headset::art::Art;
 use crate::log::LogErr;
 use crate::win32::earbuds::{self, Change};
 use crate::{Island, headset, log};
@@ -48,6 +51,10 @@ pub struct State {
     generation: u64,
     /// A fullscreen app had the screen at the last change: stay out of its way.
     held_back: bool,
+    /// The headsets' turntables, and when the card showing first drew, for its one spin.
+    art: Art,
+    card_since: Cell<Option<Instant>>,
+    spinning: Booking,
 }
 
 /// On unless switched off (`LiveActivities` = `off`).
@@ -152,6 +159,9 @@ impl State {
             self.list = Activities::default();
         }
         self.list.expire(now);
+        if self.list.card().is_none() {
+            self.card_since.set(None);
+        }
         self.generation += 1;
         if let Some(at) = self.list.next_expiry() {
             let generation = self.generation;
