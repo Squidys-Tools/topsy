@@ -1,6 +1,7 @@
 //! The Win32 glue GPUI doesn't expose: the overlay window, the settings window, drag and drop,
 //! the shell, and the global mouse hook, plus the small helpers they share.
 
+pub mod adverts;
 pub mod battery;
 pub mod bluetooth;
 pub mod brightness;

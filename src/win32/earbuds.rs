@@ -2,14 +2,20 @@
 //! active or go away and hands its id to a thread of its own, which asks Configuration Manager
 //! whether the endpoint's device container is a Bluetooth one, for its name, and for its
 //! battery where Windows knows it. While the device stays connected, a `DeviceWatcher` on its
-//! container says when a node's battery changes. Nothing polls.
+//! container says when a node's battery changes. AirPods and Beats also get a few seconds of
+//! listening for their own broadcasts as they connect and when Windows' battery moves, for each
+//! bud's and the case's battery. Nothing polls.
 
 use std::collections::HashMap;
 use std::sync::mpsc;
+use std::time::{Duration, Instant};
 
 use crate::log::LogErr;
+use crate::win32::adverts;
 use crate::win32::bluetooth::{self, BATTERY_NAME, CONTAINER};
-use model::headset::Identity;
+use model::headset::apple::{self, Scan};
+use model::headset::{Identity, Power};
+use windows::Devices::Bluetooth::Advertisement::BluetoothLEAdvertisementWatcher;
 use windows::Devices::Enumeration::{DeviceInformation, DeviceInformationKind, DeviceWatcher};
 use windows::Foundation::TypedEventHandler;
 use windows::Win32::Foundation::PROPERTYKEY;
@@ -29,6 +35,8 @@ const INTERFACE_NAME: PROPERTYKEY = PROPERTYKEY {
     fmtid: GUID::from_u128(0x026e516e_b814_414b_83cd_856d6fef4822),
     pid: 2,
 };
+/// How long an Apple headset is listened for: its broadcasts come several times a second.
+const SCAN: Duration = Duration::from_secs(8);
 
 /// One Bluetooth output device arriving, leaving, or its battery changing.
 pub struct Seen {
@@ -36,16 +44,16 @@ pub struct Seen {
     pub container: String,
     /// Its name is never empty.
     pub identity: Identity,
-    pub battery: Option<u8>,
+    pub power: Option<Power>,
     pub change: Change,
 }
 
 pub enum Change {
     Connected,
     Disconnected,
-    /// Still connected, its battery no longer what it was.
+    /// Still connected, its batteries no longer what they were.
     Battery {
-        was: Option<u8>,
+        was: Option<Power>,
     },
 }
 
@@ -54,13 +62,26 @@ enum Heard {
     Endpoint(String, DEVICE_STATE),
     /// A node in this watched container was added, changed or removed.
     Container(String),
+    /// An Apple broadcast, at this signal strength.
+    Advert(i16, Vec<u8>),
 }
 
-/// A connected device: the endpoint it was first heard on, and what its battery last was.
+/// A connected device: the endpoint it was first heard on, and what its batteries last were.
 struct Watched {
     endpoint: String,
-    battery: Option<u8>,
+    identity: Identity,
+    power: Option<Power>,
     watcher: Option<DeviceWatcher>,
+    /// Listening for its broadcasts, until then.
+    scan: Option<(Scan, Instant)>,
+}
+
+impl Watched {
+    fn listen(&mut self, now: Instant) {
+        if let Some(model) = apple::model_of(&self.identity) {
+            self.scan = Some((Scan::new(model), now + SCAN));
+        }
+    }
 }
 
 #[implement(IMMNotificationClient)]
@@ -113,9 +134,25 @@ pub fn watch(report: impl Fn(Seen) + Send + 'static) {
                 Err(err) => return eprintln!("topsy: no audio device events: {err}"),
             };
             let mut watched: HashMap<String, Watched> = HashMap::new();
-            for heard in rx {
+            let mut scanner: Option<BluetoothLEAdvertisementWatcher> = None;
+            loop {
+                let until = watched
+                    .values()
+                    .filter_map(|d| d.scan.as_ref())
+                    .map(|s| s.1)
+                    .min();
+                let wait = until.map_or(Duration::MAX, |at| {
+                    at.saturating_duration_since(Instant::now())
+                });
+                let heard = match rx.recv_timeout(wait) {
+                    Ok(heard) => Some(heard),
+                    Err(mpsc::RecvTimeoutError::Timeout) => None,
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                };
+                let now = Instant::now();
                 match heard {
-                    Heard::Endpoint(id, state) => {
+                    None => {}
+                    Some(Heard::Endpoint(id, state)) => {
                         let change = match state {
                             DEVICE_STATE_ACTIVE => Change::Connected,
                             DEVICE_STATE_NOTPRESENT | DEVICE_STATE_UNPLUGGED => {
@@ -136,35 +173,78 @@ pub fn watch(report: impl Fn(Seen) + Send + 'static) {
                                 }
                             }
                             Change::Connected if !watched.contains_key(&seen.container) => {
-                                let watcher = watch_container(&seen.container, &tx).log_err();
-                                let battery = seen.battery;
-                                let endpoint = id;
-                                let device = Watched {
-                                    endpoint,
-                                    battery,
-                                    watcher,
+                                let mut device = Watched {
+                                    endpoint: id,
+                                    identity: seen.identity.clone(),
+                                    power: seen.power,
+                                    watcher: watch_container(&seen.container, &tx).log_err(),
+                                    scan: None,
                                 };
+                                device.listen(now);
                                 watched.insert(seen.container.clone(), device);
                             }
                             Change::Connected | Change::Battery { .. } => {}
                         }
                         report(seen);
                     }
-                    Heard::Container(container) => {
+                    Some(Heard::Container(container)) => 'read: {
                         let Some(device) = watched.get_mut(&container) else {
-                            continue;
+                            break 'read;
                         };
+                        let was = device.power;
                         // SAFETY: COM calls on the thread that created `devices`.
-                        let was = device.battery;
-                        if let Some(seen) =
-                            unsafe { look_up(&devices, &device.endpoint, Change::Battery { was }) }
-                            && seen.battery.is_some()
-                            && seen.battery != was
-                        {
-                            device.battery = seen.battery;
-                            report(seen);
+                        let Some(seen) = (unsafe {
+                            look_up(&devices, &device.endpoint, Change::Battery { was })
+                        }) else {
+                            break 'read;
+                        };
+                        if seen.power.is_none() || seen.power == was {
+                            break 'read;
+                        }
+                        device.listen(now);
+                        // Each bud's battery says more than Windows' one: the buds are asked again.
+                        if let Some(Power::Split { .. }) = was {
+                            break 'read;
+                        }
+                        device.power = seen.power;
+                        report(seen);
+                    }
+                    Some(Heard::Advert(rssi, data)) => {
+                        for (container, device) in &mut watched {
+                            let Some(power) = device
+                                .scan
+                                .as_mut()
+                                .and_then(|(scan, _)| scan.hear(rssi, &data))
+                            else {
+                                continue;
+                            };
+                            let was = device.power.replace(power);
+                            report(Seen {
+                                container: container.clone(),
+                                identity: device.identity.clone(),
+                                power: Some(power),
+                                change: Change::Battery { was },
+                            });
                         }
                     }
+                }
+                for device in watched.values_mut() {
+                    device.scan = device.scan.take().filter(|(_, until)| *until > now);
+                }
+                let scanning = watched.values().any(|d| d.scan.is_some());
+                match (scanning, &scanner) {
+                    (true, None) => {
+                        let wake = tx.clone();
+                        scanner = adverts::scan(move |rssi, data| {
+                            wake.send(Heard::Advert(rssi, data)).log_err();
+                        })
+                        .log_err();
+                    }
+                    (false, Some(watcher)) => {
+                        watcher.Stop().log_err();
+                        scanner = None;
+                    }
+                    (true, Some(_)) | (false, None) => {}
                 }
             }
         });
@@ -233,7 +313,7 @@ unsafe fn look_up(devices: &IMMDeviceEnumerator, id: &str, change: Change) -> Op
         Some(Seen {
             container: format!("{container:?}"),
             identity: found.identity,
-            battery: found.battery,
+            power: found.battery.map(Power::Single),
             change,
         })
     }

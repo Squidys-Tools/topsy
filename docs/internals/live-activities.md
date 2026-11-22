@@ -18,5 +18,10 @@ Decisions behind [Live Activities](../user/live-activities.md). Nothing polls.
   since users rename their devices. Connecting opens with a card that has the notch to itself for 3 s, then
   shrinks to the row for its 3 s; a low battery brings back only the row. See
   [Headsets and the device catalog](../operations/devices.md).
+- **AirPods and Beats** report each bud and the case only in Apple's Bluetooth LE broadcasts (manufacturer
+  data, proximity pairing); Windows gives one battery at most. A passive scan listens for 8 s as an Apple
+  headset connects and whenever Windows' battery for it moves, then stops: it is radio time, so it never runs
+  on its own. Strangers' AirPods broadcast too, so a scan takes only its model's, at -70 dBm or nearer, and
+  keeps the nearest. Once the buds have spoken, Windows' single number only starts another scan.
 - **The notch rests in the peek** while an activity lasts: the folds that went to the island's rest go to
   `resting()` instead, and a drag up to the edge opens the tray from that peek as it does from hidden.

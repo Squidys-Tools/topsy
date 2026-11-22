@@ -79,15 +79,14 @@ pub fn start(cx: &mut App, island: &Entity<Island>) {
     earbuds::watch(move |seen| {
         let key = Key::Device(seen.container);
         let form = headset::catalog().identify(&seen.identity).form;
-        let name = seen.identity.name;
-        let power = seen.battery.map(Power::Single);
+        let (name, power) = (seen.identity.name, seen.power);
         let event = match (seen.change, power) {
             (Change::Connected, _) => Event::Set(key, Activity::Connected { name, form, power }),
             (Change::Disconnected, _) => Event::Set(key, Activity::Disconnected { name, form }),
             (Change::Battery { was }, Some(power)) => Event::Battery {
                 key,
                 device: (name, form),
-                was: was.map(Power::Single),
+                was,
                 power,
             },
             (Change::Battery { .. }, None) => return,
