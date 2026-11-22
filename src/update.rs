@@ -27,7 +27,7 @@ pub const VERSION: &str = match STAMP {
     Some(version) => version,
     None => env!("CARGO_PKG_VERSION"),
 };
-const STAMP: Option<&str> = option_env!("TOPSY_RELEASE_VERSION");
+pub(crate) const STAMP: Option<&str> = option_env!("TOPSY_RELEASE_VERSION");
 
 const API: &str = "api.github.com";
 const RELEASES: &str = "/repos/Squidys-Tools/topsy/releases?per_page=20";

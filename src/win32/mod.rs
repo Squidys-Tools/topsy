@@ -23,6 +23,7 @@ pub mod process;
 pub mod sendto;
 pub mod share;
 mod shell;
+pub mod shortcut;
 pub mod sound;
 pub mod sysinfo;
 pub mod volume;
@@ -55,6 +56,11 @@ pub fn hwnd_from_raw(handle: raw_window_handle::RawWindowHandle) -> Option<HWND>
         raw_window_handle::RawWindowHandle::Win32(h) => Some(HWND(h.hwnd.get() as *mut c_void)),
         _ => None,
     }
+}
+
+/// Whether two paths name the same file, as Windows compares them: without regard to case.
+pub fn same_path(a: &std::path::Path, b: &std::path::Path) -> bool {
+    a.as_os_str().eq_ignore_ascii_case(b.as_os_str())
 }
 
 /// `s` as the NUL-terminated UTF-16 the Windows APIs take.

@@ -37,7 +37,12 @@ Decisions behind [the shelf](../user/shelf.md) and [the tray icon and settings](
   (`Island::on_setting`).
 - **Start with Windows and Send to are never created by themselves.** Each is off until turned on. At launch the
   Run value is repaired if the exe has moved, and the Send to shortcut only if the exe it points at is gone.
-- **Send to hands over to a running topsy.** Explorer starts `topsy.exe` with the chosen paths. If topsy is
-  already running, the new process sends them (`WM_COPYDATA` to a message-only window, `topsy.inbox`) and exits,
-  and the running one parks them and opens the tray.
+- **A second launch hands over to the running topsy.** Explorer's Send to starts `topsy.exe` with the chosen
+  paths; Start starts it with none; *Uninstall* passes `--uninstall`. Each new process sends its launch
+  (`WM_COPYDATA` to a message-only window, `topsy.inbox`) and exits: the running one parks the paths, opens the
+  tray, or quits. A plain launch or an uninstall only goes to a topsy running the same exe, so a development
+  build and the installed nightly run side by side.
+- **Only a nightly registers itself** in Start and Installed apps (`src/install.rs`), rewriting both at every
+  launch so they follow the exe. A build without a release stamp never does, so no worktree's build lands in
+  Start. Uninstall removes only entries that start its own exe.
 - The settings window is an ordinary window and takes focus, unlike the island. There is one at a time.
