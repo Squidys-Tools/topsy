@@ -229,7 +229,10 @@ impl Island {
             true => (widgets::HEIGHT, w.max(self.widgets.width())),
             false => (0.0, w),
         };
-        let shelf = if sections.shelf { h } else { 0.0 };
+        let (shelf, w) = match sections.shelf {
+            true => (h, w.max(frame::SHELF_WIDTH)),
+            false => (0.0, w),
+        };
         let empty = if sections.is_empty() { EMPTY_HOME } else { 0.0 };
         (w, player + row + shelf + empty)
     }

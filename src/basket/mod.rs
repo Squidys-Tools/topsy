@@ -155,13 +155,22 @@ impl Basket {
     /// Open under the pointer, on the pointer's monitor, kept whole on it. One already open
     /// stays where it is.
     pub fn show(&mut self, cx: &mut Context<Self>) {
+        self.open_below(None, cx);
+    }
+
+    /// Open as [`Basket::show`] does, or, given `below` (a physical screen y), in line with the
+    /// pointer but with its top that far down.
+    fn open_below(&mut self, below: Option<i32>, cx: &mut Context<Self>) {
         if self.open || frame::fullscreen(self.hwnd) {
             return;
         }
-        let Some((cursor, work, scale)) = win32::cursor_monitor() else {
+        let Some((mut cursor, work, scale)) = win32::cursor_monitor() else {
             return;
         };
         let px = |v: f32| (v * scale).round() as i32;
+        if let Some(below) = below {
+            cursor.1 = below + px(MARGIN) + px(CARD.1) / 2;
+        }
         let center = float::center_under(cursor, (px(CARD.0), px(CARD.1)), work, px(MARGIN));
         log(&format!(
             "basket at {center:?} ({} files)",
@@ -218,10 +227,11 @@ impl Basket {
         }
     }
 
-    /// Files sent over from the shelf: into the basket, which comes up under the pointer.
-    pub(crate) fn take(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+    /// Files sent over from the shelf: into the basket, which comes up under the island, whose
+    /// window ends at `below` (a physical screen y), in line with the pointer.
+    pub(crate) fn take(&mut self, paths: Vec<PathBuf>, below: Option<i32>, cx: &mut Context<Self>) {
         self.add(paths, cx);
-        self.show(cx);
+        self.open_below(below, cx);
     }
 
     fn add(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {

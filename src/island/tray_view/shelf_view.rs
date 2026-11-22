@@ -8,10 +8,10 @@ use gpui::{
     ClickEvent, Context, Div, MouseButton, MouseDownEvent, Stateful, div, prelude::*, px, rgba,
 };
 
-use crate::Island;
 use crate::frame::TRAY;
 use crate::icons::{Icon, icon};
 use crate::island::chip::{self, ACCENT, CHIP};
+use crate::{Island, win32};
 use model::shelf::{Item, Kind};
 
 /// Between chips.
@@ -212,7 +212,8 @@ impl Island {
                 if let Some(basket) = self.basket.clone() {
                     self.take_off_shelf(&targets, cx);
                     let paths = paths(&targets);
-                    basket.update(cx, |basket, cx| basket.take(paths, cx));
+                    let below = self.hwnd.and_then(win32::window_rect).map(|r| r.bottom);
+                    basket.update(cx, |basket, cx| basket.take(paths, below, cx));
                 }
             }
             Button::Remove => self.take_off_shelf(&targets, cx),

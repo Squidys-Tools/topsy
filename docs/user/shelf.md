@@ -20,7 +20,7 @@ the file itself is never touched.
   buttons beside the tick compress them to a zip and show the first in its folder.
 - **The buttons at the top right** act on the picked chips, or on the whole shelf when none are picked:
   [Transform](transform.md), send them to the [basket](basket.md) (they leave the shelf and the basket comes up
-  under the pointer), and the bin, which takes them off the shelf. The files themselves are never touched.
+  under the notch), and the bin, which takes them off the shelf. The files themselves are never touched.
 - **Right-click a chip** for *Transform…*, *Share…* (Windows' share sheet), *Show in folder*, *Copy as path*
   (quoted, as Explorer copies it, one per line for several), *Compress to ZIP file* and *Remove from shelf*. A
   zip also has *Extract here*, and several chips from the same folder have *New folder with selection*.
