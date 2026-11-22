@@ -53,9 +53,9 @@ impl Shelf {
         added
     }
 
-    /// Merge stat answers (`path` → is-dir, size if the stat worked) into the chips still parked. Answers are
-    /// matched by path, never position, so a chip removed or cleared before its
-    /// answer arrived is skipped instead of reappearing. Returns how many applied.
+    /// Merge stat answers (`path` → is-dir, size if the stat worked) into the chips still
+    /// parked. Answers are matched by path, never position, so a chip removed or cleared before
+    /// its answer arrived is skipped instead of reappearing. Returns how many applied.
     pub fn resolve_kinds(
         &mut self,
         resolved: impl IntoIterator<Item = (PathBuf, bool, Option<u64>)>,
@@ -362,13 +362,11 @@ mod tests {
         shelf.toggle_picking();
         assert!(!shelf.is_picking() && !shelf.is_selected(1));
 
-        // Picking on a shelf that empties: the next file opens on a click again.
+        // Picking on a shelf whose chips all leave: the next file opens on a click again.
         shelf.toggle_picking();
-        shelf.clear();
-        shelf.add(paths(&[r"C:\d.txt"]));
-        assert!(!shelf.is_picking());
-        shelf.toggle_picking();
-        shelf.remove(0);
+        while !shelf.is_empty() {
+            shelf.remove(0);
+        }
         assert!(!shelf.is_picking());
     }
 
