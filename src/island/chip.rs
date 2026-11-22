@@ -25,7 +25,7 @@ pub(crate) use menu::{ACTIONS, Action};
 /// How far (logical pixels) a pressed chip must be dragged before it becomes a drag out.
 pub(crate) const DRAG_OUT_THRESHOLD: f32 = 6.0;
 
-pub(crate) const CHIP: (f32, f32) = (104.0, 102.0);
+pub(crate) const CHIP: (f32, f32) = (104.0, 106.0);
 /// The picture at the top of a chip, square, and the frame around it that shows the hover and
 /// the pick.
 pub const ICON: f32 = 54.0;
@@ -138,9 +138,7 @@ impl Island {
                 .into_any_element(),
         };
         let mut frame = div()
-            .relative()
-            .size(px(FRAME))
-            .flex_shrink_0()
+            .size_full()
             .flex()
             .items_center()
             .justify_center()
@@ -169,7 +167,7 @@ impl Island {
             .flex()
             .flex_col()
             .items_center()
-            .pt(px(2.0))
+            .pt(px(6.0))
             .cursor_pointer()
             .on_mouse_down(
                 MouseButton::Left,
@@ -216,7 +214,15 @@ impl Island {
                     this.chip_menu(index, cx);
                 }),
             )
-            .child(frame.child(corner))
+            // The corner after the frame, so it is drawn over the frame's ring.
+            .child(
+                div()
+                    .relative()
+                    .size(px(FRAME))
+                    .flex_shrink_0()
+                    .child(frame)
+                    .child(corner),
+            )
             .child(
                 div()
                     .mt(px(4.0))

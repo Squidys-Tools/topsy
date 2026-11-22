@@ -72,10 +72,10 @@ function Ensure-Open {
 }
 # Where things are inside the open tray, from its layout: the window leaves 16px either side for
 # the notch's ears, then 10px padding, a 28px row of round buttons, 6px gap, and a row of 104px
-# chips 6px apart, each a 66px picture frame (2px down, centred) over its name.
+# chips 6px apart, each a 66px picture frame (6px down, centred) over its name.
 $ear = 16   # notch::EAR
-function Chip-Center($i) { $r = Pill-Rect; @(($r.Left + ($ear + 10 + 110 * $i + 52) * $scale), ($r.Top + 79 * $scale)) }
-function Cross-Center($i) { $r = Pill-Rect; @(($r.Left + ($ear + 10 + 110 * $i + 78) * $scale), ($r.Top + 53 * $scale)) }
+function Chip-Center($i) { $r = Pill-Rect; @(($r.Left + ($ear + 10 + 110 * $i + 52) * $scale), ($r.Top + 83 * $scale)) }
+function Cross-Center($i) { $r = Pill-Rect; @(($r.Left + ($ear + 10 + 110 * $i + 78) * $scale), ($r.Top + 57 * $scale)) }
 function Assert-Ours($x, $y, $what) {
     $pt = New-Object Native+POINT; $pt.X = [int]$x; $pt.Y = [int]$y
     $ownerPid = 0; [void][Native]::GetWindowThreadProcessId([Native]::WindowFromPoint($pt), [ref]$ownerPid)

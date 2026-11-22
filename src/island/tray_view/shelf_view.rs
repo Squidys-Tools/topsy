@@ -51,41 +51,34 @@ impl Island {
         let picked = !self.shelf.selection().is_empty();
         let targets = self.shelf.picked_or_all();
         let has_files = targets.iter().any(|item| item.kind == Kind::File);
-        let left = (!self.shelf.is_empty()).then(|| {
-            let mut buttons = vec![self.button(Button::Select, picking, cx)];
-            if picked {
-                buttons.push(self.button(Button::Compress, false, cx));
-                buttons.push(self.button(Button::ShowInFolder, false, cx));
-            }
-            buttons
-        });
-        let right = (!self.shelf.is_empty()).then(|| {
-            let mut buttons = Vec::new();
-            if has_files {
-                buttons.push(self.button(Button::Transform, false, cx));
-            }
-            buttons.push(self.button(Button::Basket, false, cx));
-            buttons.push(self.button(Button::Remove, false, cx));
-            buttons
-        });
-        let row = |buttons: Option<Vec<Stateful<Div>>>| {
+        let mut left = vec![self.button(Button::Select, picking, cx)];
+        if picked {
+            left.push(self.button(Button::Compress, false, cx));
+            left.push(self.button(Button::ShowInFolder, false, cx));
+        }
+        let mut right = Vec::new();
+        if has_files {
+            right.push(self.button(Button::Transform, false, cx));
+        }
+        right.push(self.button(Button::Basket, false, cx));
+        right.push(self.button(Button::Remove, false, cx));
+        let row = |buttons: Vec<Stateful<Div>>| div().flex().gap(px(6.0)).children(buttons);
+        let empty = self.shelf.is_empty();
+        // An empty shelf has nothing for the buttons to act on, and its hint takes the whole page.
+        let header = (!empty).then(|| {
             div()
+                .w_full()
+                .h(px(BUTTON))
+                .flex_shrink_0()
                 .flex()
-                .gap(px(6.0))
-                .children(buttons.into_iter().flatten())
-        };
-        let header = div()
-            .w_full()
-            .h(px(BUTTON))
-            .flex_shrink_0()
-            .flex()
-            .flex_row()
-            .items_center()
-            .justify_between()
-            .child(row(left))
-            .child(row(right));
+                .flex_row()
+                .items_center()
+                .justify_between()
+                .child(row(left))
+                .child(row(right))
+        });
 
-        let body = if self.shelf.is_empty() {
+        let body = if empty {
             div()
                 .flex_1()
                 .flex()
@@ -112,8 +105,9 @@ impl Island {
             .flex_col()
             .px(px(PAD))
             .pt(px(PAD))
+            .when(empty, |shelf| shelf.pb(px(PAD)))
             .gap(px(6.0))
-            .child(header)
+            .children(header)
             .child(body)
             // A chip's click stops here; one anywhere else on the shelf lets the selection go.
             .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
