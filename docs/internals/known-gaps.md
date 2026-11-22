@@ -62,9 +62,9 @@ Keep this honest: remove a gap you close, add one you find and leave.
   The HUD shows over a fullscreen video or game, since the key was taken from Windows. No Caps Lock, keyboard
   backlight or device HUDs yet.
 - **Live Activities.** Only the Downloads folder is watched, so a download saved elsewhere doesn't show, and a
-  file any app writes there as `.part` or `.crdownload` counts as a download. Earbuds' battery is read as they
-  connect and once more 2 s later, so one Windows learns after that doesn't show; not checked with real
-  Bluetooth devices yet. No timers, calls or coding agents yet.
+  file any app writes there as `.part` or `.crdownload` counts as a download. Earbuds' battery changes are
+  followed with a `DeviceWatcher`, not checked with real Bluetooth devices yet. No timers, calls or coding
+  agents yet.
 - **Shelf widgets.** Weather is untested with Windows' location on (only the *location is off* card was seen
   live) and shows no town name. The calendar has no events and its month and day names are English. The stats'
   graphs hold only what was sampled while the tray was open. The Pomodoro's end shows as a Live Activity, so with
