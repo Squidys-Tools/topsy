@@ -80,9 +80,9 @@ impl Island {
     fn resolve_kinds(&mut self, added: Vec<PathBuf>, cx: &mut Context<Self>) {
         let rx = icon::resolve(added, (chip::ICON * self.scale).round() as i32);
         cx.spawn(async move |this, cx| {
-            while let Ok((path, is_dir, icon)) = rx.recv().await {
+            while let Ok((path, is_dir, bytes, icon)) = rx.recv().await {
                 let updated = this.update(cx, |this, cx| {
-                    if this.shelf.resolve_kinds([(path.clone(), is_dir)]) == 0 {
+                    if this.shelf.resolve_kinds([(path.clone(), is_dir, bytes)]) == 0 {
                         return;
                     }
                     if let Some(icon) = icon

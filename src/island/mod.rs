@@ -124,8 +124,7 @@ impl Island {
     /// own timer; a `Drag` one waits for a drag in progress to end, land, or be refused.
     pub(crate) fn open_tray(&mut self, cause: TrayCause, cx: &mut Context<Self>) {
         self.collapse_generation += 1;
-        self.tray_cause = cause;
-        self.set_mode(Mode::Tray, cx);
+        self.show_tray_for(cause, cx);
         if let Some(after) = cause.folds_after() {
             self.schedule_collapse(after, cx);
         }

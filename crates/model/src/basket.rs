@@ -79,6 +79,7 @@ mod tests {
         Item {
             path: PathBuf::from(name),
             kind: Kind::File,
+            bytes: None,
         }
     }
 

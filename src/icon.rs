@@ -24,19 +24,22 @@ use windows::core::HSTRING;
 use crate::log::LogErr;
 use model::transform::Kind;
 
-/// Whether each path is a folder, and its picture about `size` physical pixels square, learnt on
-/// a worker thread of its own (the shell wants COM there) and sent back one path at a time.
-pub fn resolve(
-    paths: Vec<PathBuf>,
-    size: i32,
-) -> async_channel::Receiver<(PathBuf, bool, Option<Arc<RenderImage>>)> {
+/// What [`resolve`] learns of a path: whether it is a folder, its size, and its picture.
+pub type Resolved = (PathBuf, bool, Option<u64>, Option<Arc<RenderImage>>);
+
+/// Whether each path is a folder, its size, and its picture about `size` physical pixels square,
+/// learnt on a worker thread of its own (the shell wants COM there) and sent back one path at a
+/// time.
+pub fn resolve(paths: Vec<PathBuf>, size: i32) -> async_channel::Receiver<Resolved> {
     let (tx, rx) = async_channel::unbounded();
     std::thread::spawn(move || {
         crate::win32::with_com(COINIT_MULTITHREADED, || {
             for path in paths {
-                let is_dir = path.is_dir();
+                let meta = path.metadata().ok();
+                let is_dir = meta.as_ref().is_some_and(std::fs::Metadata::is_dir);
+                let bytes = meta.map(|meta| meta.len());
                 let icon = load(&path, size);
-                if tx.send_blocking((path, is_dir, icon)).is_err() {
+                if tx.send_blocking((path, is_dir, bytes, icon)).is_err() {
                     break;
                 }
             }

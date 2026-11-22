@@ -7,8 +7,8 @@ use std::io;
 use std::path::PathBuf;
 
 use gpui::{
-    App, ClickEvent, ClipboardItem, Context, FontWeight, MouseButton, MouseDownEvent,
-    MouseMoveEvent, ObjectFit, div, hsla, img, prelude::*, px, rgba,
+    App, ClickEvent, ClipboardItem, Context, Div, FontWeight, MouseButton, MouseDownEvent,
+    MouseMoveEvent, ObjectFit, div, hsla, img, prelude::*, px, rgb, rgba,
 };
 
 use crate::icons::{Icon, icon};
@@ -25,9 +25,34 @@ pub(crate) use menu::{ACTIONS, Action};
 /// How far (logical pixels) a pressed chip must be dragged before it becomes a drag out.
 pub(crate) const DRAG_OUT_THRESHOLD: f32 = 6.0;
 
-pub(crate) const CHIP: (f32, f32) = (72.0, 70.0);
-/// The picture at the top of a chip, square.
-pub const ICON: f32 = 38.0;
+pub(crate) const CHIP: (f32, f32) = (104.0, 106.0);
+/// The picture at the top of a chip, square, and the frame around it that shows the hover and
+/// the pick.
+pub const ICON: f32 = 54.0;
+const FRAME: f32 = 66.0;
+/// A picked chip's colour (0xRRGGBB).
+pub(crate) const ACCENT: u32 = 0x0a84ff;
+
+/// While picking, the corner of every chip's picture: a ring, filled with a tick once picked.
+fn check(picked: bool) -> Div {
+    let badge = div()
+        .absolute()
+        .top(px(-3.0))
+        .right(px(-3.0))
+        .size(px(20.0))
+        .rounded_full()
+        .flex()
+        .items_center()
+        .justify_center()
+        .border_2();
+    match picked {
+        true => badge
+            .bg(rgb(ACCENT))
+            .border_color(rgb(0xffffff))
+            .child(icon(Icon::Tick, 12.0, rgb(0xffffff))),
+        false => badge.bg(rgba(0x00000080)).border_color(rgba(0xffffffb3)),
+    }
+}
 
 /// Run `work` on a thread of its own, for shell calls that pump messages or take a while.
 pub(crate) fn on_thread(name: &str, work: impl FnOnce() + Send + 'static) -> bool {
@@ -54,23 +79,28 @@ impl Island {
     }
 
     /// One file on the shelf: its thumbnail or icon (a coloured type badge until that arrives,
-    /// or if the shell has none) and the name. Press and drag to take it out (with the rest of
-    /// the selection, if it is picked), click to open it, Ctrl- or Shift-click to pick it,
-    /// right-click for its actions, the corner cross to remove it from the shelf (not from disk).
+    /// or if the shell has none), the name and its size. Press and drag to take it out (with the
+    /// rest of the selection, if it is picked), click to open it (or pick it, while picking),
+    /// Ctrl- or Shift-click to pick it, right-click for its actions, the corner cross to remove
+    /// it from the shelf (not from disk).
     pub(crate) fn chip(
         &self,
         index: usize,
         item: &Item,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
+        let picking = self.shelf.is_picking();
+        let selected = self.shelf.is_selected(index);
         let remove = div()
             .id(("remove", index))
             .absolute()
-            .top(px(2.0))
-            .right(px(2.0))
-            .size(px(16.0))
+            .top(px(-2.0))
+            .right(px(-2.0))
+            .size(px(18.0))
             .rounded_full()
-            .bg(rgba(0x000000b8))
+            .bg(rgba(0x000000c8))
+            .border_1()
+            .border_color(rgba(0xffffff2e))
             .flex()
             .items_center()
             .justify_center()
@@ -92,11 +122,12 @@ impl Island {
         let picture = match self.icons.get(&item.path) {
             Some(icon) => img(icon.clone())
                 .size(px(ICON))
+                .rounded(px(6.0))
                 .object_fit(ObjectFit::Contain)
                 .into_any_element(),
             None => div()
-                .size(px(ICON))
-                .rounded(px(8.0))
+                .size(px(ICON - 8.0))
+                .rounded(px(10.0))
                 .bg(hsla(item.badge_hue(), 0.55, 0.45, 1.0))
                 .flex()
                 .items_center()
@@ -106,27 +137,38 @@ impl Island {
                 .child(item.badge_label())
                 .into_any_element(),
         };
-
-        let (rest, hover) = match self.shelf.is_selected(index) {
-            true => (rgba(0x0a84ff66), rgba(0x0a84ff80)),
-            false => (rgba(0x00000000), rgba(0xffffff1a)),
+        let mut frame = div()
+            .size_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded(px(14.0))
+            .group_hover("chip", |style| style.bg(rgba(0xffffff12)))
+            .child(picture);
+        // Picked shows on the picture alone, an accent ring and a ticked badge, never a fill
+        // behind the whole chip.
+        if selected {
+            frame = frame
+                .bg(rgba(ACCENT << 8 | 0x1f))
+                .border_2()
+                .border_color(rgb(ACCENT));
+        }
+        let corner = match picking {
+            true => check(selected).into_any_element(),
+            false => remove.into_any_element(),
         };
+
         div()
             .id(("chip", index))
             .group("chip")
-            .relative()
             .w(px(CHIP.0))
             .h(px(CHIP.1))
             .flex_shrink_0()
             .flex()
             .flex_col()
             .items_center()
-            .gap(px(4.0))
             .pt(px(6.0))
-            .rounded(px(8.0))
             .cursor_pointer()
-            .bg(rest)
-            .hover(move |style| style.bg(hover))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |this, event: &MouseDownEvent, _window, _cx| {
@@ -172,34 +214,49 @@ impl Island {
                     this.chip_menu(index, cx);
                 }),
             )
-            .child(picture)
+            // The corner after the frame, so it is drawn over the frame's ring.
             .child(
                 div()
-                    .w(px(CHIP.0 - 8.0))
-                    .text_xs()
+                    .relative()
+                    .size(px(FRAME))
+                    .flex_shrink_0()
+                    .child(frame)
+                    .child(corner),
+            )
+            .child(
+                div()
+                    .mt(px(4.0))
+                    .w(px(CHIP.0))
+                    .text_size(px(12.0))
+                    .line_height(px(16.0))
+                    .font_weight(FontWeight::SEMIBOLD)
                     .text_center()
                     .truncate()
                     .child(item.name()),
             )
-            .child(remove)
+            .child(
+                div()
+                    .w(px(CHIP.0))
+                    .text_size(px(11.0))
+                    .line_height(px(14.0))
+                    .text_color(rgba(0xffffff80))
+                    .text_center()
+                    .truncate()
+                    .child(item.detail()),
+            )
     }
 
-    /// Ctrl-click picks the chip or puts it back, Shift-click picks the run up to it, and a plain
-    /// click opens it and lets the selection go.
+    /// A click opens the chip, or picks it (with Ctrl or Shift, or while picking).
     fn click_chip(&mut self, index: usize, cx: &mut Context<Self>) {
         let held = win32::held_keys();
-        if held.ctrl {
-            self.shelf.toggle_selected(index);
-        } else if held.shift {
-            self.shelf.select_through(index);
-        } else {
-            if let Some(item) = self.shelf.items().get(index) {
-                open(item.clone());
-            }
-            if self.shelf.selection().is_empty() {
+        let was_picking = self.shelf.is_picking();
+        if self.shelf.click(index, held.ctrl, held.shift)
+            && let Some(item) = self.shelf.items().get(index)
+        {
+            open(item.clone());
+            if !was_picking {
                 return;
             }
-            self.shelf.deselect();
         }
         cx.notify();
     }

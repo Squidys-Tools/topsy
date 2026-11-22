@@ -5,7 +5,7 @@ background out of the files on the shelf or in the basket.
 
 ## Using it
 
-Choose *Transform…* on a chip's or a basket tile's menu, or in the shelf's header. A panel opens in the
+Choose *Transform…* on a chip's or a basket tile's menu, or the arrows button at the top of the shelf. A panel opens in the
 bottom-right corner of the screen the pointer is on: the files at the top, a tile for each action that suits
 them, the chosen action's options, and one button. Drag its header to move it.
 

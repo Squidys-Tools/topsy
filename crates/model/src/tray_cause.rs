@@ -37,29 +37,41 @@ impl TrayCause {
         }
     }
 
-    /// What the tray shows on `page`, given whether something is playing and whether any widgets
-    /// are on. Opened to look, with Now Playing or the widgets to show, the tray has two pages:
-    /// Home holds them, the shelf the files. A drag or a drop is about the shelf, so it shows the
-    /// shelf alone, as does a tray with nothing for Home.
-    pub fn sections(self, page: Page, playing: bool, widgets: bool) -> Sections {
-        let pager = self == TrayCause::Opened && (playing || widgets);
-        let home = pager && page == Page::Home;
-        Sections {
-            media: home && playing,
-            widgets: home && widgets,
-            shelf: !home,
-            pager,
+    /// The page the tray opens on, given whether Home has anything (something playing, a
+    /// widget on). A drag or a drop is about the shelf; opened to look, Home first, as Droppy
+    /// does, unless it is empty.
+    pub fn page(self, home: bool) -> Page {
+        match self {
+            TrayCause::Opened if home => Page::Home,
+            TrayCause::Opened | TrayCause::Drag | TrayCause::Dropped => Page::Shelf,
         }
     }
 }
 
-/// The parts of the open tray, top to bottom, and whether the page capsule hangs under it.
+/// What the open tray shows on `page`, given whether something is playing and whether any
+/// widgets are on: Home holds the player and the widgets, the shelf its files. The page capsule
+/// hangs under every open tray, whatever it shows.
+pub fn sections(page: Page, playing: bool, widgets: bool) -> Sections {
+    let home = page == Page::Home;
+    Sections {
+        media: home && playing,
+        widgets: home && widgets,
+        shelf: !home,
+    }
+}
+
+/// The parts of the open tray, top to bottom. None of them is Home with nothing on it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Sections {
     pub media: bool,
     pub widgets: bool,
     pub shelf: bool,
-    pub pager: bool,
+}
+
+impl Sections {
+    pub fn is_empty(self) -> bool {
+        !(self.media || self.widgets || self.shelf)
+    }
 }
 
 /// The held drag, as far as the tray or the basket is concerned. Once the drop target has refused
@@ -108,34 +120,28 @@ mod tests {
     }
 
     #[test]
-    fn home_and_its_pager_show_only_in_a_tray_opened_to_look() {
-        let sections = |media, widgets, shelf, pager| Sections {
+    fn a_drag_or_drop_opens_on_the_shelf_and_a_look_on_home_unless_empty() {
+        for home in [true, false] {
+            assert_eq!(TrayCause::Drag.page(home), Page::Shelf);
+            assert_eq!(TrayCause::Dropped.page(home), Page::Shelf);
+        }
+        assert_eq!(TrayCause::Opened.page(true), Page::Home);
+        assert_eq!(TrayCause::Opened.page(false), Page::Shelf);
+    }
+
+    #[test]
+    fn each_page_shows_its_own_sections() {
+        let shown = |media, widgets, shelf| Sections {
             media,
             widgets,
             shelf,
-            pager,
         };
-        let shelf = sections(false, false, true, false);
-        // Dragging a file in, or one just landed: the shelf alone, whatever the page.
-        for cause in [TrayCause::Drag, TrayCause::Dropped] {
-            assert_eq!(cause.sections(Page::Home, true, true), shelf);
-        }
-        // Opened to look: Home holds the player and the widgets, the shelf its own page.
-        let opened = TrayCause::Opened;
-        assert_eq!(
-            opened.sections(Page::Home, true, true),
-            sections(true, true, false, true)
-        );
-        assert_eq!(
-            opened.sections(Page::Home, false, true),
-            sections(false, true, false, true)
-        );
-        assert_eq!(
-            opened.sections(Page::Shelf, true, true),
-            sections(false, false, true, true)
-        );
-        // Nothing for Home: the shelf, with no pages to switch between.
-        assert_eq!(opened.sections(Page::Home, false, false), shelf);
+        assert_eq!(sections(Page::Home, true, true), shown(true, true, false));
+        assert_eq!(sections(Page::Home, false, true), shown(false, true, false));
+        assert_eq!(sections(Page::Shelf, true, true), shown(false, false, true));
+        // Turned to Home with nothing on it: an empty page, which the tray says so on.
+        assert!(sections(Page::Home, false, false).is_empty());
+        assert!(!sections(Page::Shelf, false, false).is_empty());
     }
 
     #[test]

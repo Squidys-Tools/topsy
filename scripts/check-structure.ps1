@@ -11,7 +11,7 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot
 $MaxLines = 500
 $Ceilings = @{
-    'src/island/mod.rs' = 295
+    'src/island/mod.rs' = 294
 }
 
 $failures = @()

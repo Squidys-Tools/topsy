@@ -7,7 +7,7 @@ basket, a floating file tray after Droppy's, flies in under the pointer to catch
 
 - **Drop files on it** and they wait there as a stack, the newest in front, over a pill that counts them:
   *1 Image*, *3 Videos*, *2 Items* for a mix. The basket stays open where it is while you switch windows or use
-  the notch, until you take the files out.
+  the notch, until you take the files out. The basket button on the [shelf](shelf.md) sends chips over too.
 - **Drag the stack** onto any window to hand over every file at once, as Explorer would, or to the notch to park
   them on the [shelf](shelf.md). Files that land somewhere leave the basket, and it closes when the last one has
   gone.

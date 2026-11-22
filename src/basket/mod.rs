@@ -155,13 +155,22 @@ impl Basket {
     /// Open under the pointer, on the pointer's monitor, kept whole on it. One already open
     /// stays where it is.
     pub fn show(&mut self, cx: &mut Context<Self>) {
+        self.open_below(None, cx);
+    }
+
+    /// Open as [`Basket::show`] does, or, given `below` (a physical screen y), in line with the
+    /// pointer but with its top that far down.
+    fn open_below(&mut self, below: Option<i32>, cx: &mut Context<Self>) {
         if self.open || frame::fullscreen(self.hwnd) {
             return;
         }
-        let Some((cursor, work, scale)) = win32::cursor_monitor() else {
+        let Some((mut cursor, work, scale)) = win32::cursor_monitor() else {
             return;
         };
         let px = |v: f32| (v * scale).round() as i32;
+        if let Some(below) = below {
+            cursor.1 = below + px(MARGIN) + px(CARD.1) / 2;
+        }
         let center = float::center_under(cursor, (px(CARD.0), px(CARD.1)), work, px(MARGIN));
         log(&format!(
             "basket at {center:?} ({} files)",
@@ -218,6 +227,13 @@ impl Basket {
         }
     }
 
+    /// Files sent over from the shelf: into the basket, which comes up under the island, whose
+    /// window ends at `below` (a physical screen y), in line with the pointer.
+    pub(crate) fn take(&mut self, paths: Vec<PathBuf>, below: Option<i32>, cx: &mut Context<Self>) {
+        self.add(paths, cx);
+        self.open_below(below, cx);
+    }
+
     fn add(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
         let added = self.files.add(paths);
         log(&format!("basket +{} = {}", added.len(), self.files.len()));
@@ -232,9 +248,9 @@ impl Basket {
         }
         let rx = crate::icon::resolve(paths, (THUMB * self.scale).round() as i32);
         cx.spawn(async move |this, cx| {
-            while let Ok((path, is_dir, icon)) = rx.recv().await {
+            while let Ok((path, is_dir, bytes, icon)) = rx.recv().await {
                 let updated = this.update(cx, |this, cx| {
-                    if this.files.resolve_kinds([(path.clone(), is_dir)]) == 0 {
+                    if this.files.resolve_kinds([(path.clone(), is_dir, bytes)]) == 0 {
                         return;
                     }
                     if let Some(icon) = icon
