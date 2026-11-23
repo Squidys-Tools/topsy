@@ -11,7 +11,8 @@ widgets are the first droplets; their own decisions are in [Shelf widgets](widge
 - **The island owns them, it doesn't host views.** A droplet is plain state in `island.droplets`, never a GPUI
   entity of its own, for the reasons in [Features](features.md). All are made when the island starts, on or
   off, and live as long as it does; what the lineup decides is which ones hear `opened` and show their card.
-  Switching one off calls `switched_off`, which must stop whatever it started. Its own tasks can still reach it
+  Switching one on in the settings calls `switched_on`, and off `switched_off`, which must stop whatever it
+  started. Nothing is told at launch: a droplet on then starts its work when the tray first opens. Its own tasks can still reach it
   afterwards, so each guards them as it would anyway (the Pomodoro's generation counter).
 - **Surfaces are optional methods.** The trait's methods all have defaults; a droplet answers only the moments
   and surfaces it uses. The only surface so far is a card in Home's row (`Droplet::card`). A new kind (a peek

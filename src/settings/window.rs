@@ -93,9 +93,9 @@ impl SettingsWindow {
                     .child(arrow(Icon::ArrowDown, 1, i + 1 < count))
             });
             // The label and the switch toggle; the arrows sit between them, outside either.
-            let toggle = |id: &'static str, element: Div| {
+            let toggle = |name: &'static str, element: Div| {
                 element
-                    .id((id, i))
+                    .id((name, i))
                     .on_click(cx.listener(move |view, _, _, cx| {
                         view.change_lineup(|lineup| lineup.set(id, !on), cx);
                     }))

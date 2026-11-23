@@ -1,7 +1,8 @@
 //! The Audio card, after Droppy's Audio Control: a row per app playing through the output
 //! device, with its icon, its name, a volume slider and a mute button. The list is
-//! `model::mixer`; the sessions come from `win32::mixer`'s thread, which starts the first time the
-//! tray opens with the droplet on, stops when it is switched off, and costs nothing between events.
+//! `model::mixer`; the sessions come from `win32::mixer`'s thread, which starts when the droplet is
+//! switched on or the tray first opens with it on, stops when it is switched off, and costs nothing
+//! between events.
 
 use std::sync::Arc;
 
@@ -134,6 +135,10 @@ impl Droplet for State {
             Some(listening) => listening.watch.refresh(),
             None => self.listen(cx),
         }
+    }
+
+    fn switched_on(&mut self, cx: &mut Context<Island>) {
+        self.listen(cx);
     }
 
     /// The thread stops and the list goes.

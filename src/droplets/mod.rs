@@ -37,6 +37,9 @@ pub(crate) trait Droplet: Any {
     /// The tray opened with it on, or it was switched on while the tray is open.
     fn opened(&mut self, _cx: &mut Context<Island>) {}
 
+    /// Switched on in the settings. One that is on at launch isn't told; it waits for `opened`.
+    fn switched_on(&mut self, _cx: &mut Context<Island>) {}
+
     /// Switched off: stop its threads, timers and listeners, and forget what they found.
     fn switched_off(&mut self, _cx: &mut Context<Island>) {}
 
@@ -171,8 +174,13 @@ impl State {
         for (entry, droplet) in CATALOG.iter().zip(&mut self.droplets) {
             match (self.lineup.contains(entry.id), lineup.contains(entry.id)) {
                 (true, false) => droplet.switched_off(cx),
-                (false, true) if open => droplet.opened(cx),
-                (false, true) | (true, true) | (false, false) => {}
+                (false, true) => {
+                    droplet.switched_on(cx);
+                    if open {
+                        droplet.opened(cx);
+                    }
+                }
+                (true, true) | (false, false) => {}
             }
         }
         self.lineup = lineup;
