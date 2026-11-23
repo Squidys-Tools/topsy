@@ -2,6 +2,7 @@
 //! Bluetooth audio connects or leaves, the notch stays down a little wider and shows it. The rules
 //! are in `model::activity`; this hears the watchers and keeps the notch down while any last.
 
+mod card;
 mod downloads;
 mod view;
 
@@ -14,8 +15,9 @@ use gpui::{App, Context, Entity};
 use crate::autostart::RegString;
 use crate::log::LogErr;
 use crate::win32::earbuds::{self, Change};
-use crate::{Island, log};
+use crate::{Island, headset, log};
 use model::activity::{Activities, Activity, Key};
+use model::headset::{Form, Power};
 
 const SETTING: RegString<'static> = RegString::new(r"Software\topsy", "LiveActivities");
 static ENABLED: AtomicBool = AtomicBool::new(true);
@@ -26,9 +28,10 @@ pub enum Event {
     /// A connected device's battery changed.
     Battery {
         key: Key,
-        name: String,
-        was: Option<u8>,
-        percent: u8,
+        /// Its name and shape, should it come back.
+        device: (String, Form),
+        was: Option<Power>,
+        power: Power,
     },
 }
 
@@ -67,17 +70,25 @@ pub fn start(cx: &mut App, island: &Entity<Island>) {
     ENABLED.store(is_enabled(), Ordering::Relaxed);
     let (events, heard) = async_channel::unbounded();
     downloads::watch(events.clone());
+    if let Some(fake) = headset::fake() {
+        let (name, form, power) = (fake.name, fake.form, fake.power);
+        let activity = Activity::Connected { name, form, power };
+        let key = Key::Device("fake".into());
+        events.try_send(Event::Set(key, activity)).log_err();
+    }
     earbuds::watch(move |seen| {
         let key = Key::Device(seen.container);
-        let (name, battery) = (seen.name, seen.battery);
-        let event = match (seen.change, battery) {
-            (Change::Connected, _) => Event::Set(key, Activity::Connected { name, battery }),
-            (Change::Disconnected, _) => Event::Set(key, Activity::Disconnected { name }),
-            (Change::Battery { was }, Some(percent)) => Event::Battery {
+        let form = headset::catalog().identify(&seen.identity).form;
+        let name = seen.identity.name;
+        let power = seen.battery.map(Power::Single);
+        let event = match (seen.change, power) {
+            (Change::Connected, _) => Event::Set(key, Activity::Connected { name, form, power }),
+            (Change::Disconnected, _) => Event::Set(key, Activity::Disconnected { name, form }),
+            (Change::Battery { was }, Some(power)) => Event::Battery {
                 key,
-                name,
-                was,
-                percent,
+                device: (name, form),
+                was: was.map(Power::Single),
+                power,
             },
             (Change::Battery { .. }, None) => return,
         };
@@ -104,12 +115,12 @@ impl State {
             }
             Event::Battery {
                 key,
-                name,
+                device,
                 was,
-                percent,
+                power,
             } => {
-                log(&format!("activity {key:?} battery {was:?} -> {percent}"));
-                if !self.list.battery(key, name, was, percent, now) {
+                log(&format!("activity {key:?} battery {was:?} -> {power:?}"));
+                if !self.list.battery(key, device, was, power, now) {
                     return None;
                 }
             }

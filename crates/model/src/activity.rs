@@ -1,11 +1,13 @@
 //! Live Activities: what is going on right now, held in a small notch while it lasts. A download
 //! stays while it grows, or [`STALL`] after it stops (paused or failed); a finished one, or earbuds
-//! coming and going, or a Pomodoro phase running out, passes after [`LINGER`].
+//! coming and going, or a Pomodoro phase running out, passes after [`LINGER`]. Earbuds connecting
+//! first show as a card for [`CARD`], then shrink to the row.
 //! The notch shows the [`SHOWN`] at the front, newest first.
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+use crate::headset::{Form, Power};
 use crate::hud::fell_low;
 use crate::pomodoro::Phase;
 
@@ -13,6 +15,8 @@ use crate::pomodoro::Phase;
 pub const SHOWN: usize = 2;
 /// How long a passing activity stays.
 pub const LINGER: Duration = Duration::from_millis(3000);
+/// How long a connected headset's card shows before it shrinks to its row.
+pub const CARD: Duration = Duration::from_millis(3000);
 /// How long a download that stopped growing stays: the browser keeps the partial file when it
 /// pauses or fails, so it never says the download ended.
 pub const STALL: Duration = Duration::from_secs(60);
@@ -27,11 +31,26 @@ pub enum Key {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Activity {
-    Downloading { name: String, bytes: u64 },
-    Downloaded { name: String, path: PathBuf },
-    Connected { name: String, battery: Option<u8> },
-    Disconnected { name: String },
-    PhaseOver { ended: Phase },
+    Downloading {
+        name: String,
+        bytes: u64,
+    },
+    Downloaded {
+        name: String,
+        path: PathBuf,
+    },
+    Connected {
+        name: String,
+        form: Form,
+        power: Option<Power>,
+    },
+    Disconnected {
+        name: String,
+        form: Form,
+    },
+    PhaseOver {
+        ended: Phase,
+    },
 }
 
 impl Activity {
@@ -45,13 +64,32 @@ impl Activity {
             | Activity::PhaseOver { .. } => LINGER,
         }
     }
+
+    /// A headset connecting opens with its card.
+    fn opens_with_card(&self) -> bool {
+        match self {
+            Activity::Connected { .. } => true,
+            Activity::Downloading { .. }
+            | Activity::Downloaded { .. }
+            | Activity::Disconnected { .. }
+            | Activity::PhaseOver { .. } => false,
+        }
+    }
 }
 
 #[derive(Debug)]
 struct Entry {
     key: Key,
     activity: Activity,
+    /// While its card shows; it lingers from there.
+    card_until: Option<Instant>,
     until: Instant,
+}
+
+impl Entry {
+    fn linger_from(&self, now: Instant) -> Instant {
+        self.card_until.map_or(now, |card| card.max(now))
+    }
 }
 
 #[derive(Default, Debug)]
@@ -62,47 +100,63 @@ pub struct Activities {
 
 impl Activities {
     /// Show `activity` under `key`. A new one, or one that changed what it is (a download that
-    /// finished), goes to the front; a download that only grew keeps its place.
+    /// finished), goes to the front; a download that only grew keeps its place, and a card
+    /// keeps showing.
     pub fn set(&mut self, key: Key, activity: Activity, now: Instant) {
-        let until = now + activity.lasts();
+        let card = activity.opens_with_card().then_some(now + CARD);
+        self.place(key, activity, card, now);
+    }
+
+    fn place(&mut self, key: Key, activity: Activity, card: Option<Instant>, now: Instant) {
         let at = self.entries.iter().position(|e| e.key == key);
         if let Some(at) = at {
             let entry = &mut self.entries[at];
             if std::mem::discriminant(&entry.activity) == std::mem::discriminant(&activity) {
+                entry.until = entry.linger_from(now) + activity.lasts();
                 entry.activity = activity;
-                entry.until = until;
                 return;
             }
             self.entries.remove(at);
         }
+        let until = card.unwrap_or(now) + activity.lasts();
         self.entries.insert(
             0,
             Entry {
                 key,
                 activity,
+                card_until: card,
                 until,
             },
         );
     }
 
-    /// A connected device's battery moved from `was` to `percent`: a showing activity updates in
-    /// place, and a gone one comes back only when the battery falls below a low mark. True if
-    /// anything changed.
+    /// A connected device's battery moved from `was` to `power`: a showing activity updates in
+    /// place, and a gone one comes back, without its card, only when its lowest battery falls
+    /// below a low mark. True if anything changed.
     pub fn battery(
         &mut self,
         key: Key,
-        name: String,
-        was: Option<u8>,
-        percent: u8,
+        (name, form): (String, Form),
+        was: Option<Power>,
+        power: Power,
         now: Instant,
     ) -> bool {
-        let shown = self.entries.iter().any(|e| e.key == key);
-        let worth = shown || was.is_some_and(|was| fell_low(was, percent));
-        if worth {
-            let battery = Some(percent);
-            self.set(key, Activity::Connected { name, battery }, now);
+        if let Some(entry) = self.entries.iter_mut().find(|e| e.key == key)
+            && let Activity::Connected { power: shown, .. } = &mut entry.activity
+        {
+            *shown = Some(power);
+            entry.until = entry.linger_from(now) + LINGER;
+            return true;
         }
-        worth
+        let low = match (was.and_then(Power::lowest), power.lowest()) {
+            (Some(was), Some(now)) => fell_low(was, now),
+            _ => false,
+        };
+        if low {
+            let power = Some(power);
+            self.place(key, Activity::Connected { name, form, power }, None, now);
+        }
+        low
     }
 
     /// Take one away at once (a cancelled download).
@@ -110,16 +164,31 @@ impl Activities {
         self.entries.retain(|e| &e.key != key);
     }
 
-    /// Drop the ones whose time is up; true if any went.
+    /// Drop the ones whose time is up and close the cards whose time is up; true if any went.
     pub fn expire(&mut self, now: Instant) -> bool {
         let before = self.entries.len();
         self.entries.retain(|e| e.until > now);
+        for entry in &mut self.entries {
+            entry.card_until = entry.card_until.filter(|card| *card > now);
+        }
         self.entries.len() != before
     }
 
-    /// When the next one is due to go.
+    /// When the next one is due to go, or its card to close.
     pub fn next_expiry(&self) -> Option<Instant> {
-        self.entries.iter().map(|e| e.until).min()
+        self.entries
+            .iter()
+            .flat_map(|e| [Some(e.until), e.card_until])
+            .flatten()
+            .min()
+    }
+
+    /// The card showing, if one is: it has the notch to itself.
+    pub fn card(&self) -> Option<(&Key, &Activity)> {
+        self.entries
+            .iter()
+            .find(|e| e.card_until.is_some())
+            .map(|e| (&e.key, &e.activity))
     }
 
     pub fn shown(&self) -> impl Iterator<Item = (&Key, &Activity)> {
@@ -151,7 +220,7 @@ mod tests {
                 Activity::Downloading { name, .. }
                 | Activity::Downloaded { name, .. }
                 | Activity::Connected { name, .. }
-                | Activity::Disconnected { name } => name.clone(),
+                | Activity::Disconnected { name, .. } => name.clone(),
                 Activity::PhaseOver { ended } => format!("{ended:?}"),
             })
             .collect()
@@ -212,49 +281,64 @@ mod tests {
         assert_eq!(names(&a), ["one", "two"]);
     }
 
-    #[test]
-    fn a_device_counts_once_and_a_repeat_restarts_its_linger() {
-        let t = Instant::now();
-        let mut a = Activities::default();
-        let key = Key::Device("{c0}".into());
-        let connected = Activity::Connected {
+    fn connected(power: Option<Power>) -> Activity {
+        Activity::Connected {
             name: "Buds".into(),
-            battery: None,
-        };
-        a.set(key.clone(), connected.clone(), t);
-        let later = t + Duration::from_secs(2);
-        a.set(key.clone(), connected, later);
-        assert_eq!(names(&a), ["Buds"]);
-        assert!(!a.expire(t + LINGER));
-        assert!(a.battery(key.clone(), "Buds".into(), None, 80, later));
-        assert_eq!(
-            a.shown().next(),
-            Some((
-                &key,
-                &Activity::Connected {
-                    name: "Buds".into(),
-                    battery: Some(80)
-                }
-            )),
-            "a late battery updates it in place"
-        );
-        assert!(a.expire(later + LINGER));
+            form: Form::Buds,
+            power,
+        }
+    }
+
+    fn buds() -> (String, Form) {
+        ("Buds".into(), Form::Buds)
     }
 
     #[test]
-    fn a_connected_device_comes_back_only_when_its_battery_falls_low() {
+    fn a_device_counts_once_opens_with_its_card_and_a_repeat_keeps_it() {
         let t = Instant::now();
         let mut a = Activities::default();
         let key = Key::Device("{c0}".into());
-        let mut battery = |was, percent| a.battery(key.clone(), "Buds".into(), was, percent, t);
-        assert!(!battery(None, 50), "a first reading after it passed");
-        assert!(!battery(Some(50), 40));
-        assert!(!battery(Some(30), 20));
-        assert!(battery(Some(20), 10));
+        a.set(key.clone(), connected(None), t);
+        assert!(a.card().is_some());
+        assert_eq!(a.next_expiry(), Some(t + CARD));
+        let later = t + Duration::from_secs(2);
+        a.set(key.clone(), connected(None), later);
         assert_eq!(names(&a), ["Buds"]);
+        assert!(a.battery(key.clone(), buds(), None, Power::Single(80), later));
+        assert_eq!(
+            a.card(),
+            Some((&key, &connected(Some(Power::Single(80))))),
+            "a late battery updates the card in place"
+        );
+        assert!(!a.expire(t + CARD));
+        assert_eq!(a.card(), None, "the card closes into the row");
+        assert_eq!(names(&a), ["Buds"]);
+        assert_eq!(a.next_expiry(), Some(t + CARD + LINGER));
+        assert!(a.expire(t + CARD + LINGER));
+    }
+
+    #[test]
+    fn a_connected_device_comes_back_without_its_card_only_when_its_battery_falls_low() {
+        let t = Instant::now();
+        let mut a = Activities::default();
+        let key = Key::Device("{c0}".into());
+        let single = |p| Some(Power::Single(p));
+        let mut battery = |was, p| a.battery(key.clone(), buds(), was, Power::Single(p), t);
+        assert!(!battery(None, 50), "a first reading after it passed");
+        assert!(!battery(single(50), 40));
+        assert!(!battery(single(30), 20));
+        assert!(battery(single(20), 10));
+        assert_eq!(names(&a), ["Buds"]);
+        assert_eq!(a.card(), None);
         a.expire(t + LINGER);
-        assert!(!a.battery(key.clone(), "Buds".into(), Some(10), 10, t + LINGER));
-        assert!(a.battery(key, "Buds".into(), Some(10), 0, t + LINGER));
+        let split = |left, right| Power::Split {
+            left: Some(left),
+            right: Some(right),
+            case: Some(90),
+        };
+        let at = t + LINGER;
+        assert!(!a.battery(key.clone(), buds(), Some(split(30, 25)), split(30, 21), at));
+        assert!(a.battery(key, buds(), Some(split(30, 21)), split(30, 19), at));
     }
 
     #[test]

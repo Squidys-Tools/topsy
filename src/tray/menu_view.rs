@@ -6,7 +6,8 @@ use gpui::{
     AnyElement, Context, Div, Hsla, SharedString, Stateful, Window, div, prelude::*, px, rgb, rgba,
 };
 
-use super::menu::{GAP, HEADER, Item, Line, Menu, PAD, ROW, SUB_WIDTH, Submenu, WIDTH, height};
+use super::lines::{GAP, HEADER, Item, Line, PAD, ROW, SUB_WIDTH, WIDTH, height};
+use super::menu::{Menu, Submenu};
 use crate::icons::{self, Icon};
 use crate::settings::Setting;
 use crate::update;
@@ -171,7 +172,7 @@ impl Menu {
             Item::Basket => Some(glyph(Icon::Inbox, icon_color)),
             Item::Clipboard => Some(glyph(Icon::Copy, icon_color)),
             Item::Update(_) => Some(glyph(Icon::Download, rgb(GREEN))),
-            Item::Options | Item::Settings | Item::Quit => None,
+            Item::Options | Item::Settings | Item::AddHeadset | Item::Quit => None,
         };
         let right = match item {
             Item::Show => files(self.counts.shelf).map(|text| detail(text, lit)),
@@ -179,7 +180,7 @@ impl Menu {
             Item::Clipboard => Some(detail("Ctrl+Alt+V".into(), lit)),
             Item::Options => Some(glyph(Icon::ChevronRight, icon_color)),
             Item::Update(version) => Some(detail(version.short(), lit)),
-            Item::Clear | Item::Settings | Item::Quit => None,
+            Item::Clear | Item::Settings | Item::AddHeadset | Item::Quit => None,
         };
         let row = row(
             SharedString::from(format!("item-{at}")),

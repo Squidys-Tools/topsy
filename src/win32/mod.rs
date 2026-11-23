@@ -2,6 +2,7 @@
 //! the shell, and the global mouse hook, plus the small helpers they share.
 
 pub mod battery;
+pub mod bluetooth;
 pub mod brightness;
 pub mod clipboard;
 pub mod clock;

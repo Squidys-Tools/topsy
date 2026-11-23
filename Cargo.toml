@@ -41,7 +41,7 @@ zip = { version = "9", default-features = false, features = ["deflate-flate2-zli
 model = { package = "topsy-model", path = "crates/model", features = ["test-support"] }
 
 [workspace]
-members = ["crates/model"]
+members = ["crates/model", "crates/devices"]
 
 # CI and scripts/check.ps1 deny warnings, so these fail the build there.
 [workspace.lints.clippy]

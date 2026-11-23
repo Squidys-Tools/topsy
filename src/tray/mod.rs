@@ -5,6 +5,7 @@
 //! channel of [`TrayEvent`]; the app reaches it through [`show_menu`], [`set_shelf_count`]
 //! and [`remove`]. The menu itself is a glass window on the UI thread ([`menu`]).
 
+mod lines;
 pub(crate) mod menu;
 mod menu_view;
 
@@ -53,6 +54,8 @@ pub enum TrayEvent {
     OpenSettings(usize),
     /// "Clipboard history": open the clipboard strip, to paste into `previous`.
     Clipboard(usize),
+    /// "Add my headset…": hand the user's headsets to a coding agent (`headset::report`).
+    AddHeadset,
     /// "Restart to update": install the downloaded nightly and start it.
     Update,
     Quit,

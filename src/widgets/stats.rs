@@ -2,19 +2,18 @@
 //! gauge, its percentage and a rolling graph. It samples once a second only while it is drawn;
 //! the rules are in `model::stats`, the readings in `win32::sysinfo`.
 
-use std::f32::consts::TAU;
 use std::time::Instant;
 
 use gpui::{
-    AnyElement, Bounds, Context, FontWeight, MouseButton, Pixels, Point, Window, canvas, div, fill,
-    linear_color_stop, linear_gradient, point, prelude::*, px, rgba, size,
+    AnyElement, Bounds, Context, FontWeight, MouseButton, Pixels, Point, Window, canvas, div,
+    linear_color_stop, linear_gradient, point, prelude::*, px, rgba,
 };
 
-use crate::Island;
 use crate::booking::Booking;
 use crate::icons::{self, Icon};
 use crate::log::LogErr;
 use crate::win32::sysinfo;
+use crate::{Island, ring};
 use model::stats::{CAPACITY, History, Stats, percent};
 
 pub const WIDTH: f32 = 208.0;
@@ -179,7 +178,9 @@ fn ring(load: Option<f32>, glyph: Icon, colour: u32) -> impl IntoElement {
         .child(
             canvas(
                 |_, _, _| {},
-                move |bounds, (), window, _| paint_ring(bounds, fraction, colour, window),
+                move |bounds, (), window, _| {
+                    ring::paint(bounds, (RING, RING_LINE), fraction, colour, window)
+                },
             )
             .absolute()
             .top_0()
@@ -187,52 +188,6 @@ fn ring(load: Option<f32>, glyph: Icon, colour: u32) -> impl IntoElement {
             .size_full(),
         )
         .child(icons::icon(glyph, 16.0, rgba(colour << 8 | 0xff)))
-}
-
-fn paint_ring(bounds: Bounds<Pixels>, fraction: f32, colour: u32, window: &mut Window) {
-    let radius = (RING - RING_LINE) / 2.0;
-    let centre = bounds.center();
-    let at = |angle: f32| -> Point<Pixels> {
-        point(
-            centre.x + px(radius * angle.sin()),
-            centre.y - px(radius * angle.cos()),
-        )
-    };
-    let radii = point(px(radius), px(radius));
-    let mut track = gpui::PathBuilder::stroke(px(RING_LINE));
-    track.move_to(at(0.0));
-    track.arc_to(radii, px(0.0), false, true, at(TAU / 2.0));
-    track.arc_to(radii, px(0.0), false, true, at(0.0));
-    if let Ok(path) = track.build() {
-        window.paint_path(path, rgba(colour << 8 | 0x33));
-    }
-    let fraction = fraction.clamp(0.0, 1.0);
-    if fraction <= 0.0 {
-        return;
-    }
-    let solid = rgba(colour << 8 | 0xff);
-    let end = fraction * TAU;
-    let mut arc = gpui::PathBuilder::stroke(px(RING_LINE));
-    arc.move_to(at(0.0));
-    if fraction >= 0.999 {
-        arc.arc_to(radii, px(0.0), false, true, at(TAU / 2.0));
-        arc.arc_to(radii, px(0.0), false, true, at(0.0));
-    } else {
-        arc.arc_to(radii, px(0.0), fraction > 0.5, true, at(end));
-    }
-    if let Ok(path) = arc.build() {
-        window.paint_path(path, solid);
-    }
-    // PathBuilder's caps are square; dots at both ends round them off.
-    for angle in [0.0, end] {
-        let dot = at(angle);
-        let half = RING_LINE / 2.0;
-        let cap = Bounds::new(
-            point(dot.x - px(half), dot.y - px(half)),
-            size(px(RING_LINE), px(RING_LINE)),
-        );
-        window.paint_quad(fill(cap, solid).corner_radii(px(half)));
-    }
 }
 
 /// The history as a line with a fading fill under it, newest at the right edge.

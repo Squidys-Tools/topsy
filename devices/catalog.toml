@@ -1,0 +1,119 @@
+# The headsets topsy knows by model. A device nothing here matches still shows, drawn as the shape its
+# name and Bluetooth class suggest.
+#
+# Each entry:
+#   slug   lowercase words joined by -, unique (later, the folder of its picture)
+#   name   the model's name
+#   form   stem-buds | buds | over-ear | speaker
+#   match  any of: { vid = 0x004C, pid = 0x2014 }   Bluetooth SIG company id and product id
+#                  { usb_vid = 0x054C, pid = 0x0CE0 } USB-IF vendor id and product id
+#                  { name = "WH-1000XM5" }            part of the device's name, any case
+#
+# Product ids win over names. Take them from a real device: topsy's tray menu has "Add my headset…",
+# and `cargo devices add` turns what it writes into an entry here. `cargo devices check` (and the
+# tests) check this file. See docs/operations/devices.md.
+#
+# Apple's product ids are its Device ID profile ids, as public research on Apple's Bluetooth
+# protocols lists them.
+
+[[device]]
+slug = "airpods"
+name = "AirPods (1st generation)"
+form = "stem-buds"
+match = [{ vid = 0x004C, pid = 0x2002 }]
+
+[[device]]
+slug = "airpods-2"
+name = "AirPods (2nd generation)"
+form = "stem-buds"
+match = [{ vid = 0x004C, pid = 0x200F }, { name = "AirPods" }]
+
+[[device]]
+slug = "airpods-3"
+name = "AirPods (3rd generation)"
+form = "stem-buds"
+match = [{ vid = 0x004C, pid = 0x2013 }]
+
+[[device]]
+slug = "airpods-pro"
+name = "AirPods Pro"
+form = "stem-buds"
+match = [{ vid = 0x004C, pid = 0x200E }]
+
+[[device]]
+slug = "airpods-pro-2"
+name = "AirPods Pro (2nd generation)"
+form = "stem-buds"
+match = [{ vid = 0x004C, pid = 0x2014 }, { vid = 0x004C, pid = 0x2024 }, { name = "AirPods Pro" }]
+
+[[device]]
+slug = "airpods-max"
+name = "AirPods Max"
+form = "over-ear"
+match = [{ vid = 0x004C, pid = 0x200A }, { name = "AirPods Max" }]
+
+[[device]]
+slug = "powerbeats-pro"
+name = "Powerbeats Pro"
+form = "buds"
+match = [{ vid = 0x004C, pid = 0x200B }, { name = "Powerbeats Pro" }]
+
+[[device]]
+slug = "beats-studio-buds"
+name = "Beats Studio Buds"
+form = "buds"
+match = [{ vid = 0x004C, pid = 0x2011 }, { name = "Beats Studio Buds" }]
+
+[[device]]
+slug = "beats-fit-pro"
+name = "Beats Fit Pro"
+form = "buds"
+match = [{ vid = 0x004C, pid = 0x2012 }, { name = "Beats Fit Pro" }]
+
+[[device]]
+slug = "wh-1000xm4"
+name = "Sony WH-1000XM4"
+form = "over-ear"
+match = [{ name = "WH-1000XM4" }]
+
+[[device]]
+slug = "wh-1000xm5"
+name = "Sony WH-1000XM5"
+form = "over-ear"
+match = [{ name = "WH-1000XM5" }]
+
+[[device]]
+slug = "wf-1000xm4"
+name = "Sony WF-1000XM4"
+form = "buds"
+match = [{ name = "WF-1000XM4" }]
+
+[[device]]
+slug = "wf-1000xm5"
+name = "Sony WF-1000XM5"
+form = "buds"
+match = [{ name = "WF-1000XM5" }]
+
+[[device]]
+slug = "galaxy-buds"
+name = "Samsung Galaxy Buds"
+form = "buds"
+match = [{ name = "Galaxy Buds" }]
+
+[[device]]
+slug = "bose-qc-ultra-headphones"
+name = "Bose QuietComfort Ultra Headphones"
+form = "over-ear"
+match = [{ name = "QC Ultra Headphones" }]
+
+[[device]]
+slug = "bose-qc-ultra-earbuds"
+name = "Bose QuietComfort Ultra Earbuds"
+form = "buds"
+match = [{ name = "QC Ultra Earbuds" }]
+
+[[device]]
+slug = "sonos-ace"
+name = "Sonos Ace"
+form = "over-ear"
+match = [{ name = "Sonos Ace" }]

@@ -1,0 +1,32 @@
+name: Add a headset
+description: Ask for a headset, earbuds or speaker to be recognised, with what topsy saw of it.
+title: "Add a headset"
+labels: ["devices"]
+body:
+  - type: input
+    id: model
+    attributes:
+      label: Model
+      description: The exact model and colour, as the box or the maker's app names them.
+      placeholder: Sony WH-1000XM5, silver
+    validations:
+      required: true
+  - type: dropdown
+    id: split
+    attributes:
+      label: Does the maker's app show the left bud, the right bud and the case separately?
+      options:
+        - "Yes"
+        - "No"
+        - Not earbuds
+        - Don't know
+  - type: textarea
+    id: dump
+    attributes:
+      label: What topsy saw
+      description: >-
+        Filled in by topsy's "Add my headset…". Bluetooth addresses are already blanked; remove any device here
+        that isn't the one you are asking for.
+      render: json
+    validations:
+      required: true

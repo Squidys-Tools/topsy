@@ -6066,6 +6066,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "topsy-devices"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "topsy-model",
+]
+
+[[package]]
 name = "topsy-model"
 version = "0.1.0"
 dependencies = [
@@ -6073,6 +6081,7 @@ dependencies = [
  "rayon",
  "serde",
  "serde_json",
+ "toml 1.1.8+spec-1.1.0",
 ]
 
 [[package]]
