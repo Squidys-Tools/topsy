@@ -253,6 +253,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn each_droplet_is_found_by_its_type() {
+        let mut state = State {
+            lineup: Lineup::new([]),
+            droplets: CATALOG.iter().map(|entry| (entry.make)()).collect(),
+        };
+        assert!(state.get_mut::<calendar::State>().is_some());
+        assert!(state.get_mut::<pomodoro::State>().is_some());
+        assert!(state.get_mut::<audio::State>().is_some());
+    }
+
+    #[test]
     fn catalog_ids_are_distinct_lowercase_words() {
         for (at, entry) in CATALOG.iter().enumerate() {
             assert!(
