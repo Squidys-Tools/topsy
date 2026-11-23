@@ -109,7 +109,7 @@ they decide. Work that blocks or pumps messages goes back out to a `cx.spawn` ta
 - `src/island/`: the island view, its modes and springs, the shelf's chips, the tray's layout and pages, and the
   entry points features reach it through. `src/app.rs`: the app's wiring. `src/config.rs`: every `TOPSY_*` switch.
 - One file or folder per feature beside them: `activity/`, `basket/`, `clipboard/`, `now_playing/`, `settings/`,
-  `transform/`, `widgets/`, `hud.rs`, `tray/` (the tray icon). Each module's doc comment says what it owns. A
+  `transform/`, `droplets/`, `hud.rs`, `tray/` (the tray icon). Each module's doc comment says what it owns. A
   feature keeps its logic on its own types and never adds methods to `Island`; how a feature is wired in, and every
   place a new one touches, is in [Features](docs/internals/features.md).
 

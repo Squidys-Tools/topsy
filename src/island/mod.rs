@@ -1,6 +1,6 @@
 //! The island: the one GPUI view, its modes and springs, the shelf it holds, and the policy that
 //! decides what it shows. Features keep their own state and rendering; they reach the island
-//! through its entry points (`update_widgets`, `update_media`, `update_hud`,
+//! through its entry points (`update_droplets`, `update_media`, `update_hud`,
 //! `update_activities`) and the effects those apply.
 
 pub(crate) mod chip;
@@ -22,7 +22,7 @@ use windows::Win32::Foundation::HWND;
 use crate::frame::{self, Frame, Mode};
 use crate::log::log;
 use crate::win32::{DropEvent, HookEvent};
-use crate::{activity, basket, config, hud, now_playing, state, tray, widgets, win32};
+use crate::{activity, basket, config, droplets, hud, now_playing, state, tray, win32};
 use model::shelf::Shelf;
 use model::spring::{Spring, SpringConfig};
 use model::tray_cause::{HeldDrag, TrayCause};
@@ -66,7 +66,7 @@ pub(crate) struct Island {
     pub(crate) media: now_playing::Media,
     pub(crate) hud: hud::State,
     pub(crate) activity: activity::State,
-    pub(crate) widgets: widgets::State,
+    pub(crate) droplets: droplets::State,
     pub(crate) pager: pager::State,
     pub(crate) basket: Option<Entity<basket::Basket>>,
 }
@@ -101,7 +101,7 @@ impl Island {
             media: Default::default(),
             hud: Default::default(),
             activity: Default::default(),
-            widgets: Default::default(),
+            droplets: Default::default(),
             pager: Default::default(),
             basket: None,
         }

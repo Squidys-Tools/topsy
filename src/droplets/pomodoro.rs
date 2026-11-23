@@ -11,13 +11,14 @@ use gpui::{
     px, rgb, rgba,
 };
 
-use super::{Effect, keep_press};
+use super::{Card, Droplet, Effect, keep_press};
 use crate::booking::Booking;
 use crate::icons::{self, Icon};
 use crate::{Island, log};
+use model::activity::{Activity, Key};
 use model::pomodoro::{Clock, Phase, Pomodoro, clock};
 
-pub const WIDTH: f32 = 176.0;
+const WIDTH: f32 = 176.0;
 const ORANGE: u32 = 0xff9f0a;
 const ORANGE_TINT: u32 = 0xff9f0a33;
 const DIM: u32 = 0xffffff80;
@@ -42,14 +43,24 @@ enum Press {
     Adjust(i32),
 }
 
-impl State {
-    /// Switched off: a running timer stops, and its end is never shown.
-    pub fn stop(&mut self) {
+impl Droplet for State {
+    /// A running timer stops, and its end is never shown.
+    fn switched_off(&mut self, _cx: &mut Context<Island>) {
         self.timer.reset();
         self.generation += 1;
     }
 
-    pub(super) fn card(&self, cx: &mut Context<Island>) -> AnyElement {
+    fn card(&self) -> Option<&dyn Card> {
+        Some(self)
+    }
+}
+
+impl Card for State {
+    fn width(&self) -> f32 {
+        WIDTH
+    }
+
+    fn render(&self, _visible: bool, cx: &mut Context<Island>) -> AnyElement {
         let timer = &self.timer;
         let now = Instant::now();
         if let Some(after) = timer.until_next_second(now) {
@@ -107,7 +118,9 @@ impl State {
             .child(buttons)
             .into_any_element()
     }
+}
 
+impl State {
     fn press(&mut self, press: Press, cx: &mut Context<Island>) {
         let now = Instant::now();
         let timer = &mut self.timer;
@@ -139,11 +152,11 @@ impl State {
                 .timer(ends.saturating_duration_since(now))
                 .await;
             this.update(cx, |this, cx| {
-                this.update_widgets(cx, |widgets, visible, cx| {
-                    if widgets.pomodoro.generation != generation {
+                this.update_droplet(cx, |pomodoro: &mut State, visible, cx| {
+                    if pomodoro.generation != generation {
                         return None;
                     }
-                    widgets.pomodoro.end(visible, cx)
+                    pomodoro.end(visible, cx)
                 });
             })
             .ok();
@@ -164,13 +177,13 @@ impl State {
         if visible {
             cx.notify();
         }
-        Some(Effect::PhaseOver(ended))
+        Some(Effect::Activity(Key::Timer, Activity::PhaseOver { ended }))
     }
 
     /// Redraw when the countdown next reads a new second, while the card is drawn.
     fn tick(&self, after: Duration, cx: &mut Context<Island>) {
         self.ticking.book(after, cx, |island, cx| {
-            island.update_widgets(cx, |_, visible, cx| {
+            island.update_droplets(cx, |_, visible, cx| {
                 if visible {
                     cx.notify();
                 }
@@ -250,6 +263,9 @@ fn pressable(element: Stateful<Div>, press: Press, cx: &mut Context<Island>) -> 
         .on_mouse_down(MouseButton::Left, cx.listener(keep_press))
         .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
             cx.stop_propagation();
-            this.widgets.pomodoro.press(press, cx);
+            this.update_droplet(cx, |pomodoro: &mut State, _, cx| {
+                pomodoro.press(press, cx);
+                None
+            });
         }))
 }

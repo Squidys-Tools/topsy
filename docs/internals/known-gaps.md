@@ -93,7 +93,8 @@ Keep this honest: remove a gap you close, add one you find and leave.
   PDFs of up to a few hundred pages; a PDF of thousands of pictures runs one ImageMagick per picture.
 - **Idle CPU** is ~1–2% of a core on a busy machine, not close to 0%, and the cause was never found; see
   [Measurements](../operations/measurements.md).
-- No droplets yet.
+- **Droplets** are compiled into topsy: there is no way to load one someone else built. A card in Home's row is
+  the only surface a droplet has, and none has a settings pane of its own.
 - **Updates.** A nightly trusts what it downloads over HTTPS from the GitHub release, and the `SHA256SUMS` beside
   it comes from the same release: nothing is signed, so a tampered release would be installed. The check thread
   sleeps 4 hours at a time, so after the PC sleeps the next check can come late.

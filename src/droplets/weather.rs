@@ -10,7 +10,7 @@ use gpui::{
     linear_gradient, prelude::*, px, rgb, rgba,
 };
 
-use super::keep_press;
+use super::{Card, Droplet, keep_press};
 use crate::icons::{self, Icon};
 use crate::log::LogErr;
 use crate::win32::http::{self, Response};
@@ -18,7 +18,7 @@ use crate::win32::location;
 use crate::{Island, log};
 use model::weather::{self, Condition, Forecast, HOST, Hour, LIMIT, Problem, Show, Unit, Weather};
 
-pub const WIDTH: f32 = 184.0;
+const WIDTH: f32 = 184.0;
 const RADIUS: f32 = 16.0;
 const PAD: f32 = 10.0;
 const TEXT: u32 = 0xffffff;
@@ -34,7 +34,7 @@ pub struct State {
 }
 
 impl State {
-    pub(super) fn card(&self, visible: bool, cx: &mut Context<Island>) -> AnyElement {
+    fn draw(&self, visible: bool, cx: &mut Context<Island>) -> AnyElement {
         if visible && !self.fetching.get() && self.weather.due(Instant::now()) {
             self.fetch(cx);
         }
@@ -92,8 +92,8 @@ impl State {
         cx.spawn(async move |this, cx| {
             let result = receiver.recv().await.unwrap_or(Err(Problem::Failed));
             this.update(cx, |this, cx| {
-                this.update_widgets(cx, |widgets, visible, cx| {
-                    widgets.weather.fetched(result, visible, cx);
+                this.update_droplet(cx, |weather: &mut State, visible, cx| {
+                    weather.fetched(result, visible, cx);
                     None
                 });
             })
@@ -117,6 +117,22 @@ impl State {
         if visible {
             cx.notify();
         }
+    }
+}
+
+impl Droplet for State {
+    fn card(&self) -> Option<&dyn Card> {
+        Some(self)
+    }
+}
+
+impl Card for State {
+    fn width(&self) -> f32 {
+        WIDTH
+    }
+
+    fn render(&self, visible: bool, cx: &mut Context<Island>) -> AnyElement {
+        self.draw(visible, cx)
     }
 }
 

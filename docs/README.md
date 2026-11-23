@@ -35,6 +35,7 @@ not explain. Most code changes need no internal doc change. Follow the
 - [Clipboard history](./internals/clipboard-history.md)
 - [HUDs](./internals/huds.md)
 - [Live Activities](./internals/live-activities.md)
+- [Droplets](./internals/droplets.md): the framework small features are built on
 - [Shelf widgets](./internals/widgets.md)
 - [Transform](./internals/transform.md)
 - [GNU toolchain and build.rs](./internals/toolchain.md)

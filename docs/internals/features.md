@@ -1,19 +1,19 @@
 # Features and the island
 
-How a feature (Now Playing, the HUDs, Live Activities, the widgets, and whatever comes next) is wired into the
+How a feature (Now Playing, the HUDs, Live Activities, the droplets, and whatever comes next) is wired into the
 island, and every place a new one touches.
 
 - **The island is the only view.** `Island` (`src/island/`) is the one GPUI view in the notch's window. Features
   are not entities of their own: a child entity's `notify` would redraw the window behind the island's back, and
   the island's springs, its window resize and its render count all hang off its own render. A feature is a plain
-  state type the island owns (`island.widgets`, `island.media`, `island.hud`, `island.activity`).
+  state type the island owns (`island.droplets`, `island.media`, `island.hud`, `island.activity`).
 - **A feature keeps its own logic and never adds methods to `Island`.** Its rendering, timers and handlers are
   methods on its own types, taking what they need as arguments. What only the island knows (whether the feature
-  is on screen, the mode) is passed in: `visible` for the widgets, `now_playing::Shown` for Now Playing.
+  is on screen, the mode) is passed in: `visible` for the droplets, `now_playing::Shown` for Now Playing.
   `scripts/check-structure.ps1` fails any `impl Island` outside `src/island/` and `src/app.rs`.
 - **One entry point per feature, and effects back.** Listeners and tasks a feature creates still run on the
   island (they need its `Context`), so each goes through the feature's entry point in
-  `src/island/tray_view.rs` (`update_widgets`, `update_media`, `update_hud`, `update_activities`). The entry
+  `src/island/tray_view.rs` (`update_droplets`, `update_media`, `update_hud`, `update_activities`). The entry
   point works out what the feature may need to know, hands it its own state, and applies the small `Effect`
   enum it returns: clear the press, refit the tray, show a Live Activity. The `match` names every variant, so a
   new effect is a compile error until the island handles it. A listener that changes only the feature's own
@@ -21,7 +21,8 @@ island, and every place a new one touches.
 
 ## Adding a feature
 
-Walk every entry; say in the PR which applied.
+A small feature that is switched on and off by itself and shows as a card on Home is a
+[droplet](droplets.md), which has a shorter list. Otherwise, walk every entry; say in the PR which applied.
 
 1. **Rules** in `crates/model`, with their tests (`cargo test -p topsy-model`). No clock reads: take `now`.
 2. **Glue** for the Win32 or WinRT source on a thread of its own, sending plain events over an `async_channel`

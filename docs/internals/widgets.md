@@ -1,7 +1,7 @@
 # Shelf widgets
 
-Decisions behind [Shelf widgets](../user/widgets.md). The row lives in `src/widgets/`, its rules in
-`crates/model` (`widgets`, `calendar`, `pomodoro`, `stats`, `weather`).
+Decisions behind [Shelf widgets](../user/widgets.md). Each widget is a [droplet](droplets.md) in
+`src/droplets/`, its rules in `crates/model` (`droplets`, `calendar`, `pomodoro`, `stats`, `weather`).
 
 - **They live on Home, a page of their own.** Every open tray has two pages, Home and the shelf, as Droppy's has
   (`src/island/pager.rs`, rules in `model::pager`; `tray_cause::sections` says what each page shows), and the

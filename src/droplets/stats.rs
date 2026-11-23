@@ -9,6 +9,7 @@ use gpui::{
     linear_color_stop, linear_gradient, point, prelude::*, px, rgba,
 };
 
+use super::{Card, Droplet};
 use crate::booking::Booking;
 use crate::icons::{self, Icon};
 use crate::log::LogErr;
@@ -16,7 +17,7 @@ use crate::win32::sysinfo;
 use crate::{Island, ring};
 use model::stats::{CAPACITY, History, Stats, percent};
 
-pub const WIDTH: f32 = 208.0;
+const WIDTH: f32 = 208.0;
 const HALF: f32 = (WIDTH - GUTTER) / 2.0;
 const GUTTER: f32 = 12.0;
 const RING: f32 = 36.0;
@@ -35,7 +36,7 @@ pub struct State {
 }
 
 impl State {
-    pub(super) fn card(&self, visible: bool, cx: &mut Context<Island>) -> AnyElement {
+    fn draw(&self, visible: bool, cx: &mut Context<Island>) -> AnyElement {
         self.book(visible, cx);
         let stats = &self.stats;
         let memory = stats.memory();
@@ -82,8 +83,8 @@ impl State {
         }
         let after = self.stats.next_sample(Instant::now());
         self.booked.book(after, cx, |island, cx| {
-            island.update_widgets(cx, |widgets, visible, cx| {
-                widgets.stats.sample(visible, cx);
+            island.update_droplet(cx, |stats: &mut State, visible, cx| {
+                stats.sample(visible, cx);
                 None
             });
         });
@@ -97,6 +98,22 @@ impl State {
         let memory = sysinfo::memory().log_err();
         self.stats.sample(times, memory, Instant::now());
         cx.notify();
+    }
+}
+
+impl Droplet for State {
+    fn card(&self) -> Option<&dyn Card> {
+        Some(self)
+    }
+}
+
+impl Card for State {
+    fn width(&self) -> f32 {
+        WIDTH
+    }
+
+    fn render(&self, visible: bool, cx: &mut Context<Island>) -> AnyElement {
+        self.draw(visible, cx)
     }
 }
 

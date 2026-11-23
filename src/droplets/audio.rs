@@ -1,7 +1,7 @@
 //! The Audio card, after Droppy's Audio Control: a row per app playing through the output
 //! device, with its icon, its name, a volume slider and a mute button. The list is
-//! `model::mixer`; the sessions come from `win32::mixer`'s thread, which runs while the card is
-//! in the lineup and costs nothing between events.
+//! `model::mixer`; the sessions come from `win32::mixer`'s thread, which starts the first time the
+//! tray opens with the droplet on, stops when it is switched off, and costs nothing between events.
 
 use std::sync::Arc;
 
@@ -10,7 +10,7 @@ use gpui::{
     prelude::*, px, rgb, rgba,
 };
 
-use super::keep_press;
+use super::{Card, Droplet, keep_press};
 use crate::icons::{self, Icon};
 use crate::log::LogErr;
 use crate::transform::widgets::slider;
@@ -18,7 +18,7 @@ use crate::win32::mixer::{Event, Watch};
 use crate::{Island, icon};
 use model::mixer::{App, Mixer};
 
-pub const WIDTH: f32 = 240.0;
+const WIDTH: f32 = 240.0;
 const ROW: f32 = 34.0;
 const ICON: f32 = 20.0;
 const NAME: f32 = 62.0;
@@ -40,16 +40,8 @@ struct Listening {
 }
 
 impl State {
-    /// The tray opened: listen, or catch up with a change of output device.
-    pub(super) fn opened(&mut self, cx: &mut Context<Island>) {
-        match &self.listening {
-            Some(listening) => listening.watch.refresh(),
-            None => self.listen(cx),
-        }
-    }
-
     /// Start the sessions' thread, unless it runs already.
-    pub(super) fn listen(&mut self, cx: &mut Context<Island>) {
+    fn listen(&mut self, cx: &mut Context<Island>) {
         if self.listening.is_some() {
             return;
         }
@@ -57,8 +49,8 @@ impl State {
         let task = cx.spawn(async move |this, cx| {
             while let Ok(event) = events.recv().await {
                 let heard = this.update(cx, |island, cx| {
-                    island.update_widgets(cx, |widgets, visible, cx| {
-                        widgets.audio.hear(event, visible, cx);
+                    island.update_droplet(cx, |audio: &mut State, visible, cx| {
+                        audio.hear(event, visible, cx);
                         None
                     });
                 });
@@ -71,13 +63,6 @@ impl State {
             watch: Watch::start(sender),
             _events: task,
         });
-    }
-
-    /// Switched off: the thread stops and the list goes.
-    pub(super) fn stop(&mut self, cx: &mut Context<Island>) {
-        self.listening = None;
-        let pictures = std::mem::take(&mut self.mixer).into_pictures();
-        icon::forget(pictures, cx);
     }
 
     fn hear(&mut self, event: Event, visible: bool, cx: &mut Context<Island>) {
@@ -109,7 +94,7 @@ impl State {
         }
     }
 
-    pub(super) fn card(&self, cx: &mut Context<Island>) -> AnyElement {
+    fn draw(&self, cx: &mut Context<Island>) -> AnyElement {
         let apps = self.mixer.apps();
         let card = div()
             .id("audio")
@@ -142,6 +127,37 @@ impl State {
     }
 }
 
+impl Droplet for State {
+    /// Listen, or catch up with a change of output device.
+    fn opened(&mut self, cx: &mut Context<Island>) {
+        match &self.listening {
+            Some(listening) => listening.watch.refresh(),
+            None => self.listen(cx),
+        }
+    }
+
+    /// The thread stops and the list goes.
+    fn switched_off(&mut self, cx: &mut Context<Island>) {
+        self.listening = None;
+        let pictures = std::mem::take(&mut self.mixer).into_pictures();
+        icon::forget(pictures, cx);
+    }
+
+    fn card(&self) -> Option<&dyn Card> {
+        Some(self)
+    }
+}
+
+impl Card for State {
+    fn width(&self) -> f32 {
+        WIDTH
+    }
+
+    fn render(&self, _visible: bool, cx: &mut Context<Island>) -> AnyElement {
+        self.draw(cx)
+    }
+}
+
 /// One app: its icon, its name, the slider and the mute button.
 fn row(
     i: usize,
@@ -158,9 +174,9 @@ fn row(
     let slide = slider(("audio-volume", i), level, SLIDER, move |volume, _, cx| {
         island
             .update(cx, |island, cx| {
-                island.update_widgets(cx, |widgets, _, cx| {
-                    let set = widgets.audio.mixer.slide(&key, volume);
-                    widgets.audio.apply(&key, set, cx);
+                island.update_droplet(cx, |audio: &mut State, _, cx| {
+                    let set = audio.mixer.slide(&key, volume);
+                    audio.apply(&key, set, cx);
                     None
                 });
             })
@@ -186,8 +202,11 @@ fn row(
         .child(icons::icon(glyph, 14.0, rgb(0xffffff)))
         .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
             cx.stop_propagation();
-            let set = this.widgets.audio.mixer.toggle_mute(&key);
-            this.widgets.audio.apply(&key, set, cx);
+            this.update_droplet(cx, |audio: &mut State, _, cx| {
+                let set = audio.mixer.toggle_mute(&key);
+                audio.apply(&key, set, cx);
+                None
+            });
         }));
     div()
         .h(px(ROW))

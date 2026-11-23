@@ -7,14 +7,14 @@ use gpui::{
     AnyElement, ClickEvent, Context, Div, FontWeight, MouseButton, div, prelude::*, px, rgb, rgba,
 };
 
-use super::keep_press;
+use super::{Card, Droplet, keep_press};
 use crate::Island;
 use crate::hud::RED;
 use crate::icons::{self, Icon};
 use crate::win32::clock;
 use model::calendar::{Browse, Date, Weekday, YearMonth, week_from};
 
-pub const WIDTH: f32 = 184.0;
+const WIDTH: f32 = 184.0;
 const HEADER: f32 = 15.0;
 const INITIALS: f32 = 11.0;
 /// Six weeks fill what the header and the initials leave of the card.
@@ -30,13 +30,23 @@ pub struct State {
     browse: Browse,
 }
 
-impl State {
-    /// Show this month again; called when the tray is opened anew.
-    pub(crate) fn reset(&mut self) {
+impl Droplet for State {
+    /// Show this month again.
+    fn opened(&mut self, _cx: &mut Context<Island>) {
         self.browse = Browse::default();
     }
 
-    pub(super) fn card(&self, cx: &mut Context<Island>) -> AnyElement {
+    fn card(&self) -> Option<&dyn Card> {
+        Some(self)
+    }
+}
+
+impl Card for State {
+    fn width(&self) -> f32 {
+        WIDTH
+    }
+
+    fn render(&self, _visible: bool, cx: &mut Context<Island>) -> AnyElement {
         let today = clock::today();
         let first = clock::first_weekday();
         let this_month = today.year_month();
@@ -90,15 +100,13 @@ fn header(today: Date, shown: YearMonth, cx: &mut Context<Island>) -> Div {
                 .when(away, |element| element.cursor_pointer())
                 .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
                     cx.stop_propagation();
-                    if this
-                        .widgets
-                        .calendar
-                        .browse
-                        .is_away(clock::today().year_month())
-                    {
-                        this.widgets.calendar.reset();
-                        cx.notify();
-                    }
+                    this.update_droplet(cx, |calendar: &mut State, _, cx| {
+                        if calendar.browse.is_away(clock::today().year_month()) {
+                            calendar.browse = Browse::default();
+                            cx.notify();
+                        }
+                        None
+                    });
                 }))
                 .child(div().text_color(rgb(RED)).child(today.weekday().short()))
                 .child(div().text_color(rgb(TEXT)).child(today.day.to_string()))
@@ -137,9 +145,11 @@ fn chevron(glyph: Icon, months: i32, cx: &mut Context<Island>) -> impl IntoEleme
         .hover(|style| style.bg(rgba(0xffffff14)))
         .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
             cx.stop_propagation();
-            let this_month = clock::today().year_month();
-            this.widgets.calendar.browse.step(months, this_month);
-            cx.notify();
+            this.update_droplet(cx, |calendar: &mut State, _, cx| {
+                calendar.browse.step(months, clock::today().year_month());
+                cx.notify();
+                None
+            });
         }))
         .child(icons::icon(glyph, 10.0, rgba(DIM)))
 }
