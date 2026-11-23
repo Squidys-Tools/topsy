@@ -6,7 +6,7 @@
 //!   cargo devices add <context.json> --device <name> --slug <slug> [--name <model>] [--form <form>]
 //!   cargo devices check
 //!   cargo devices render <folder>
-//!   cargo devices generic
+//!   cargo devices generic [shape]
 
 mod render;
 
@@ -26,9 +26,9 @@ const USAGE: &str = "usage:
   cargo devices check
       check devices/catalog.toml, as the tests do
   cargo devices render <folder>
-      render <folder>/model.glb with Blender into <folder>/spin.png
-  cargo devices generic
-      rebuild the generic shapes (devices/generic/build.py) and render each";
+      render <folder>/model.blend (or model.glb) with Blender into <folder>/spin.png
+  cargo devices generic [shape]
+      render each generic shape, or only one, from its module in devices/generic into its spin.png";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -37,7 +37,7 @@ fn main() -> ExitCode {
         Some("add") if args.len() >= 2 => add(Path::new(&args[1]), &args[2..]),
         Some("check") if args.len() == 1 => check(),
         Some("render") if args.len() == 2 => render::render(Path::new(&args[1])),
-        Some("generic") if args.len() == 1 => render::generic(),
+        Some("generic") if args.len() <= 2 => render::generic(args.get(1).map(String::as_str)),
         _ => Err(USAGE.to_owned()),
     };
     match result {
