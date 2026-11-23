@@ -2,7 +2,9 @@
 //! name, and its batteries on the right. One battery is a large ring beside the name; earbuds
 //! that report each bud and the case get a small ring for each.
 
-use gpui::{Div, canvas, div, prelude::*, px, rgb, rgba};
+use std::sync::Arc;
+
+use gpui::{Div, RenderImage, canvas, div, img, prelude::*, px, rgb, rgba};
 
 use super::view::{DIM, glyph};
 use crate::hud::{GREEN, RED};
@@ -11,7 +13,7 @@ use model::headset::{Form, Power};
 
 /// Under 70 px tall: the island takes anything taller and wider than 260 px for the tray.
 const HEIGHT: f32 = 64.0;
-const ART: f32 = 48.0;
+const ART: f32 = 56.0;
 const BIG: (f32, f32) = (42.0, 4.0);
 const SMALL: (f32, f32) = (28.0, 3.0);
 /// A battery at or below this is drawn red.
@@ -20,12 +22,18 @@ const LOW: u8 = 20;
 /// Wider for a ring per bud and the case, so the name keeps its room.
 pub(super) fn size(power: Option<Power>) -> (f32, f32) {
     match power {
-        Some(Power::Split { .. }) => (400.0, HEIGHT),
+        Some(Power::Split { .. }) => (420.0, HEIGHT),
         Some(Power::Single(_)) | None => (340.0, HEIGHT),
     }
 }
 
-pub(super) fn card(name: &str, form: Form, power: Option<Power>) -> Div {
+/// `art` is the turntable's frame to show; the flat glyph stands in without one.
+pub(super) fn card(
+    name: &str,
+    form: Form,
+    power: Option<Power>,
+    art: Option<Arc<RenderImage>>,
+) -> Div {
     let (width, height) = size(power);
     div()
         .w(px(width))
@@ -43,7 +51,10 @@ pub(super) fn card(name: &str, form: Form, power: Option<Power>) -> Div {
                 .flex()
                 .items_center()
                 .justify_center()
-                .child(icons::icon(glyph(form), 40.0, rgb(0xffffff))),
+                .child(match art {
+                    Some(frame) => img(frame).size(px(ART)).into_any_element(),
+                    None => icons::icon(glyph(form), 40.0, rgb(0xffffff)).into_any_element(),
+                }),
         )
         .child(
             div()

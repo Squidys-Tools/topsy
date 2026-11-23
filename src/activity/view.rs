@@ -2,6 +2,8 @@
 //! share the notch side by side, unless a headset's card has it to itself. A finished download
 //! shows itself in Explorer when clicked.
 
+use std::time::{Duration, Instant};
+
 use gpui::{AnyElement, ClickEvent, Context, Div, div, prelude::*, px, rgb, rgba};
 
 use super::{State, card};
@@ -10,6 +12,7 @@ use crate::frame::PEEK;
 use crate::hud::{GREEN, RED, cell};
 use crate::icons::{self, Icon};
 use model::activity::{Activity, Key};
+use model::headset::spin;
 use model::headset::{Form, Power};
 use model::pomodoro::Phase;
 use model::transform::size;
@@ -17,6 +20,8 @@ use model::transform::size;
 const ONE: f32 = 280.0;
 const TWO: f32 = 440.0;
 pub(super) const DIM: u32 = 0xffffff99;
+/// The spin's redraws, about 60 a second, for its moment only.
+const FRAME_TIME: Duration = Duration::from_millis(16);
 const ORANGE: u32 = 0xff9f0a;
 
 impl State {
@@ -35,7 +40,14 @@ impl State {
     /// The activities in the dropped notch, if any are on. A peek opened to look shows them too.
     pub(crate) fn peek(&self, cx: &mut Context<Island>) -> Option<Div> {
         if let Some((_, Activity::Connected { name, form, power })) = self.list.card() {
-            return Some(card::card(name, *form, *power));
+            let since = self.card_since.get().unwrap_or_else(Instant::now);
+            self.card_since.set(Some(since));
+            let (frame, turning) = spin::frame_at(since.elapsed());
+            if turning {
+                self.spinning.book(FRAME_TIME, cx, |_, cx| cx.notify());
+            }
+            let art = self.art.frames(*form).and_then(|f| f.get(frame).cloned());
+            return Some(card::card(name, *form, *power, art));
         }
         let (w, h) = self.size()?;
         Some(

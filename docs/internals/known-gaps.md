@@ -65,7 +65,8 @@ Keep this honest: remove a gap you close, add one you find and leave.
   file any app writes there as `.part` or `.crdownload` counts as a download. Earbuds' battery changes are
   followed with a `DeviceWatcher`, and models are recognised by product id; neither is checked with real
   Bluetooth devices yet, and Apple's product ids in the catalog come from public research, not from a device.
-  Headsets are drawn as flat shape icons until the rendered pictures come. Each bud's battery is read only for
+  Every headset shows its shape's generic picture: no model has one of its own yet, and topsy doesn't download
+  per-model pictures. Each bud's battery is read only for
   AirPods and Beats, from their broadcasts, and that parser is checked against the published format, not a
   real pair; other makers' own protocols aren't read. A Bluetooth LE device has no class, so it's shaped by its
   name alone. No timers, calls or coding agents yet.

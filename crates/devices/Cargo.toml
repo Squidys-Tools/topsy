@@ -16,3 +16,4 @@ path = "src/main.rs"
 [dependencies]
 model = { package = "topsy-model", path = "../model" }
 serde_json = "1"
+image = { version = "0.25", default-features = false, features = ["png"] }

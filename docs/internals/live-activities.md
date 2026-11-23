@@ -16,7 +16,8 @@ Decisions behind [Live Activities](../user/live-activities.md). Nothing polls.
 - **A headset's model** comes from the product ids in its profile nodes' instance ids, read with the rest from
   Configuration Manager, and is looked up in `devices/catalog.toml`, compiled in; the name is only a fallback,
   since users rename their devices. Connecting opens with a card that has the notch to itself for 3 s, then
-  shrinks to the row for its 3 s; a low battery brings back only the row. See
+  shrinks to the row for its 3 s; a low battery brings back only the row. The card plays its picture's turntable
+  once (1.4 s, its redraws booked about 60 a second) and then holds the first view, so nothing repaints after. See
   [Headsets and the device catalog](../operations/devices.md).
 - **AirPods and Beats** report each bud and the case only in Apple's Bluetooth LE broadcasts (manufacturer
   data, proximity pairing); Windows gives one battery at most. A passive scan listens for 8 s as an Apple

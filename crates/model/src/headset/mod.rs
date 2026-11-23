@@ -3,11 +3,12 @@
 
 pub mod apple;
 pub mod catalog;
+pub mod spin;
 
 use serde::{Deserialize, Serialize};
 
 /// The shape a headset is drawn as when the catalog has no picture of its own.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Form {
     /// Earbuds with a stem, like AirPods.

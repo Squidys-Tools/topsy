@@ -3,6 +3,7 @@
 //! (`TOPSY_FAKE_DEVICE`), and *Add my headset*, which hands what topsy sees of the user's
 //! devices to a coding agent to add them to the catalog. Their Live Activity is in `activity`.
 
+pub mod art;
 pub mod report;
 
 use std::sync::OnceLock;
