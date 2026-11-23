@@ -13,7 +13,7 @@ use gpui::{App, Context, Entity};
 
 use crate::autostart::RegString;
 use crate::log::LogErr;
-use crate::win32::earbuds;
+use crate::win32::earbuds::{self, Change};
 use crate::{Island, log};
 use model::activity::{Activities, Activity, Key};
 
@@ -23,6 +23,13 @@ static ENABLED: AtomicBool = AtomicBool::new(true);
 pub enum Event {
     Set(Key, Activity),
     Remove(Key),
+    /// A connected device's battery changed.
+    Battery {
+        key: Key,
+        name: String,
+        was: Option<u8>,
+        percent: u8,
+    },
 }
 
 /// What the island does when the activities say so.
@@ -62,15 +69,19 @@ pub fn start(cx: &mut App, island: &Entity<Island>) {
     downloads::watch(events.clone());
     earbuds::watch(move |seen| {
         let key = Key::Device(seen.container);
-        let activity = if seen.connected {
-            Activity::Connected {
-                name: seen.name,
-                battery: seen.battery,
-            }
-        } else {
-            Activity::Disconnected { name: seen.name }
+        let (name, battery) = (seen.name, seen.battery);
+        let event = match (seen.change, battery) {
+            (Change::Connected, _) => Event::Set(key, Activity::Connected { name, battery }),
+            (Change::Disconnected, _) => Event::Set(key, Activity::Disconnected { name }),
+            (Change::Battery { was }, Some(percent)) => Event::Battery {
+                key,
+                name,
+                was,
+                percent,
+            },
+            (Change::Battery { .. }, None) => return,
         };
-        events.try_send(Event::Set(key, activity)).log_err();
+        events.try_send(event).log_err();
     });
     crate::app::forward(cx, island, heard, |island, event, cx| {
         island.update_activities(cx, |activity| activity.hear(event, Instant::now()));
@@ -90,6 +101,17 @@ impl State {
             Event::Remove(key) => {
                 log(&format!("activity {key:?} gone"));
                 self.list.remove(&key);
+            }
+            Event::Battery {
+                key,
+                name,
+                was,
+                percent,
+            } => {
+                log(&format!("activity {key:?} battery {was:?} -> {percent}"));
+                if !self.list.battery(key, name, was, percent, now) {
+                    return None;
+                }
             }
         }
         Some(Effect::Changed(now))

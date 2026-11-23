@@ -68,11 +68,14 @@ impl BatteryWatch {
             }
             return (percent == 100 && last.percent < 100).then_some(Battery::Full);
         }
-        let crossed = LOW
-            .iter()
-            .any(|&mark| percent < mark && (last.percent >= mark || last.plugged));
-        crossed.then_some(Battery::Low(percent))
+        let crossed = last.plugged && LOW.iter().any(|&mark| percent < mark);
+        (crossed || fell_low(last.percent, percent)).then_some(Battery::Low(percent))
     }
+}
+
+/// A battery going from `was` to `now` percent just fell below a low mark.
+pub fn fell_low(was: u8, now: u8) -> bool {
+    LOW.iter().any(|&mark| now < mark && was >= mark)
 }
 
 #[cfg(test)]

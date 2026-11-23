@@ -1,13 +1,15 @@
 //! Bluetooth audio coming and going. An `IMMNotificationClient` hears an output endpoint turn
 //! active or go away and hands its id to a thread of its own, which asks Configuration Manager
 //! whether the endpoint's device container is a Bluetooth one, for its name, and for its
-//! battery where Windows knows it, asking once more a moment later if it didn't yet. Nothing
-//! polls.
+//! battery where Windows knows it. While the device stays connected, a `DeviceWatcher` on its
+//! container says when a node's battery changes. Nothing polls.
 
+use std::collections::HashMap;
 use std::sync::mpsc;
-use std::time::{Duration, Instant};
 
 use crate::log::LogErr;
+use windows::Devices::Enumeration::{DeviceInformation, DeviceInformationKind, DeviceWatcher};
+use windows::Foundation::TypedEventHandler;
 use windows::Win32::Devices::DeviceAndDriverInstallation::{
     CM_GETIDLIST_FILTER_ENUMERATOR, CM_Get_DevNode_PropertyW, CM_Get_Device_ID_List_SizeW,
     CM_Get_Device_ID_ListW, CM_LOCATE_DEVNODE_PHANTOM, CM_Locate_DevNodeW, CR_SUCCESS,
@@ -23,7 +25,8 @@ use windows::Win32::System::Com::{
     CLSCTX_ALL, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx, STGM_READ,
 };
 use windows::Win32::System::Variant::VT_CLSID;
-use windows::core::{GUID, HSTRING, Interface, PCWSTR, implement};
+use windows::core::{GUID, HSTRING, Interface, PCWSTR, RuntimeType, implement};
+use windows_collections::IIterable;
 
 const CONTAINER: GUID = GUID::from_u128(0x8c7ed206_3f8a_4827_b3ab_ae9e1faefc6c);
 const FRIENDLY: GUID = GUID::from_u128(0xa45c254e_df1c_4efd_8020_67d146a850e0);
@@ -36,27 +39,50 @@ const BATTERY: DEVPROPKEY = DEVPROPKEY {
     fmtid: GUID::from_u128(0x104ea319_6ee2_4701_bd47_8ddbf425bbe5),
     pid: 2,
 };
-/// Inside the activity's 3 s linger, so a late battery updates it in place.
-const RECHECK: Duration = Duration::from_secs(2);
+/// `BATTERY` as `DeviceInformation` names a property.
+const BATTERY_NAME: &str = "{104EA319-6EE2-4701-BD47-8DDBF425BBE5} 2";
 const ENUMERATORS: [&str; 4] = ["BTHENUM", "BTHLE", "BTHHFENUM", "BTHLEDEVICE"];
 
-/// One Bluetooth output device arriving or leaving.
+/// One Bluetooth output device arriving, leaving, or its battery changing.
 pub struct Seen {
     /// Its container id, the same for its every endpoint.
     pub container: String,
     pub name: String,
     pub battery: Option<u8>,
-    pub connected: bool,
+    pub change: Change,
+}
+
+pub enum Change {
+    Connected,
+    Disconnected,
+    /// Still connected, its battery no longer what it was.
+    Battery {
+        was: Option<u8>,
+    },
+}
+
+enum Heard {
+    /// An audio endpoint changed state.
+    Endpoint(String, DEVICE_STATE),
+    /// A node in this watched container was added, changed or removed.
+    Container(String),
+}
+
+/// A connected device: the endpoint it was first heard on, and what its battery last was.
+struct Watched {
+    endpoint: String,
+    battery: Option<u8>,
+    watcher: Option<DeviceWatcher>,
 }
 
 #[implement(IMMNotificationClient)]
-struct Client(mpsc::Sender<(String, DEVICE_STATE)>);
+struct Client(mpsc::Sender<Heard>);
 
 impl IMMNotificationClient_Impl for Client_Impl {
     fn OnDeviceStateChanged(&self, id: &PCWSTR, state: DEVICE_STATE) -> windows::core::Result<()> {
         // SAFETY: the id is valid for this call.
         if let Ok(id) = unsafe { id.to_string() } {
-            self.0.send((id, state)).log_err();
+            self.0.send(Heard::Endpoint(id, state)).log_err();
         }
         Ok(())
     }
@@ -89,7 +115,7 @@ pub fn watch(report: impl Fn(Seen) + Send + 'static) {
                 CoInitializeEx(None, COINIT_MULTITHREADED).ok().log_err();
                 CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL)
                     .and_then(|devices| {
-                        let client: IMMNotificationClient = Client(tx).into();
+                        let client: IMMNotificationClient = Client(tx.clone()).into();
                         devices.RegisterEndpointNotificationCallback(&client)?;
                         Ok((devices, client))
                     })
@@ -98,43 +124,59 @@ pub fn watch(report: impl Fn(Seen) + Send + 'static) {
                 Ok(devices) => devices,
                 Err(err) => return eprintln!("topsy: no audio device events: {err}"),
             };
-            let mut recheck: Vec<(String, Instant)> = Vec::new();
-            loop {
-                let wait = recheck
-                    .iter()
-                    .map(|(_, at)| *at)
-                    .min()
-                    .map_or(Duration::MAX, |at| {
-                        at.saturating_duration_since(Instant::now())
-                    });
-                let (id, state) = match rx.recv_timeout(wait) {
-                    Ok(event) => event,
-                    Err(mpsc::RecvTimeoutError::Timeout) => {
-                        let now = Instant::now();
-                        for (id, _) in recheck.extract_if(.., |(_, at)| *at <= now) {
-                            // SAFETY: COM calls on the thread that created `devices`.
-                            if let Some(seen) = unsafe { look_up(&devices, &id, true) }
-                                && seen.battery.is_some()
-                            {
-                                report(seen);
+            let mut watched: HashMap<String, Watched> = HashMap::new();
+            for heard in rx {
+                match heard {
+                    Heard::Endpoint(id, state) => {
+                        let change = match state {
+                            DEVICE_STATE_ACTIVE => Change::Connected,
+                            DEVICE_STATE_NOTPRESENT | DEVICE_STATE_UNPLUGGED => {
+                                Change::Disconnected
                             }
+                            _ => continue,
+                        };
+                        // SAFETY: COM calls on the thread that created `devices`.
+                        let Some(seen) = (unsafe { look_up(&devices, &id, change) }) else {
+                            continue;
+                        };
+                        match seen.change {
+                            Change::Disconnected => {
+                                if let Some(gone) = watched.remove(&seen.container)
+                                    && let Some(watcher) = gone.watcher
+                                {
+                                    watcher.Stop().log_err();
+                                }
+                            }
+                            Change::Connected if !watched.contains_key(&seen.container) => {
+                                let watcher = watch_container(&seen.container, &tx).log_err();
+                                let battery = seen.battery;
+                                let endpoint = id;
+                                let device = Watched {
+                                    endpoint,
+                                    battery,
+                                    watcher,
+                                };
+                                watched.insert(seen.container.clone(), device);
+                            }
+                            Change::Connected | Change::Battery { .. } => {}
                         }
-                        continue;
+                        report(seen);
                     }
-                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
-                };
-                let connected = match state {
-                    DEVICE_STATE_ACTIVE => true,
-                    DEVICE_STATE_NOTPRESENT | DEVICE_STATE_UNPLUGGED => false,
-                    _ => continue,
-                };
-                recheck.retain(|(pending, _)| *pending != id);
-                // SAFETY: COM calls on the thread that created `devices`.
-                if let Some(seen) = unsafe { look_up(&devices, &id, connected) } {
-                    if connected && seen.battery.is_none() {
-                        recheck.push((id, Instant::now() + RECHECK));
+                    Heard::Container(container) => {
+                        let Some(device) = watched.get_mut(&container) else {
+                            continue;
+                        };
+                        // SAFETY: COM calls on the thread that created `devices`.
+                        let was = device.battery;
+                        if let Some(seen) =
+                            unsafe { look_up(&devices, &device.endpoint, Change::Battery { was }) }
+                            && seen.battery.is_some()
+                            && seen.battery != was
+                        {
+                            device.battery = seen.battery;
+                            report(seen);
+                        }
                     }
-                    report(seen);
                 }
             }
         });
@@ -143,8 +185,39 @@ pub fn watch(report: impl Fn(Seen) + Send + 'static) {
     }
 }
 
+/// Watch the device nodes in `container` for their battery: the first enumeration, and every
+/// change Windows hears after, wake the thread to read it again.
+fn watch_container(
+    container: &str,
+    wake: &mpsc::Sender<Heard>,
+) -> windows::core::Result<DeviceWatcher> {
+    let filter = HSTRING::from(format!("System.Devices.ContainerId:=\"{{{container}}}\""));
+    let properties = IIterable::from(vec![HSTRING::from(BATTERY_NAME)]);
+    let watcher = DeviceInformation::CreateWatcherWithKindAqsFilterAndAdditionalProperties(
+        &filter,
+        &properties,
+        DeviceInformationKind::Device,
+    )?;
+    watcher.Added(&waker(wake, container))?;
+    watcher.Updated(&waker(wake, container))?;
+    watcher.Removed(&waker(wake, container))?;
+    watcher.Start()?;
+    Ok(watcher)
+}
+
+fn waker<A: RuntimeType + 'static, B: RuntimeType + 'static>(
+    wake: &mpsc::Sender<Heard>,
+    container: &str,
+) -> TypedEventHandler<A, B> {
+    let (wake, container) = (wake.clone(), container.to_owned());
+    TypedEventHandler::new(move |_, _| {
+        wake.send(Heard::Container(container.clone())).log_err();
+        Ok(())
+    })
+}
+
 /// The endpoint `id` as a Bluetooth output, or `None` if it isn't one.
-unsafe fn look_up(devices: &IMMDeviceEnumerator, id: &str, connected: bool) -> Option<Seen> {
+unsafe fn look_up(devices: &IMMDeviceEnumerator, id: &str, change: Change) -> Option<Seen> {
     unsafe {
         let device = devices.GetDevice(&HSTRING::from(id)).ok()?;
         if device.cast::<IMMEndpoint>().ok()?.GetDataFlow().ok()? != eRender {
@@ -170,7 +243,7 @@ unsafe fn look_up(devices: &IMMDeviceEnumerator, id: &str, connected: bool) -> O
             container: format!("{container:?}"),
             name: name.or(endpoint_name)?,
             battery,
-            connected,
+            change,
         })
     }
 }

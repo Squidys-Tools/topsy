@@ -6,6 +6,7 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+use crate::hud::fell_low;
 use crate::pomodoro::Phase;
 
 /// How many show at once, side by side.
@@ -82,6 +83,26 @@ impl Activities {
                 until,
             },
         );
+    }
+
+    /// A connected device's battery moved from `was` to `percent`: a showing activity updates in
+    /// place, and a gone one comes back only when the battery falls below a low mark. True if
+    /// anything changed.
+    pub fn battery(
+        &mut self,
+        key: Key,
+        name: String,
+        was: Option<u8>,
+        percent: u8,
+        now: Instant,
+    ) -> bool {
+        let shown = self.entries.iter().any(|e| e.key == key);
+        let worth = shown || was.is_some_and(|was| fell_low(was, percent));
+        if worth {
+            let battery = Some(percent);
+            self.set(key, Activity::Connected { name, battery }, now);
+        }
+        worth
     }
 
     /// Take one away at once (a cancelled download).
@@ -202,10 +223,38 @@ mod tests {
         };
         a.set(key.clone(), connected.clone(), t);
         let later = t + Duration::from_secs(2);
-        a.set(key, connected, later);
+        a.set(key.clone(), connected, later);
         assert_eq!(names(&a), ["Buds"]);
         assert!(!a.expire(t + LINGER));
+        assert!(a.battery(key.clone(), "Buds".into(), None, 80, later));
+        assert_eq!(
+            a.shown().next(),
+            Some((
+                &key,
+                &Activity::Connected {
+                    name: "Buds".into(),
+                    battery: Some(80)
+                }
+            )),
+            "a late battery updates it in place"
+        );
         assert!(a.expire(later + LINGER));
+    }
+
+    #[test]
+    fn a_connected_device_comes_back_only_when_its_battery_falls_low() {
+        let t = Instant::now();
+        let mut a = Activities::default();
+        let key = Key::Device("{c0}".into());
+        let mut battery = |was, percent| a.battery(key.clone(), "Buds".into(), was, percent, t);
+        assert!(!battery(None, 50), "a first reading after it passed");
+        assert!(!battery(Some(50), 40));
+        assert!(!battery(Some(30), 20));
+        assert!(battery(Some(20), 10));
+        assert_eq!(names(&a), ["Buds"]);
+        a.expire(t + LINGER);
+        assert!(!a.battery(key.clone(), "Buds".into(), Some(10), 10, t + LINGER));
+        assert!(a.battery(key, "Buds".into(), Some(10), 0, t + LINGER));
     }
 
     #[test]
