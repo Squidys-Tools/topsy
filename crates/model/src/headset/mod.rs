@@ -1,6 +1,7 @@
 //! Bluetooth headsets: who a device is (its product ids, Bluetooth class and name), which shape
 //! draws it, and what its batteries are at. The catalog of known models is in [`catalog`].
 
+pub mod apple;
 pub mod catalog;
 
 use serde::{Deserialize, Serialize};
