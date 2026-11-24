@@ -165,6 +165,9 @@ Rules for new and touched code. Don't sweep old code to match.
 - Behaviour on the real desktop gets one local pass, one check at a time, with the live check for that area
   ([Live checks](docs/operations/live-checks.md)). Judge focus and footprint on a release build only: a debug
   build is a console app and its console takes focus.
+- A live check that needs media can make a session without sound or focus: a hidden Windows PowerShell 5.1
+  process with a WinRT `MediaPlayer` at volume 0, a `MediaPlaybackItem` with display properties, and a thumbnail
+  from `StorageFile` (a file-URI thumbnail never reaches the shared media session).
 
 ## Pull requests
 
