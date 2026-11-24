@@ -54,6 +54,7 @@ pub mod shelf;
 pub mod size_search;
 pub mod spring;
 pub mod stats;
+pub mod stay_awake;
 pub mod transform;
 pub mod transform_card;
 pub mod tray_cause;

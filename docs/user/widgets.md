@@ -15,6 +15,9 @@ capsule under the notch or a sideways swipe (see [The notch](notch.md)).
 - **Audio**: a volume slider for every app playing sound, after Droppy's Audio Control. Drag an app's slider to
   set its volume, or click the speaker beside it to mute it; moving a muted app's slider unmutes it. It is the
   same volume as in Windows' volume mixer, so a change in either shows in both.
+- **Stay Awake**: keeps the computer and its screen from going to sleep, after Droppy's. Pick how long (∞ for
+  until you turn it off, or 30 minutes, 1 or 2 hours), then click the mug. Click it again to stop early; picking
+  another length while it is on starts that length over from now.
 
 A drag or a drop opens the tray on the shelf; the capsule turns back to the widgets.
 
@@ -36,5 +39,8 @@ to begin with; turn every one off (with nothing playing) to get the plain tray b
   Forecasts come from [Open-Meteo](https://open-meteo.com) (data CC BY 4.0), at most every 30 minutes,
   sending your position rounded to about a kilometre. Fahrenheit or Celsius follows your region's measurement
   system.
+- **Stay Awake** is off until you turn it on in the settings. It asks Windows to stay awake the way a video
+  player does, and lets go when its time is up, when you switch the widget off, or when topsy quits. Closing a
+  laptop's lid or choosing *Sleep* still puts it to sleep.
 - The Pomodoro's chime and message come from a timer set for the end of the session, so nothing ticks while the
   tray is folded. Quitting topsy stops the timer.
