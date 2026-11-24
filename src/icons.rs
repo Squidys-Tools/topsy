@@ -73,6 +73,7 @@ icons! {
     Resize => "resize",
     Rotate => "rotate",
     Search => "search",
+    Shrink => "shrink",
     Snow => "snow",
     Speaker => "speaker",
     Star => "star",

@@ -46,6 +46,11 @@ Keep this honest: remove a gap you close, add one you find and leave.
   track. Two sessions of one app (two browser tabs) are told apart by their order, so a tab closing can move a
   switch to its neighbour. Not checked on the desktop yet: apps that report art late or not at all, and an app that
   never answers a button.
+- **Floating player.** No lyrics, *Playing Next* queue or motion art, as Droppy's has: the media session
+  Windows shares tells none of them. It stays up over a fullscreen app, and a swipe skips only from a touchpad
+  and not over its buttons. Dragged to a monitor of another DPI, it relies on GPUI's DPI-change handling as the
+  basket does; untested. The tray's button shows whether it is out as of the tray's last redraw. Dragging it
+  back onto the notch doesn't put it away; its cross does.
 - **Clipboard history.** If another app holds Ctrl+Alt+V the palette can't open (logged), and the hotkey can't be
   changed. Paste sends Ctrl+V, which a terminal that pastes on Ctrl+Shift+V ignores (the entry is still on the
   clipboard). Rich text and HTML are kept as plain text. The cap counts entries, not bytes, so a long history of

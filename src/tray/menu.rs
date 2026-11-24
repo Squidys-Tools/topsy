@@ -25,6 +25,8 @@ pub(super) struct Counts {
     pub shelf: usize,
     pub basket: usize,
     pub clipboard: bool,
+    /// Whether the floating player is out; none without Now Playing.
+    pub player: Option<bool>,
 }
 
 /// What foreground does as the menu closes.
@@ -84,8 +86,9 @@ pub fn open(cx: &mut App, at: (i32, i32), previous: usize) {
         shelf: super::shelf_count(),
         basket: super::basket_count(),
         clipboard: clipboard::is_enabled(),
+        player: super::player(),
     };
-    let lines = lines();
+    let lines = lines(counts.player);
     let size_px = (WIDTH, height(&lines));
     let to_px = |v: f32| (v * scale).round() as i32;
     let origin = menu::place(at, (to_px(size_px.0), to_px(size_px.1)), work);
@@ -158,6 +161,7 @@ impl Menu {
             Item::Basket => self.counts.basket > 0,
             Item::Clipboard => self.counts.clipboard,
             Item::Show
+            | Item::Player(_)
             | Item::Options
             | Item::Settings
             | Item::AddHeadset
@@ -335,6 +339,7 @@ impl Menu {
             Item::Show => (Hand::Back, TrayEvent::Show),
             Item::Clear => (Hand::Back, TrayEvent::ClearShelf),
             Item::Basket => (Hand::Back, TrayEvent::ShowBasket),
+            Item::Player(_) => (Hand::Back, TrayEvent::Player),
             Item::Clipboard => (Hand::Keep, TrayEvent::Clipboard(previous)),
             Item::Options => {
                 self.highlight = self.lines.iter().position(|l| *l == Line::Item(item));

@@ -63,6 +63,10 @@ impl Island {
                 }
             }
             TrayEvent::AddHeadset => headset::report::start(),
+            TrayEvent::Player => self.update_media(cx, |media, _, cx| {
+                media.toggle_floating(cx);
+                None
+            }),
             TrayEvent::Update => update::restart(cx),
             TrayEvent::Quit => cx.quit(),
         }
@@ -98,6 +102,10 @@ impl Island {
                 if let Some(basket) = self.basket.clone() {
                     basket.update(cx, |basket, cx| basket.set_black(on, cx));
                 }
+                self.update_media(cx, |media, _, cx| {
+                    media.set_black(on, cx);
+                    None
+                });
             }
             Setting::LiveGlass => self.frame.set_live_lens(on),
             // Switched off, what is on screen goes now.
@@ -216,24 +224,32 @@ pub fn run() {
         // Refused drags report here, so a tray or basket opened for a payload the island can't
         // take (the hook can't tell text from files) folds it away.
         let (refuse_tx, refuse_rx) = async_channel::bounded(4);
-        let window = open_glass(cx, bounds, glass, black, refuse_tx, previous_foreground, {
-            move |hwnd, glass, backdrop, window, cx| {
-                let scale = window.scale_factor();
-                let backdrop = match (backdrop, hwnd) {
-                    (Some(backdrop), Some(hwnd)) if config.lens != Lens::Off => {
-                        let live = match config.lens {
-                            Lens::Snapshot => false,
-                            Lens::Live => true,
-                            Lens::Setting | Lens::Off => look::is_live_lens(),
-                        };
-                        Some(backdrop.with_lens(hwnd, live, cx))
-                    }
-                    (backdrop, _) => backdrop,
-                };
-                let frame = Frame::new(hwnd, scale, glass, black, backdrop);
-                cx.new(move |_| Island::new(hwnd, scale, frame, persistence))
-            }
-        });
+        let window = open_glass(
+            cx,
+            bounds,
+            glass,
+            black,
+            Some(refuse_tx),
+            previous_foreground,
+            {
+                move |hwnd, glass, backdrop, window, cx| {
+                    let scale = window.scale_factor();
+                    let backdrop = match (backdrop, hwnd) {
+                        (Some(backdrop), Some(hwnd)) if config.lens != Lens::Off => {
+                            let live = match config.lens {
+                                Lens::Snapshot => false,
+                                Lens::Live => true,
+                                Lens::Setting | Lens::Off => look::is_live_lens(),
+                            };
+                            Some(backdrop.with_lens(hwnd, live, cx))
+                        }
+                        (backdrop, _) => backdrop,
+                    };
+                    let frame = Frame::new(hwnd, scale, glass, black, backdrop);
+                    cx.new(move |_| Island::new(hwnd, scale, frame, persistence))
+                }
+            },
+        );
         // Without its window the island can't exist; there is nothing to run.
         let Some(island) = window
             .log_err()
@@ -252,7 +268,7 @@ pub fn run() {
             tiny,
             glass,
             black,
-            basket_refuse_tx,
+            Some(basket_refuse_tx),
             previous_foreground,
             {
                 move |hwnd, glass, backdrop, window, cx| {
@@ -347,7 +363,7 @@ pub fn run() {
         forward(cx, &island, win32::escape::presses(), |island, (), cx| {
             island.fold(cx)
         });
-        crate::now_playing::start(cx, &island);
+        crate::now_playing::start(cx, &island, glass, black, previous_foreground);
         crate::hud::start(cx, &island);
         activity::start(cx, &island);
         update::start(cx, &island);

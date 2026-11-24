@@ -8,26 +8,20 @@
 //! on the media app. Nothing runs between events.
 
 use std::collections::HashMap;
+use std::sync::OnceLock;
 use std::sync::mpsc;
-use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use gpui::RenderImage;
-use image::{Frame, RgbaImage};
 use windows::Foundation::TypedEventHandler;
-use windows::Graphics::Imaging::{
-    BitmapAlphaMode, BitmapBounds, BitmapDecoder, BitmapInterpolationMode, BitmapPixelFormat,
-    BitmapTransform, ColorManagementMode, ExifOrientationMode,
-};
 use windows::Media::Control::{
     GlobalSystemMediaTransportControlsSession as Session,
     GlobalSystemMediaTransportControlsSessionManager as Manager,
-    GlobalSystemMediaTransportControlsSessionMediaProperties as Properties,
     GlobalSystemMediaTransportControlsSessionPlaybackStatus as PlaybackStatus,
 };
 use windows::Win32::System::Com::COINIT_MULTITHREADED;
 
 use crate::log::LogErr;
+use crate::now_playing::art::{self, Art, ArtSizes};
 use crate::win32;
 use model::media::{Controls, Event, Status, Timeline, Track};
 use model::sessions::{self, Sessions, Source};
@@ -39,16 +33,12 @@ pub enum Button {
     Next,
 }
 
-/// An event for the island, with the track's art when the event is a track.
+/// An event for the island and the floating player, with the track's art when the event is a
+/// track.
+#[derive(Clone)]
 pub struct Update {
     pub event: Event,
     pub art: Option<Art>,
-}
-
-/// A track's art, and the colour Now Playing's bars take from it.
-pub struct Art {
-    pub image: Arc<RenderImage>,
-    pub accent: Option<[u8; 3]>,
 }
 
 enum Wake {
@@ -64,9 +54,8 @@ enum Wake {
 
 static WAKE: OnceLock<mpsc::Sender<Wake>> = OnceLock::new();
 
-/// Watch the media sessions on a thread of its own. `art_size` is the art's shorter
-/// side in physical pixels.
-pub fn spawn(art_size: u32) -> async_channel::Receiver<Update> {
+/// Watch the media sessions on a thread of its own.
+pub fn spawn(art_size: ArtSizes) -> async_channel::Receiver<Update> {
     let (tx, rx) = async_channel::unbounded();
     let (wake, woken) = mpsc::channel();
     if WAKE.set(wake.clone()).is_err() {
@@ -171,7 +160,7 @@ struct Watch<'a> {
     manager: Manager,
     wake: &'a mpsc::Sender<Wake>,
     tx: &'a async_channel::Sender<Update>,
-    art_size: u32,
+    art_size: ArtSizes,
     tracked: Vec<Tracked>,
     sessions: Sessions,
     shown: Option<Watched>,
@@ -305,7 +294,7 @@ fn run(
     tx: &async_channel::Sender<Update>,
     wake: &mpsc::Sender<Wake>,
     woken: &mpsc::Receiver<Wake>,
-    art_size: u32,
+    art_size: ArtSizes,
 ) -> windows::core::Result<()> {
     let manager = Manager::RequestAsync()?.join()?;
     manager.CurrentSessionChanged(&handler(wake, || Wake::Sessions))?;
@@ -371,7 +360,7 @@ fn run(
     Ok(())
 }
 
-fn track(session: &Session, art_size: u32) -> (Track, Option<Art>) {
+fn track(session: &Session, art_size: ArtSizes) -> (Track, Option<Art>) {
     let Ok(props) = session
         .TryGetMediaPropertiesAsync()
         .and_then(|op| op.join())
@@ -382,7 +371,7 @@ fn track(session: &Session, art_size: u32) -> (Track, Option<Art>) {
         s.map(|s| s.to_string_lossy()).unwrap_or_default()
     };
     let track = Track::new(&text(props.Title()), &text(props.Artist()));
-    (track, art(&props, art_size).ok())
+    (track, art::read(&props, art_size).ok())
 }
 
 /// `None` while the app is between tracks (`Changing`): what it reports next stands, and the
@@ -451,46 +440,4 @@ fn timeline(session: &Session) -> Option<Event> {
         length: ticks(end - start),
         at: now.checked_sub(age).unwrap_or(now),
     })))
-}
-
-/// The track's art, decoded and scaled down (never up) so its shorter side is `size`, and
-/// cropped to a centred square: GPUI draws a covering image past its box (a video's 16:9
-/// thumbnail spilled out of the notch).
-fn art(props: &Properties, size: u32) -> windows::core::Result<Art> {
-    let stream = props.Thumbnail()?.OpenReadAsync()?.join()?;
-    let decoder = BitmapDecoder::CreateAsync(&stream)?.join()?;
-    let (w, h) = (decoder.PixelWidth()?, decoder.PixelHeight()?);
-    let scale = (size as f32 / w.min(h).max(1) as f32).min(1.0);
-    let (w, h) = (
-        ((w as f32 * scale).round() as u32).max(1),
-        ((h as f32 * scale).round() as u32).max(1),
-    );
-    let transform = BitmapTransform::new()?;
-    transform.SetScaledWidth(w)?;
-    transform.SetScaledHeight(h)?;
-    transform.SetInterpolationMode(BitmapInterpolationMode::Fant)?;
-    let side = w.min(h);
-    transform.SetBounds(BitmapBounds {
-        X: (w - side) / 2,
-        Y: (h - side) / 2,
-        Width: side,
-        Height: side,
-    })?;
-    let (w, h) = (side, side);
-    let pixels = decoder
-        .GetPixelDataTransformedAsync(
-            BitmapPixelFormat::Bgra8,
-            BitmapAlphaMode::Straight,
-            &transform,
-            ExifOrientationMode::IgnoreExifOrientation,
-            ColorManagementMode::DoNotColorManage,
-        )?
-        .join()?
-        .DetachPixelData()?;
-    // GPUI's images are BGRA with straight alpha, whatever the buffer's type says.
-    let pixels = pixels.to_vec();
-    let accent = model::levels::accent(&pixels);
-    let buffer = RgbaImage::from_raw(w, h, pixels).ok_or_else(windows::core::Error::empty)?;
-    let image = Arc::new(RenderImage::new(vec![Frame::new(buffer)]));
-    Ok(Art { image, accent })
 }

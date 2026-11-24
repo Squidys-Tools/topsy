@@ -170,6 +170,7 @@ impl Menu {
             Item::Show => Some(glyph(Icon::Tray, icon_color)),
             Item::Clear => Some(glyph(Icon::Close, icon_color)),
             Item::Basket => Some(glyph(Icon::Inbox, icon_color)),
+            Item::Player(_) => Some(glyph(Icon::Open, icon_color)),
             Item::Clipboard => Some(glyph(Icon::Copy, icon_color)),
             Item::Update(_) => Some(glyph(Icon::Download, rgb(GREEN))),
             Item::Options | Item::Settings | Item::AddHeadset | Item::Quit => None,
@@ -180,7 +181,7 @@ impl Menu {
             Item::Clipboard => Some(detail("Ctrl+Alt+V".into(), lit)),
             Item::Options => Some(glyph(Icon::ChevronRight, icon_color)),
             Item::Update(version) => Some(detail(version.short(), lit)),
-            Item::Clear | Item::Settings | Item::AddHeadset | Item::Quit => None,
+            Item::Clear | Item::Player(_) | Item::Settings | Item::AddHeadset | Item::Quit => None,
         };
         let row = row(
             SharedString::from(format!("item-{at}")),

@@ -7,6 +7,7 @@ use std::sync::OnceLock;
 use std::time::Duration;
 
 use crate::frame::{Glass, Mode};
+use model::player::Size;
 
 /// The open notch's lens glass, as `TOPSY_LENS` asks.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -41,6 +42,9 @@ pub struct Config {
     /// `TOPSY_NO_WIDGETS`: no shelf widgets in the tray, whatever the lineup says, so the live
     /// checks find the shelf where they expect it.
     pub no_widgets: bool,
+    /// `TOPSY_PLAYER=mini|player|expanded`: open the floating player at startup at this size,
+    /// in the middle of the screen, leaving the saved one alone.
+    pub player: Option<Size>,
     /// `TOPSY_DEMO`: open and fold on a timer, to watch the motion without a mouse.
     pub demo: bool,
     /// `TOPSY_SEED=path;path`: files put on the shelf at startup.
@@ -96,6 +100,7 @@ impl Config {
             no_media: var("TOPSY_NO_MEDIA").is_some(),
             no_keys: var("TOPSY_NO_KEYS").is_some(),
             no_widgets: var("TOPSY_NO_WIDGETS").is_some(),
+            player: text("TOPSY_PLAYER").and_then(|v| Size::parse(&v)),
             demo: var("TOPSY_DEMO").is_some(),
             seed: var("TOPSY_SEED").map(|s| std::env::split_paths(&s).collect()),
             transform: var("TOPSY_TRANSFORM").map(|s| std::env::split_paths(&s).collect()),
@@ -141,8 +146,11 @@ mod tests {
         assert!(config(&[("TOPSY_NO_MEDIA", "1")]).no_media);
         assert!(c.seed.is_none() && c.exit_after.is_none() && c.state.is_none());
         assert!(c.transform.is_none() && c.replaces.is_none() && c.fake_device.is_none());
+        assert!(c.player.is_none());
         let fake = config(&[("TOPSY_FAKE_DEVICE", "buds:L80,R75")]).fake_device;
         assert_eq!(fake.as_deref(), Some("buds:L80,R75"));
+        assert_eq!(config(&[("TOPSY_PLAYER", "mini")]).player, Some(Size::Mini));
+        assert_eq!(config(&[("TOPSY_PLAYER", "huge")]).player, None);
         assert_eq!(config(&[("TOPSY_REPLACES", "4242")]).replaces, Some(4242));
         assert_eq!(c.lens, Lens::Setting);
         assert_eq!(config(&[("TOPSY_LENS", "off")]).lens, Lens::Off);
