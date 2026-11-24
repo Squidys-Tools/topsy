@@ -6,13 +6,13 @@
 //! shifted so the part behind the window lines up with it. Unlike the host backdrop, its blur is
 //! ours to choose. A faint fixed grain over it, as on acrylic, keeps large flat areas from
 //! banding and reads as material. DWM does the work; topsy only moves the visual when the window
-//! moves.
+//! moves, or when the displays change and the virtual screen with them.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::ffi::c_void;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
-use windows::Win32::Foundation::{HMODULE, HWND, RECT, SIZE};
+use windows::Win32::Foundation::{HMODULE, HWND, LPARAM, LRESULT, RECT, SIZE, WPARAM};
 use windows::Win32::Graphics::Direct2D::Common::{
     D2D1_BORDER_MODE_HARD, D2D1_TURBULENCE_NOISE_FRACTAL_SUM,
 };
@@ -24,16 +24,19 @@ use windows::Win32::Graphics::DirectComposition::{
 use windows::Win32::Graphics::Dwm::{
     DWMWA_CLOAK, DWMWA_USE_HOSTBACKDROPBRUSH, DwmSetWindowAttribute, DwmUnregisterThumbnail,
 };
-use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
+use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress, LoadLibraryW};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, GetSystemMetrics, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN,
-    SM_YVIRTUALSCREEN, SW_SHOWNOACTIVATE, ShowWindow, WINDOW_STYLE, WS_EX_TOOLWINDOW,
+    CreateWindowExW, DefWindowProcW, GetSystemMetrics, RegisterClassW, SM_CXVIRTUALSCREEN,
+    SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SW_SHOWNOACTIVATE, ShowWindow,
+    WINDOW_STYLE, WM_DISPLAYCHANGE, WNDCLASSW, WS_EX_TOOLWINDOW,
 };
 use windows::core::{BOOL, Error, HRESULT, IUnknown, Interface, PCSTR, s, w};
 use windows_numerics::{Vector2, Vector4};
 
 use super::BLUR;
+use super::lens::park_mirror;
 use super::{Outline, SATURATION};
+use crate::log;
 use crate::log::LogErr;
 
 /// The grain: how much of the noise is added, how fine (cycles per physical pixel), and how
@@ -83,6 +86,58 @@ pub(super) struct Shared {
 
 impl gpui::Global for Shared {}
 
+thread_local! {
+    /// Everything lined up by the virtual screen, on the UI thread, set again when it changes.
+    static ALIGNED: RefCell<Aligned> = RefCell::default();
+}
+
+#[derive(Default)]
+struct Aligned {
+    panes: Vec<Weak<Parts>>,
+    mirrors: Vec<HWND>,
+}
+
+/// A lens's mirror, to keep beside the screens when they change.
+pub(super) fn track_mirror(window: HWND) {
+    ALIGNED.with_borrow_mut(|aligned| aligned.mirrors.push(window));
+}
+
+pub(super) fn untrack_mirror(window: HWND) {
+    ALIGNED.with_borrow_mut(|aligned| aligned.mirrors.retain(|&mirror| mirror != window));
+}
+
+/// The displays changed. Every glass lines up with the screen by the virtual screen's origin,
+/// which a monitor added, removed or moved can shift under a window that stays put.
+fn refit() {
+    log("displays changed; glass set again");
+    let (panes, mirrors) = ALIGNED.with_borrow_mut(|aligned| {
+        aligned.panes.retain(|pane| pane.strong_count() > 0);
+        let panes: Vec<_> = aligned.panes.iter().filter_map(Weak::upgrade).collect();
+        (panes, aligned.mirrors.clone())
+    });
+    for parts in panes {
+        if let Some((origin, scale, outline)) = parts.last.get() {
+            LiveShape(parts).set(origin, scale, outline);
+        }
+    }
+    for mirror in mirrors {
+        park_mirror(mirror);
+    }
+}
+
+/// The host window's procedure: a top-level window, so it hears of display changes.
+unsafe extern "system" fn host_proc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    if msg == WM_DISPLAYCHANGE {
+        refit();
+    }
+    unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+}
+
 /// An exported function of `module` by ordinal or name, as `F`.
 ///
 /// # Safety
@@ -119,9 +174,17 @@ fn shared(hwnd: HWND, cx: &mut gpui::App) -> windows::core::Result<Shared> {
         let set_attribute: SetWindowCompositionAttribute =
             export(user32, s!("SetWindowCompositionAttribute"))?;
 
+        let module = GetModuleHandleW(None)?;
+        let class = WNDCLASSW {
+            lpfnWndProc: Some(host_proc),
+            hInstance: module.into(),
+            lpszClassName: w!("topsy-glass"),
+            ..Default::default()
+        };
+        RegisterClassW(&class);
         let host = CreateWindowExW(
             WS_EX_TOOLWINDOW,
-            w!("STATIC"),
+            w!("topsy-glass"),
             w!("topsy glass"),
             WINDOW_STYLE(0),
             0,
@@ -130,7 +193,7 @@ fn shared(hwnd: HWND, cx: &mut gpui::App) -> windows::core::Result<Shared> {
             0,
             None,
             None,
-            None,
+            Some(module.into()),
             None,
         )?;
         DwmSetWindowAttribute(
@@ -251,7 +314,7 @@ fn pane(
         glass.AddVisual(&copy, false, None::<&IDCompositionVisual>)?;
         root.AddVisual(&glass, true, None::<&IDCompositionVisual>)?;
 
-        Ok(LiveShape(Rc::new(Parts {
+        let parts = Rc::new(Parts {
             device: device.clone(),
             update: shared.update,
             excluded: [hwnd, shared.host],
@@ -261,7 +324,10 @@ fn pane(
             source,
             blur,
             shown: Cell::new(None),
-        })))
+            last: Cell::new(None),
+        });
+        ALIGNED.with_borrow_mut(|aligned| aligned.panes.push(Rc::downgrade(&parts)));
+        Ok(LiveShape(parts))
     }
 }
 
@@ -277,6 +343,8 @@ struct Parts {
     blur: IDCompositionGaussianBlurEffect,
     /// The virtual screen and scale the copy was last made for.
     shown: Cell<Option<(RECT, f32)>>,
+    /// What it was last set to.
+    last: Cell<Option<Fit>>,
 }
 
 impl Drop for Parts {
@@ -285,12 +353,16 @@ impl Drop for Parts {
     }
 }
 
+/// The origin, scale and outline a pane was set to.
+type Fit = ((i32, i32), f32, Outline);
+
 #[derive(Clone)]
 pub struct LiveShape(Rc<Parts>);
 
 impl LiveShape {
     pub fn set(&self, origin: (i32, i32), scale: f32, outline: Outline) {
         let parts = &*self.0;
+        parts.last.set(Some((origin, scale, outline)));
         unsafe {
             let virtual_screen = RECT {
                 left: GetSystemMetrics(SM_XVIRTUALSCREEN),
