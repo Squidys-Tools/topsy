@@ -30,7 +30,8 @@ centred on zero so it lightens nothing, keeps large flat areas from banding, as 
 The open tray is Liquid Glass: what is behind it, bent by a soft round bevel toward its edge, blurred as much as
 the live glass, with a faint colour split and a lit rim (`src/backdrop/lens/`). No compositor effect displaces
 pixels, so this is a pixel shader of our own (HLSL, compiled at startup with `D3DCompile`), drawn with Direct3D 11
-into a composition swap chain. The hidden notch and the peek keep the compositor glass; so does the basket.
+into a composition swap chain. The hidden notch and the peek keep the compositor glass; so does the basket. The
+floating player has a lens of its own (below).
 
 - **A window of its own, just under the island.** GPUI owns the island's swap chain. The lens is a topmost tool
   window placed directly under the island in z-order, and the island's compositor glass is shrunk to nothing while
@@ -51,9 +52,21 @@ into a composition swap chain. The hidden notch and the peek keep the compositor
 - **Starting and stopping the capture pumps messages** on the UI thread, so GPUI can run a frame mid-call and
   call back into the lens. Every call records what it wants, and only one applies it; one made meanwhile is taken
   up when the running one ends.
+- **The floating player's lens always follows the screen.** A reading goes stale as soon as a window moves, so
+  the player's lens needs the live glass and is the compositor glass without it. It reads the screen once as it
+  opens, then starts its capture from a task of its own: starting one takes about 40 ms and pumps messages, and a
+  player pulled out of the notch must reach Windows' move loop first. It follows at 24 frames a second while the
+  pointer is over it (so while it is dragged) and 5 otherwise. Over a still desktop that costs about 2% of a core
+  and 0.6% of the GPU at rest, and 6% and 3% under the pointer; *Live glass* is the open tray's alone.
+- **It is a child window of the player.** A child's DirectComposition content shows above its parent's
+  non-topmost tree (the compositor glass) and below the topmost one (GPUI's), so it needs no z-order of its own,
+  and it moves with the player in the same step, where a window of its own would trail a drag by a frame. It
+  answers `HTTRANSPARENT`, which hands clicks to the player. Its reading is the player's largest size plus a
+  margin all round: a move inside the margin draws the old reading shifted, and only one past it points the live
+  copy elsewhere, at the same size.
 - **Its cost is paid at startup.** Creating the device and compiling the shader takes about 100 ms (70 of it the
-  compile), done when the notch is made so the first open doesn't stall. The device stays: about 24 MB more private
-  memory and two more threads at idle, and no idle CPU.
+  compile), done when the notch is made so the first open doesn't stall. The device and the shader are shared
+  by both lenses. The device stays: about 24 MB more private memory and two more threads at idle, and no idle CPU.
 
 The window-wide alternative, `SetWindowCompositionAttribute` with `ACCENT_ENABLE_ACRYLICBLURBEHIND` (what
 GPUI's own `WindowBackgroundAppearance::Blurred` does), blurs the **whole window rectangle** and ignores
@@ -70,6 +83,9 @@ it can't leave the ears' corners clear, so that notch has no ears and DWM's corn
   region rounded like the drawn corner cuts its smooth edge into steps. Its corners are rounded 4 px less, leaving
   the edge whole; the cost is a few pixels beside each corner that take clicks. The live glass's clip also needs
   the soft border mode, or DirectComposition draws it aliased.
+- **A window Windows moves takes its glass along.** Both glasses are offset by the window's origin to line up
+  with what is behind, so a floating window dragged by its caption reshapes its glass at the new origin, or it
+  would show the screen from where the drag began.
 - **The resize must not happen inside `render`.** `SWP_ASYNCWINDOWPOS` only defers across threads; here it is
   synchronous, so `WM_SIZE` reaches GPUI mid-draw, where its resize callback can't update the window and GPUI
   never learns the new size. The move runs in a foreground task (what GPUI's own `Window::resize` does). The
