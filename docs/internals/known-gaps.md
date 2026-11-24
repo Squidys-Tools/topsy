@@ -19,8 +19,10 @@ Keep this honest: remove a gap you close, add one you find and leave.
   ordinals, tested on build 26300 only: another build could accept them and draw nothing (one other project reports
   that), and nothing detects it; `TOPSY_GLASS=host` is the way out. No luminosity layer. The lens (the open tray's
   refraction) shows what was behind the notch as it opened unless *Live glass* is on, which costs a few percent
-  of GPU for as long as the tray is open, even over a still desktop. The lens is untested on a second monitor and
-  at scales other than 100%. Not verified: Windows 10
+  of GPU for as long as the tray is open, even over a still desktop. The floating player's lens always follows
+  the screen, so a player left out costs about 2% of a core at rest even over a still desktop, and for a moment
+  after it opens it shows the screen as it was. The lenses are untested on a second monitor and at scales other
+  than 100%. Not verified: Windows 10
   (falls back to acrylic with square corners), behaviour with "Transparency effects" turned off, and light
   backdrops.
 - **Motion.** Resizing a window every frame is not profiled, and the window trails the spring by a frame. No

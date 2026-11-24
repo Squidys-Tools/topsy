@@ -15,6 +15,7 @@ use windows::Win32::Foundation::HWND;
 
 use crate::autostart::RegString;
 use crate::booking::Booking;
+use crate::config::Lens;
 use crate::frame::{Frame, Glass, open_glass};
 use crate::log::LogErr;
 use crate::now_playing::bars::Bars;
@@ -92,6 +93,12 @@ pub(crate) fn open(cx: &mut App, glass: Glass, black: bool, previous: HWND) -> O
         let out = out.clone();
         move |hwnd, glass, backdrop, window, cx| {
             let scale = window.scale_factor();
+            let backdrop = match (backdrop, hwnd) {
+                (Some(backdrop), Some(hwnd)) if config.lens != Lens::Off => {
+                    Some(backdrop.with_floating_lens(hwnd, view::dims(Size::Expanded), cx))
+                }
+                (backdrop, _) => backdrop,
+            };
             let frame = Frame::new(hwnd, scale, glass, black, backdrop).floating();
             cx.new(|cx| {
                 // Moved by its caption: float from where it was put.
@@ -275,7 +282,7 @@ impl Player {
     /// Windows moved the window (its caption dragged): float from there, and save it once it
     /// has stayed put.
     fn moved(&mut self, cx: &mut Context<Self>) {
-        self.frame.follow_window();
+        self.frame.follow_window(cx);
         let center = self.frame.center();
         if !self.open || center == self.center {
             return;

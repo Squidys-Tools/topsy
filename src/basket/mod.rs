@@ -393,8 +393,8 @@ impl Basket {
         .detach();
     }
 
-    pub fn follow_window(&mut self) {
-        self.frame.follow_window();
+    pub fn follow_window(&mut self, cx: &mut Context<Self>) {
+        self.frame.follow_window(cx);
     }
 
     pub fn set_black(&mut self, black: bool, cx: &mut Context<Self>) {

@@ -2,6 +2,7 @@
 //! floating where a jiggle opened it, as the basket), how big it is, and what it is filled with.
 //! The OS window is always exactly the shape (docs/internals/notch.md, glass.md).
 
+mod float;
 mod paint;
 mod window;
 
@@ -43,8 +44,10 @@ pub const ACRYLIC_TINT: u32 = 0x0c101c8c;
 /// through, darkened but not greyed. The basket is filled the same way, to a darker floor.
 const BLACK_UNTIL: f32 = 0.45;
 const GLASS_FLOOR: u32 = 0x00000070;
-/// The open notch's floor over the lens glass: lighter, so the bend shows.
+/// The open notch's floor over the lens glass: lighter, so the bend shows. A floating window's is
+/// darker, since its text sits low, over whatever is behind it.
 const LENS_FLOOR: u32 = 0x00000040;
+const FLOATING_LENS_FLOOR: u32 = 0x00000090;
 /// The tray icon's menu: one even shade of glass, dark enough that it only just shows.
 const MENU_FLOOR: u32 = 0x000000c4;
 /// The basket's floor, sampled from Droppy's: about 88% black at the bottom edge.
@@ -161,8 +164,11 @@ pub struct Frame {
     /// The capsule strip each recent window height (physical) was made with. The window takes
     /// its new size a frame after it is asked for, so a frame is split by the size it has.
     strips: Vec<(i32, f32)>,
-    /// The lens glass is behind the open notch.
+    /// The lens glass is behind the open notch or the floating window.
     lensed: bool,
+    /// The glass's outline when it was last shaped, physical pixels: a move by Windows moves
+    /// the glass's view of what is behind without reshaping it.
+    glass_outline: Option<Outline>,
     /// The corners of a floating window.
     radius: f32,
     /// One shade of glass at the floor all the way down, without the black band at the top.
@@ -190,71 +196,9 @@ impl Frame {
             floor: GLASS_FLOOR,
             strips: Vec::new(),
             lensed: false,
+            glass_outline: None,
             radius: FLOAT_RADIUS,
             even: false,
-        }
-    }
-
-    /// The same glass, floating: the basket's window, placed with [`Frame::float_at`].
-    pub fn floating(mut self) -> Self {
-        self.anchor = None;
-        self.place = Place::Floating {
-            center: (0, 0),
-            scale: self.scale,
-        };
-        self.floor = BASKET_FLOOR;
-        self
-    }
-
-    /// Floating, evenly glazed, with a menu's corners: the tray icon's menu.
-    pub fn menu(self) -> Self {
-        let mut frame = self.floating();
-        frame.floor = MENU_FLOOR;
-        frame.radius = MENU_RADIUS;
-        frame.even = true;
-        frame
-    }
-
-    /// A notch of its own hanging from the top edge, glazed down to the basket's darker floor so
-    /// the text low in it reads over any backdrop: the clipboard palette.
-    pub fn hanging(mut self) -> Self {
-        self.floor = BASKET_FLOOR;
-        self
-    }
-
-    /// Centre the floating window on `center` (physical screen pixels), on a monitor of `scale`.
-    pub fn float_at(&mut self, center: (i32, i32), scale: f32) {
-        self.place = Place::Floating { center, scale };
-        self.applied = None;
-    }
-
-    /// Where the floating window is centred, in physical screen pixels.
-    pub fn center(&self) -> Option<(i32, i32)> {
-        match self.place {
-            Place::Floating { center, .. } => Some(center),
-            Place::Notch => None,
-        }
-    }
-
-    /// The window was moved by Windows (its handle dragged as a caption): float from where it is
-    /// now, rather than snapping back on the next frame. Only a move counts, at the size last
-    /// asked for: a resize still on its way would read as one.
-    pub fn follow_window(&mut self) {
-        let (Some(hwnd), Some((origin, size, false, notch, open)), Place::Floating { scale, .. }) =
-            (self.hwnd, self.applied, self.place)
-        else {
-            return;
-        };
-        let Some(r) = win32::window_rect(hwnd) else {
-            return;
-        };
-        let (left, top) = (r.left, r.top);
-        if (r.right - left, r.bottom - top) == size && (left, top) != origin {
-            self.place = Place::Floating {
-                center: (left + size.0 / 2, top + size.1 / 2),
-                scale,
-            };
-            self.applied = Some(((left, top), size, false, notch, open));
         }
     }
 
@@ -284,6 +228,13 @@ impl Frame {
         }
     }
 
+    /// Whether the pointer is over a floating window, whose lens then follows the screen faster.
+    pub fn set_lens_active(&self, active: bool) {
+        if let Some(backdrop) = &self.backdrop {
+            backdrop.set_lens_active(active);
+        }
+    }
+
     /// The notch in a window of `viewport`'s size, and the capsule strip under it.
     pub fn outline(&self, viewport: Size<Pixels>) -> (Notch, f32) {
         let ears = !self.is_floating() && self.look().has_ears();
@@ -307,8 +258,8 @@ impl Frame {
     }
 
     /// Make the OS window exactly the shape for a body of `width` x `height` (logical pixels),
-    /// hanging from the anchor or centred on the basket's point. The lens glass takes the glass
-    /// while `open`.
+    /// hanging from the anchor or centred on the basket's point. The lens glass, if it has one,
+    /// takes the glass while `open`.
     ///
     /// The window is resized every frame as the spring moves, and its region and the glass's
     /// clip are reshaped with it. Hidden, it keeps a 1 px window (GPUI can't draw into an empty
@@ -445,6 +396,7 @@ impl Frame {
                 radius: r,
             }
         };
+        self.glass_outline = Some(glass);
         cx.spawn(async move |_| {
             // The lens reads the screen as it opens: before the window grows over it.
             if let Some(shape) = &shape {

@@ -65,7 +65,7 @@ impl Render for Player {
         }
         let (width, height) = (self.width.value, self.height.value);
         self.frame
-            .sync(width, height, 0.0, window.scale_factor(), false, cx);
+            .sync(width, height, 0.0, window.scale_factor(), true, cx);
         // After the move `sync` queued: the move loop must start from where the window now is.
         if std::mem::take(&mut self.grab)
             && let Some(hwnd) = self.hwnd
@@ -88,6 +88,7 @@ impl Render for Player {
             .children(self.frame.draw(viewport, self.height.target, content, None))
             .on_hover(cx.listener(|this, hovered: &bool, _window, cx| {
                 this.hovered = *hovered;
+                this.frame.set_lens_active(*hovered);
                 if this.size != Size::Mini && this.now.hint().is_some() {
                     cx.notify();
                 }

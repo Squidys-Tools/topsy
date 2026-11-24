@@ -6,8 +6,8 @@ use gpui::{
 };
 
 use super::{
-    BLACK_UNTIL, CAPSULE, CAPSULE_EDGE, CAPSULE_FILL, DWM_RADIUS, Frame, Glass, LENS_FLOOR, PEEK,
-    RIM,
+    BLACK_UNTIL, CAPSULE, CAPSULE_EDGE, CAPSULE_FILL, DWM_RADIUS, FLOATING_LENS_FLOOR, Frame,
+    Glass, LENS_FLOOR, PEEK, RIM,
 };
 
 impl Frame {
@@ -61,6 +61,9 @@ impl Frame {
         };
         let fill = match look {
             Glass::Blur | Glass::HostBlur | Glass::Tint if self.even => rgba(self.floor).into(),
+            Glass::Blur | Glass::HostBlur if self.lensed && self.is_floating() => {
+                edge_fill(FLOATING_LENS_FLOOR)
+            }
             Glass::Blur | Glass::HostBlur if self.lensed => edge_fill(LENS_FLOOR),
             Glass::Blur | Glass::HostBlur | Glass::Tint => edge_fill(self.floor),
             Glass::Acrylic => edge_fill(0x00000000),

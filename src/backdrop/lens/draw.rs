@@ -1,7 +1,8 @@
-//! Drawing the lens: a Direct3D 11 device, a composition swapchain on the lens window, and the
-//! shader that bends the screen read in [`Source`].
+//! Drawing the lens: a Direct3D 11 device and the shader that bends the screen read in
+//! [`Source`], shared by every lens, and a composition swapchain on each lens window.
 
 use std::ffi::c_void;
+use std::rc::Rc;
 
 use windows::Graphics::DirectX::Direct3D11::IDirect3DDevice;
 use windows::Win32::Foundation::{HMODULE, HWND};
@@ -50,11 +51,37 @@ pub struct Source {
     pub view: ID3D11ShaderResourceView,
 }
 
-pub struct Painter {
+/// The device and the shader, made once (the compile is most of a lens's startup cost) and
+/// shared by every lens.
+pub struct Gpu {
     device: ID3D11Device,
     pub context: ID3D11DeviceContext,
     /// The same device, for Windows.Graphics.Capture.
     pub capture_device: IDirect3DDevice,
+    vertex: ID3D11VertexShader,
+    pixel: ID3D11PixelShader,
+    sampler: ID3D11SamplerState,
+    params: ID3D11Buffer,
+}
+
+#[derive(Clone)]
+struct Shared(Rc<Gpu>);
+
+impl gpui::Global for Shared {}
+
+/// The lenses' device, made by the first lens.
+pub fn gpu(cx: &mut gpui::App) -> windows::core::Result<Rc<Gpu>> {
+    if let Some(Shared(gpu)) = cx.try_global::<Shared>() {
+        return Ok(gpu.clone());
+    }
+    let gpu = Rc::new(Gpu::new()?);
+    cx.set_global(Shared(gpu.clone()));
+    Ok(gpu)
+}
+
+/// One lens window's swapchain, drawn with the shared [`Gpu`].
+pub struct Painter {
+    pub gpu: Rc<Gpu>,
     swapchain: IDXGISwapChain1,
     target: Option<ID3D11RenderTargetView>,
     chain: (u32, u32),
@@ -63,10 +90,6 @@ pub struct Painter {
         IDCompositionTarget,
         IDCompositionVisual,
     ),
-    vertex: ID3D11VertexShader,
-    pixel: ID3D11PixelShader,
-    sampler: ID3D11SamplerState,
-    params: ID3D11Buffer,
 }
 
 fn compile(entry: PCSTR, target: PCSTR) -> windows::core::Result<ID3DBlob> {
@@ -109,8 +132,8 @@ const ONE_SAMPLE: DXGI_SAMPLE_DESC = DXGI_SAMPLE_DESC {
     Quality: 0,
 };
 
-impl Painter {
-    pub fn new(window: HWND) -> windows::core::Result<Self> {
+impl Gpu {
+    fn new() -> windows::core::Result<Self> {
         unsafe {
             let mut device = None;
             let mut context = None;
@@ -127,30 +150,6 @@ impl Painter {
             )?;
             let device: ID3D11Device = device.ok_or_else(failed)?;
             let dxgi: IDXGIDevice = device.cast()?;
-            let factory: IDXGIFactory2 = dxgi.GetAdapter()?.GetParent()?;
-            let chain = (1, 1);
-            let swapchain = factory.CreateSwapChainForComposition(
-                &device,
-                &DXGI_SWAP_CHAIN_DESC1 {
-                    Width: chain.0,
-                    Height: chain.1,
-                    Format: DXGI_FORMAT_B8G8R8A8_UNORM,
-                    SampleDesc: ONE_SAMPLE,
-                    BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
-                    BufferCount: 2,
-                    SwapEffect: DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL,
-                    AlphaMode: DXGI_ALPHA_MODE_PREMULTIPLIED,
-                    ..Default::default()
-                },
-                None,
-            )?;
-            let composition: IDCompositionDevice = DCompositionCreateDevice(&dxgi)?;
-            let target = composition.CreateTargetForHwnd(window, true)?;
-            let visual = composition.CreateVisual()?;
-            visual.SetContent(&swapchain)?;
-            target.SetRoot(&visual)?;
-            composition.Commit()?;
-
             let mut vertex = None;
             let mut pixel = None;
             let vertex_code = compile(s!("vs"), s!("vs_5_0"))?;
@@ -184,10 +183,6 @@ impl Painter {
                 capture_device: CreateDirect3D11DeviceFromDXGIDevice(&dxgi)?.cast()?,
                 device,
                 context: context.ok_or_else(failed)?,
-                swapchain,
-                target: None,
-                chain,
-                _composition: (composition, target, visual),
                 vertex: vertex.ok_or_else(failed)?,
                 pixel: pixel.ok_or_else(failed)?,
                 sampler: sampler.ok_or_else(failed)?,
@@ -196,7 +191,7 @@ impl Painter {
         }
     }
 
-    /// A texture to hold the screen in `rect`, its mips filled by [`Painter::filled`].
+    /// A texture to hold the screen in `rect`, its mips filled by [`Gpu::filled`].
     pub fn source(&self, rect: Rect) -> windows::core::Result<Source> {
         let mut texture = None;
         let mut view = None;
@@ -247,6 +242,44 @@ impl Painter {
     pub fn filled(&self, source: &Source) {
         unsafe { self.context.GenerateMips(&source.view) };
     }
+}
+
+impl Painter {
+    pub fn new(gpu: Rc<Gpu>, window: HWND) -> windows::core::Result<Self> {
+        unsafe {
+            let dxgi: IDXGIDevice = gpu.device.cast()?;
+            let factory: IDXGIFactory2 = dxgi.GetAdapter()?.GetParent()?;
+            let chain = (1, 1);
+            let swapchain = factory.CreateSwapChainForComposition(
+                &gpu.device,
+                &DXGI_SWAP_CHAIN_DESC1 {
+                    Width: chain.0,
+                    Height: chain.1,
+                    Format: DXGI_FORMAT_B8G8R8A8_UNORM,
+                    SampleDesc: ONE_SAMPLE,
+                    BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
+                    BufferCount: 2,
+                    SwapEffect: DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL,
+                    AlphaMode: DXGI_ALPHA_MODE_PREMULTIPLIED,
+                    ..Default::default()
+                },
+                None,
+            )?;
+            let composition: IDCompositionDevice = DCompositionCreateDevice(&dxgi)?;
+            let target = composition.CreateTargetForHwnd(window, true)?;
+            let visual = composition.CreateVisual()?;
+            visual.SetContent(&swapchain)?;
+            target.SetRoot(&visual)?;
+            composition.Commit()?;
+            Ok(Self {
+                gpu,
+                swapchain,
+                target: None,
+                chain,
+                _composition: (composition, target, visual),
+            })
+        }
+    }
 
     pub fn draw(&mut self, source: &Source, placed: Placed) -> windows::core::Result<()> {
         let wanted = (placed.size.0.max(1) as u32, placed.size.1.max(1) as u32);
@@ -264,7 +297,8 @@ impl Painter {
                     DXGI_SWAP_CHAIN_FLAG(0),
                 )?;
                 let back: ID3D11Texture2D = self.swapchain.GetBuffer(0)?;
-                self.device
+                self.gpu
+                    .device
                     .CreateRenderTargetView(&back, None, Some(&mut self.target))?;
             }
             self.chain = chain;
@@ -294,16 +328,10 @@ impl Painter {
             0.0,
             0.0,
         ];
+        let gpu = &*self.gpu;
         unsafe {
-            let context = &self.context;
-            context.UpdateSubresource(
-                &self.params,
-                0,
-                None,
-                params.as_ptr() as *const c_void,
-                0,
-                0,
-            );
+            let context = &gpu.context;
+            context.UpdateSubresource(&gpu.params, 0, None, params.as_ptr() as *const c_void, 0, 0);
             context.ClearRenderTargetView(self.target.as_ref(), &[0.0; 4]);
             context.OMSetRenderTargets(Some(std::slice::from_ref(&self.target)), None);
             context.RSSetViewports(Some(&[D3D11_VIEWPORT {
@@ -313,11 +341,11 @@ impl Painter {
                 ..Default::default()
             }]));
             context.IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-            context.VSSetShader(&self.vertex, None);
-            context.PSSetShader(&self.pixel, None);
+            context.VSSetShader(&gpu.vertex, None);
+            context.PSSetShader(&gpu.pixel, None);
             context.PSSetShaderResources(0, Some(&[Some(source.view.clone())]));
-            context.PSSetSamplers(0, Some(&[Some(self.sampler.clone())]));
-            context.PSSetConstantBuffers(0, Some(&[Some(self.params.clone())]));
+            context.PSSetSamplers(0, Some(&[Some(gpu.sampler.clone())]));
+            context.PSSetConstantBuffers(0, Some(&[Some(gpu.params.clone())]));
             context.Draw(3, 0);
             self.swapchain.Present(0, DXGI_PRESENT(0)).ok()
         }

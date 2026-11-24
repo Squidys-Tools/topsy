@@ -32,8 +32,12 @@ use super::super::live::Shared;
 use crate::log::LogErr;
 use model::float::Rect;
 
-/// The fastest the live glass follows the screen: 30 frames a second, in 100 ns units.
-const MIN_INTERVAL: i64 = 333_333;
+/// The time between frames at `fps` frames a second, in the capture's 100 ns units.
+fn interval(fps: u32) -> TimeSpan {
+    TimeSpan {
+        Duration: 10_000_000 / i64::from(fps.max(1)),
+    }
+}
 
 /// The screen's pixels in `rect`, as top-down BGRA rows. Includes every window, as a
 /// screenshot would.
@@ -141,16 +145,9 @@ impl Mirror {
         }
     }
 
-    /// Copy `rect` of the screen, leaving `excluded` out, and capture it, waking `frames` as
-    /// each frame arrives.
-    pub fn capture(
-        &self,
-        rect: Rect,
-        excluded: [HWND; 2],
-        device: &IDirect3DDevice,
-        frames: async_channel::Sender<()>,
-    ) -> windows::core::Result<Capture> {
-        let (width, height) = (rect.right - rect.left, rect.bottom - rect.top);
+    /// Copy `rect` of the screen, leaving `excluded` out. A running capture follows it if it
+    /// keeps its size.
+    pub fn aim(&self, rect: Rect, excluded: [HWND; 2]) -> windows::core::Result<()> {
         let excluded = [excluded[0], excluded[1], self.window, self.shared.host];
         let region = RECT {
             left: rect.left,
@@ -159,8 +156,8 @@ impl Mirror {
             bottom: rect.bottom,
         };
         let size = SIZE {
-            cx: width,
-            cy: height,
+            cx: rect.right - rect.left,
+            cy: rect.bottom - rect.top,
         };
         unsafe {
             (self.shared.update)(
@@ -174,7 +171,23 @@ impl Mirror {
                 1,
             )
             .ok()?;
-            self.shared.device.Commit()?;
+            self.shared.device.Commit()
+        }
+    }
+
+    /// Copy `rect` of the screen, leaving `excluded` out, and capture it at up to `fps` frames a
+    /// second, waking `frames` as each frame arrives.
+    pub fn capture(
+        &self,
+        rect: Rect,
+        excluded: [HWND; 2],
+        device: &IDirect3DDevice,
+        frames: async_channel::Sender<()>,
+        fps: u32,
+    ) -> windows::core::Result<Capture> {
+        let (width, height) = (rect.right - rect.left, rect.bottom - rect.top);
+        self.aim(rect, excluded)?;
+        unsafe {
             // Beside every screen: never seen, but composed, so it can be captured.
             SetWindowPos(
                 self.window,
@@ -202,11 +215,7 @@ impl Mirror {
         session.SetIsCursorCaptureEnabled(false)?;
         // A live copy is new on every composition, whether or not anything behind changed, so
         // frames never stop on their own; this caps them.
-        session
-            .SetMinUpdateInterval(TimeSpan {
-                Duration: MIN_INTERVAL,
-            })
-            .log_err();
+        session.SetMinUpdateInterval(interval(fps)).log_err();
         // Called on a capture thread: only wake the UI thread, which reads the frame itself.
         pool.FrameArrived(&TypedEventHandler::new(move |_, _| {
             match frames.try_send(()) {
@@ -242,6 +251,11 @@ pub struct Capture {
 }
 
 impl Capture {
+    /// Follow the screen at up to `fps` frames a second from now on.
+    pub fn pace(&self, fps: u32) {
+        self.session.SetMinUpdateInterval(interval(fps)).log_err();
+    }
+
     /// Hand the newest frame waiting to `read`, dropping older ones.
     pub fn newest(&self, read: impl FnOnce(&ID3D11Texture2D)) -> windows::core::Result<()> {
         let mut newest = None;

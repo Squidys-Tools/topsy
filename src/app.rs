@@ -278,8 +278,8 @@ pub fn run() {
                     let frame = Frame::new(hwnd, scale, glass, black, backdrop).floating();
                     cx.new(|cx| {
                         // Moved by its handle: float from where it was put.
-                        cx.observe_window_bounds(window, |basket: &mut Basket, _, _| {
-                            basket.follow_window()
+                        cx.observe_window_bounds(window, |basket: &mut Basket, _, cx| {
+                            basket.follow_window(cx)
                         })
                         .detach();
                         // Renaming is the one time it holds the keyboard; a click away ends it.

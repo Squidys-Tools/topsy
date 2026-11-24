@@ -24,5 +24,10 @@ no idle CPU (`TOPSY_LENS=off` leaves them out). A snapshot (the default) costs n
 With *Live glass* on and the tray open, topsy takes about 0.6% of a core and 2.3% of an integrated GPU's 3D
 engine, and DWM 3.4% of it over a still backdrop or 5.9% over one animating every frame.
 
+The floating player's lens, open over a still desktop, measured against the player without it on a busy machine
+where the tray's live lens measured 5.5% of a core, 1.9% of the GPU and 10% for DWM: at rest about 2% of a core
+(within the noise) and 0.6% of the GPU, with DWM unchanged; with the pointer over it about 6% and 2.8%. It adds
+about 7 MB to the lens device's 24 MB.
+
 While music plays and its level bars are on screen, the meter reads add about 2.5–3% of a core; see
 [Now Playing](../internals/now-playing.md).

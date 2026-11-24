@@ -26,7 +26,8 @@ pub struct Config {
     /// *Black notch* setting; an unknown one forces the default blur.
     pub glass: Option<Glass>,
     /// `TOPSY_LENS=off|snapshot|live`: the open notch's lens glass, off, or forced to read the
-    /// screen once or to follow it whatever the *Live glass* setting says.
+    /// screen once or to follow it whatever the *Live glass* setting says. `off` also leaves the
+    /// floating player without one.
     pub lens: Lens,
     /// What the island folds back to: `TOPSY_IDLE=peek|tray` keeps it down for the live checks,
     /// and without the mouse hook nothing could reveal it, so it peeks.
