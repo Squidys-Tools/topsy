@@ -42,6 +42,8 @@ unsurprising. Measure twice, cut once, and YAGNI. Honor the developer's intent m
 - **basket**: the floating file tray a jiggle brings up, in a window of its own (`src/basket/`).
 - **tray icon**: the notification-area icon and its menu (`src/tray/`). Not the same thing as the tray.
 - **glass**: the acrylic blur behind the notch.
+- **droplet**: a feature switched on and off by itself, a `Droplet` in `src/droplets/` with a line in its `CATALOG`
+  ([Droplets](docs/internals/droplets.md)). The shelf widgets are the first droplets.
 
 ## Hard constraints
 
