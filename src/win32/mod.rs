@@ -22,6 +22,7 @@ pub mod meter;
 pub mod mixer;
 pub mod paste;
 mod picker;
+pub mod power;
 pub mod process;
 pub mod sendto;
 pub mod share;

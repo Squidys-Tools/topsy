@@ -9,6 +9,7 @@ mod audio;
 mod calendar;
 mod pomodoro;
 mod stats;
+mod stay_awake;
 mod weather;
 
 use std::any::Any;
@@ -21,13 +22,15 @@ use model::activity::{Activity, Key};
 use model::droplets::Lineup;
 
 /// Every droplet topsy has, in the order a new lineup offers them. Weather is off at first, since
-/// finding where you are asks Windows for your location; Audio too, the row is wide enough already.
-pub(crate) const CATALOG: [Entry; 5] = [
+/// finding where you are asks Windows for your location; Audio and Stay Awake too, the row is wide
+/// enough already.
+pub(crate) const CATALOG: [Entry; 6] = [
     Entry::new::<calendar::State>("calendar", "Calendar", true),
     Entry::new::<pomodoro::State>("pomodoro", "Pomodoro", true),
     Entry::new::<stats::State>("stats", "System stats", true),
     Entry::new::<weather::State>("weather", "Weather", false),
     Entry::new::<audio::State>("audio", "Audio", false),
+    Entry::new::<stay_awake::State>("awake", "Stay Awake", false),
 ];
 
 /// One droplet. Every method has a default, so a droplet implements only the moments and the
@@ -269,6 +272,7 @@ mod tests {
         assert!(state.get_mut::<calendar::State>().is_some());
         assert!(state.get_mut::<pomodoro::State>().is_some());
         assert!(state.get_mut::<audio::State>().is_some());
+        assert!(state.get_mut::<stay_awake::State>().is_some());
     }
 
     #[test]

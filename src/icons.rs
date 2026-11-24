@@ -39,6 +39,7 @@ icons! {
     ChevronLeft => "chevron-left",
     ChevronRight => "chevron-right",
     Close => "close",
+    Coffee => "coffee",
     Cloud => "cloud",
     Combine => "combine",
     Compress => "compress",

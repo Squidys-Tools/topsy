@@ -9,7 +9,7 @@
 - [Clipboard history](./user/clipboard-history.md)
 - [HUDs](./user/huds.md): volume, brightness and battery
 - [Live Activities](./user/live-activities.md): downloads and Bluetooth audio
-- [Shelf widgets](./user/widgets.md): calendar, Pomodoro, system stats and weather
+- [Shelf widgets](./user/widgets.md): calendar, Pomodoro, system stats, weather, audio and Stay Awake
 - [Transform](./user/transform.md): compress, convert, resize, trim
 - [Tray icon and settings](./user/settings.md): the menu, start with Windows, Send to, updates
 
