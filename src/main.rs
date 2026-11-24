@@ -10,6 +10,7 @@ mod basket;
 mod booking;
 mod clipboard;
 mod config;
+mod droplets;
 mod frame;
 mod headset;
 mod hud;
@@ -27,7 +28,6 @@ mod state;
 mod transform;
 mod tray;
 mod update;
-mod widgets;
 mod win32;
 
 use crate::frame::Mode;

@@ -1,7 +1,7 @@
 # Shelf widgets
 
-Decisions behind [Shelf widgets](../user/widgets.md). The row lives in `src/widgets/`, its rules in
-`crates/model` (`widgets`, `calendar`, `pomodoro`, `stats`, `weather`).
+Decisions behind [Shelf widgets](../user/widgets.md). Each widget is a [droplet](droplets.md) in
+`src/droplets/`, its rules in `crates/model` (`droplets`, `calendar`, `pomodoro`, `stats`, `weather`).
 
 - **They live on Home, a page of their own.** Every open tray has two pages, Home and the shelf, as Droppy's has
   (`src/island/pager.rs`, rules in `model::pager`; `tray_cause::sections` says what each page shows), and the
@@ -27,9 +27,9 @@ Decisions behind [Shelf widgets](../user/widgets.md). The row lives in `src/widg
   thread of its own (it blocks), rounded to two decimals before it leaves the PC. Windows refusing it is told
   apart from it failing, so the card can send you to the setting that fixes it.
 - **Audio listens, it never polls.** Its thread (`win32::mixer`) starts the first time the tray opens with the
-  card in the lineup and stops when the card is switched off; between events it costs nothing. Its changes carry
+  card in the lineup, or when the card is switched on, and stops when it is switched off; between events it costs nothing. Its changes carry
   an event-context GUID, so their echoes are dropped and only other apps' changes come back. It follows a new
   default output device when the tray next opens, not while it is open.
 - **The lineup is one registry string**, read when the island starts and written by the settings window, which
-  hands the island the new lineup (`settings::window::Change::Widgets`) rather than having it read the registry
+  hands the island the new lineup (`settings::window::Change::Droplets`) rather than having it read the registry
   again.

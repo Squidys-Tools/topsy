@@ -1,4 +1,4 @@
-//! What the island shows: the peek's line, and the tray's layout (Home's player and widgets, or
+//! What the island shows: the peek's line, and the tray's layout (Home's player and droplets, or
 //! the shelf's header and its chips, as the page and `tray_cause::sections` say).
 
 mod shelf_view;
@@ -7,21 +7,20 @@ use std::time::Instant;
 
 use gpui::{Context, Div, ScrollWheelEvent, div, prelude::*, px, rgba};
 
+use crate::droplets::{self, Droplet, Effect};
 use crate::island::PEEK_LINGER;
-use crate::widgets::{self, Effect};
 use crate::{Island, Mode, activity, frame, hud, now_playing, tray, win32};
-use model::activity::{Activity, Key};
 use model::tray_cause::{self, Sections, TrayCause};
 
 impl Island {
     pub(crate) fn sections(&self) -> Sections {
         let playing = self.media.now.card().is_some();
-        tray_cause::sections(self.pager.page(), playing, self.widgets.is_on())
+        tray_cause::sections(self.pager.page(), playing, self.droplets.has_row())
     }
 
-    /// Home has something to show: a player or widgets.
+    /// Home has something to show: a player or droplets' cards.
     fn home_has_content(&self) -> bool {
-        self.media.now.card().is_some() || self.widgets.is_on()
+        self.media.now.card().is_some() || self.droplets.has_row()
     }
 
     /// Open the tray for `cause`, or, already open, turn to the page a drag or a drop is about.
@@ -33,29 +32,40 @@ impl Island {
         self.set_mode(Mode::Tray, cx);
     }
 
-    /// The widgets' row is on screen: a card's redraws are worth booking.
-    fn widgets_visible(&self) -> bool {
+    /// The droplets' row is on screen: a card's redraws are worth booking.
+    fn row_visible(&self) -> bool {
         self.mode == Mode::Tray && self.sections().widgets
     }
 
-    /// The one way into the widgets from their listeners and tasks: `update` changes their state,
+    /// The one way into the droplets from their listeners and tasks: `update` changes their state,
     /// told whether the row is on screen, and the island does what it asks in turn.
-    pub(crate) fn update_widgets(
+    pub(crate) fn update_droplets(
         &mut self,
         cx: &mut Context<Self>,
-        update: impl FnOnce(&mut widgets::State, bool, &mut Context<Self>) -> Option<Effect>,
+        update: impl FnOnce(&mut droplets::State, bool, &mut Context<Self>) -> Option<Effect>,
     ) {
-        let visible = self.widgets_visible();
-        match update(&mut self.widgets, visible, cx) {
+        let visible = self.row_visible();
+        match update(&mut self.droplets, visible, cx) {
             Some(Effect::Pressed) => self.press = None,
-            Some(Effect::PhaseOver(ended)) => {
-                self.update_activities(cx, |activity| {
-                    activity.show(Key::Timer, Activity::PhaseOver { ended }, Instant::now())
+            Some(Effect::Activity(key, activity)) => {
+                self.update_activities(cx, |activities| {
+                    activities.show(key, activity, Instant::now())
                 });
             }
             Some(Effect::Refit) if self.mode == Mode::Tray => self.set_mode(Mode::Tray, cx),
             Some(Effect::Refit) | None => {}
         }
+    }
+
+    /// [`Self::update_droplets`] for one droplet, the one of type `D`.
+    pub(crate) fn update_droplet<D: Droplet>(
+        &mut self,
+        cx: &mut Context<Self>,
+        update: impl FnOnce(&mut D, bool, &mut Context<Self>) -> Option<Effect>,
+    ) {
+        self.update_droplets(cx, |droplets, visible, cx| {
+            update(droplets.get_mut::<D>()?, visible, cx)
+        });
     }
 
     fn media_shown(&self) -> now_playing::Shown {
@@ -205,7 +215,7 @@ impl Island {
     }
 
     /// The notch body's size for `mode`; the tray's height is its sections', and it widens to fit
-    /// the widgets.
+    /// the droplets' row.
     pub(crate) fn size_for(&self, mode: Mode) -> (f32, f32) {
         let (w, h) = mode.size();
         if mode == Mode::Peek && self.hud.is_shown() {
@@ -226,7 +236,7 @@ impl Island {
             0.0
         };
         let (row, w) = match sections.widgets {
-            true => (widgets::HEIGHT, w.max(self.widgets.width())),
+            true => (droplets::HEIGHT, w.max(self.droplets.width())),
             false => (0.0, w),
         };
         let (shelf, w) = match sections.shelf {
@@ -245,13 +255,13 @@ impl Island {
         self.pager.show_capsule(self.mode == Mode::Tray);
     }
 
-    /// The tray has just opened: on the page its cause wants, this month's calendar, nothing
-    /// picked on the shelf.
+    /// The tray has just opened: on the page its cause wants, the droplets told, nothing picked
+    /// on the shelf.
     pub(crate) fn opened(&mut self, cx: &mut Context<Self>) {
         self.shelf.deselect();
         self.pager
             .opened(self.tray_cause.page(self.home_has_content()));
-        self.widgets.opened(cx);
+        self.droplets.opened(cx);
     }
 
     /// The open tray springs to its sections' size when they change under it: the track stops,
@@ -262,7 +272,7 @@ impl Island {
         }
     }
 
-    /// The expanded tray: the player and the widgets, or the shelf, as its sections say. After a
+    /// The expanded tray: the player and the droplets, or the shelf, as its sections say. After a
     /// page turn it slides in from the page's side.
     pub(crate) fn tray_content(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let sections = self.sections();
@@ -288,7 +298,7 @@ impl Island {
                     .then(|| self.media.player(self.media_shown(), cx))
                     .flatten(),
             )
-            .children((sections.widgets).then(|| self.widgets.row(self.widgets_visible(), cx)))
+            .children((sections.widgets).then(|| self.droplets.row(self.row_visible(), cx)))
             .children(sections.shelf.then(|| self.shelf_section(cx)))
             .children(sections.is_empty().then(empty_home))
             .children(self.hud.over_tray())
@@ -298,7 +308,7 @@ impl Island {
 /// Home's height with nothing on it.
 const EMPTY_HOME: f32 = 80.0;
 
-/// Home turned to with nothing playing and every widget off.
+/// Home turned to with nothing playing and no droplet's card on.
 fn empty_home() -> Div {
     div()
         .w_full()
