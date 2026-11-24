@@ -29,8 +29,6 @@ macro_rules! icons {
 icons! {
     Add => "add",
     Archive => "archive",
-    ArrowDown => "arrow-down",
-    ArrowUp => "arrow-up",
     Basket => "basket",
     Brightness => "brightness",
     Buds => "buds",
@@ -47,6 +45,7 @@ icons! {
     Cpu => "cpu",
     Delete => "delete",
     Download => "download",
+    DragHandle => "drag-drop-vertical",
     Drizzle => "drizzle",
     File => "file",
     Fog => "fog",

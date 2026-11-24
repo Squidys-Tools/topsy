@@ -36,6 +36,8 @@ const DWM_RADIUS: f32 = 8.0;
 const FLOAT_RADIUS: f32 = 26.0;
 /// The tray icon's menu's corners.
 const MENU_RADIUS: f32 = 12.0;
+/// The settings window's corners.
+const PANEL_RADIUS: f32 = 20.0;
 
 /// The acrylic fallback's own tint (0xRRGGBBAA).
 pub const ACRYLIC_TINT: u32 = 0x0c101c8c;

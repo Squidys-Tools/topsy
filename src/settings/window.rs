@@ -1,16 +1,19 @@
-//! The settings window: an ordinary, focusable window with a switch for each [`Setting`], and the
-//! droplets' lineup. There is at most one; asking for it again raises the one that is open.
+//! The settings window: a floating pane of the island's glass, its pages in a notch hanging
+//! from its top edge, a switch for each [`Setting`] and the droplets' lineup among them. It
+//! takes focus, since it is clicked through, and falls behind other windows once left. There is
+//! at most one; asking for it again raises the one that is open.
 
 use std::rc::Rc;
 
 use gpui::{
-    App, Bounds, Context, Div, Global, SharedString, TitlebarOptions, Window,
-    WindowBackgroundAppearance, WindowBounds, WindowHandle, WindowKind, WindowOptions, div,
-    prelude::*, px, rgb, rgba, size,
+    App, Context, FocusHandle, KeyDownEvent, Window, WindowControlArea, WindowHandle, div,
+    prelude::*, px, rgb, rgba,
 };
-use raw_window_handle::HasWindowHandle;
 use windows::Win32::Foundation::HWND;
 
+use super::controls::{DIM, TEXT};
+use super::pages::{Page, tab};
+use crate::frame::{Frame, Popup, Shape, open_window};
 use crate::icons::{self, Icon};
 use crate::log::LogErr;
 use crate::settings::Setting;
@@ -26,21 +29,28 @@ pub enum Change {
 /// Told about every change the window makes, so the app can apply it.
 pub type OnChange = Rc<dyn Fn(Change, &mut App)>;
 
-const SIZE: (f32, f32) = (340.0, 720.0);
-const BACKGROUND: u32 = 0x202020;
-const ACCENT: u32 = 0x4c8dff;
+const SIZE: (f32, f32) = (560.0, 540.0);
+const GUTTER: f32 = 32.0;
+/// The strip along the top that moves the window, the notch of pages hanging in its middle.
+const HEADER: f32 = 64.0;
+/// The width of a page's rows, for what a drag carries alongside them.
+pub(super) const CONTENT_WIDTH: f32 = SIZE.0 - 2.0 * GUTTER;
 
 struct Open(WindowHandle<SettingsWindow>);
 
-impl Global for Open {}
+impl gpui::Global for Open {}
 
 pub struct SettingsWindow {
-    on: [bool; Setting::ALL.len()],
-    keep_days: u32,
-    lineup: Lineup,
-    on_change: OnChange,
-    /// The system draws Mica behind it, so it paints no fill of its own.
-    mica: bool,
+    page: Page,
+    pub(super) on: [bool; Setting::ALL.len()],
+    pub(super) keep_days: u32,
+    pub(super) lineup: Lineup,
+    pub(super) on_change: OnChange,
+    frame: Frame,
+    focus: FocusHandle,
+    hwnd: Option<HWND>,
+    /// The window in front before this one, given the foreground back when it closes.
+    previous: usize,
 }
 
 impl SettingsWindow {
@@ -50,100 +60,97 @@ impl SettingsWindow {
         self.lineup = droplets::saved();
     }
 
-    fn change_lineup(&mut self, change: impl FnOnce(&mut Lineup), cx: &mut Context<Self>) {
-        let mut lineup = self.lineup.clone();
-        change(&mut lineup);
-        if let Err(err) = droplets::save(&lineup) {
-            eprintln!("topsy: could not change the shelf widgets: {err}");
-            return;
+    /// Flip `setting`, the `i`th of [`Setting::ALL`], and tell the app.
+    pub(super) fn toggle(&mut self, i: usize, setting: Setting, cx: &mut Context<Self>) {
+        if let Some(on) = setting.toggle() {
+            self.on[i] = on;
+            if setting == Setting::Black {
+                self.frame.set_black(on, cx);
+            }
+            cx.notify();
+            (self.on_change.clone())(Change::Setting(setting, on), cx);
         }
-        self.lineup = lineup.clone();
-        cx.notify();
-        (self.on_change.clone())(Change::Droplets(lineup), cx);
     }
 
-    /// A row per droplet, those on first in their order: a switch, and arrows to move it.
-    fn droplet_rows(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        let rows = self.lineup.rows(&droplets::ids());
-        let count = self.lineup.ids().len();
-        let rows = rows.into_iter().enumerate().map(|(i, (id, on))| {
-            let name = droplets::entry(id).map_or(id, |entry| entry.name);
-            let arrow = |glyph, by: isize, enabled: bool| {
-                let base = div()
-                    .id(("move", i * 2 + usize::from(by > 0)))
-                    .size(px(24.0))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(px(6.0))
-                    .child(icons::icon(glyph, 16.0, rgb(0xffffff)));
-                if !enabled {
-                    return base.opacity(0.25);
-                }
-                base.hover(|arrow| arrow.bg(rgba(0xffffff1a)))
-                    .on_click(cx.listener(move |view, _, _, cx| {
-                        view.change_lineup(|lineup| lineup.shift(id, by), cx);
-                    }))
-            };
-            let arrows = on.then(|| {
-                div()
-                    .flex()
-                    .gap(px(2.0))
-                    .child(arrow(Icon::ArrowUp, -1, i > 0))
-                    .child(arrow(Icon::ArrowDown, 1, i + 1 < count))
-            });
-            // The label and the switch toggle; the arrows sit between them, outside either.
-            let toggle = |name: &'static str, element: Div| {
-                element
-                    .id((name, i))
-                    .on_click(cx.listener(move |view, _, _, cx| {
-                        view.change_lineup(|lineup| lineup.set(id, !on), cx);
-                    }))
-            };
-            div()
-                .flex()
-                .items_center()
-                .gap(px(8.0))
-                .px(px(12.0))
-                .py(px(6.0))
-                .rounded(px(6.0))
-                .hover(|row| row.bg(rgba(0xffffff0d)))
-                .child(toggle(
-                    "droplet-label",
-                    div().flex_1().py(px(4.0)).child(name),
-                ))
-                .children(arrows)
-                .child(toggle("droplet-switch", div().child(switch(on))))
+    fn close(&self, window: &mut Window) {
+        if let Some(hwnd) = self.hwnd
+            && win32::foreground_window() == hwnd
+        {
+            win32::restore_foreground(HWND(self.previous as *mut _));
+        }
+        window.remove_window();
+    }
+
+    fn on_key(&mut self, event: &KeyDownEvent, window: &mut Window, _: &mut Context<Self>) {
+        if event.keystroke.key == "escape" {
+            self.close(window);
+        }
+    }
+
+    /// The notch of pages, black like the island's, hanging from the top edge.
+    fn notch(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let ready = update::ready().is_some();
+        let tabs = Page::ALL.map(|page| {
+            tab(page, page == self.page, ready && page == Page::About).on_click(cx.listener(
+                move |view, _, _, cx| {
+                    if view.page != page {
+                        view.page = page;
+                        cx.notify();
+                    }
+                },
+            ))
         });
         div()
+            .absolute()
+            .top_0()
+            .left_0()
+            .w_full()
             .flex()
-            .flex_col()
+            .justify_center()
             .child(
                 div()
-                    .px(px(12.0))
-                    .pt(px(10.0))
-                    .pb(px(4.0))
-                    .text_xs()
-                    .text_color(rgba(0xffffff80))
-                    .child("Shelf widgets"),
+                    .id("tabs")
+                    .occlude()
+                    .flex()
+                    .gap(px(2.0))
+                    .p(px(6.0))
+                    .pt(px(7.0))
+                    .rounded_b(px(20.0))
+                    .bg(rgb(0x000000))
+                    .border_1()
+                    .border_t_0()
+                    .border_color(rgba(0xffffff1f))
+                    .children(tabs),
             )
-            .children(rows.collect::<Vec<_>>())
     }
-}
 
-fn hwnd(window: &Window) -> Option<HWND> {
-    let handle = HasWindowHandle::window_handle(window).ok()?;
-    win32::hwnd_from_raw(handle.as_raw())
+    fn close_button(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        div()
+            .id("close")
+            .occlude()
+            .absolute()
+            .top(px(16.0))
+            .right(px(16.0))
+            .size(px(24.0))
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded_full()
+            .bg(rgba(0xffffff1a))
+            .hover(|button| button.bg(rgba(0xffffff33)))
+            .on_click(cx.listener(|view, _, window, _| view.close(window)))
+            .child(icons::icon(Icon::Close, 12.0, rgba(DIM)))
+    }
 }
 
 /// Open the window, or bring the open one to the front.
 pub fn open(cx: &mut App, on_change: OnChange, previous: usize) {
     if let Some(handle) = cx.try_global::<Open>().map(|open| open.0)
         && handle
-            .update(cx, |view, window, cx| {
+            .update(cx, |view, _, cx| {
                 view.reload();
                 cx.notify();
-                if let Some(hwnd) = hwnd(window) {
+                if let Some(hwnd) = view.hwnd {
                     win32::bring_to_front(hwnd);
                 }
             })
@@ -151,52 +158,68 @@ pub fn open(cx: &mut App, on_change: OnChange, previous: usize) {
     {
         return;
     }
-    let options = WindowOptions {
-        window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
-            None,
-            size(px(SIZE.0), px(SIZE.1)),
-            cx,
-        ))),
-        titlebar: Some(TitlebarOptions {
-            title: Some("topsy settings".into()),
-            appears_transparent: false,
-            traffic_light_position: None,
-        }),
-        focus: true,
-        show: true,
-        kind: WindowKind::Normal,
-        is_resizable: false,
-        is_minimizable: false,
-        window_background: WindowBackgroundAppearance::Opaque,
-        ..Default::default()
+    let Some((_, work, scale)) = win32::cursor_monitor() else {
+        return;
     };
-    let opened = cx.open_window(options, |window, cx| {
-        let mut mica = false;
-        if let Some(hwnd) = hwnd(window) {
-            win32::dark_title_bar(hwnd);
-            mica = win32::mica(hwnd);
-            win32::bring_to_front(hwnd);
-            // Closing it would otherwise activate the tray icon's hidden window, the last one
-            // active before it. Only while it is in front, so a close from elsewhere steals nothing.
-            window.on_window_should_close(cx, move |_, _| {
-                if win32::foreground_window() == hwnd {
-                    win32::restore_foreground(HWND(previous as *mut _));
+    let to_px = |v: f32| (v * scale).round() as i32;
+    let origin = (
+        (work.left + work.right - to_px(SIZE.0)) / 2,
+        (work.top + work.bottom - to_px(SIZE.1)) / 2,
+    );
+    let opened = open_window(
+        cx,
+        Popup {
+            title: "topsy settings",
+            origin,
+            size: SIZE,
+            scale,
+            activate: true,
+            shape: Shape::Panel,
+        },
+        move |hwnd, frame, window, cx| {
+            if let Some(hwnd) = hwnd {
+                win32::bring_to_front(hwnd);
+                // Closing it would otherwise activate the tray icon's hidden window, the last one
+                // active before it. Only while it is in front, so a close from elsewhere steals nothing.
+                window.on_window_should_close(cx, move |_, _| {
+                    if win32::foreground_window() == hwnd {
+                        win32::restore_foreground(HWND(previous as *mut _));
+                    }
+                    true
+                });
+            }
+            // Moved by its top strip: float from where it was put.
+            cx.observe_window_bounds(window, |view: &mut SettingsWindow, _, cx| {
+                view.frame.follow_window(cx);
+            })
+            .detach();
+            // Opened in front of everything, then an ordinary window once another is used.
+            cx.observe_window_activation(window, |view: &mut SettingsWindow, window, cx| {
+                if !window.is_window_active()
+                    && let Some(hwnd) = view.hwnd
+                {
+                    cx.spawn(async move |_, _| win32::drop_topmost(hwnd))
+                        .detach();
                 }
-                true
-            });
-        }
-        cx.new(|_| {
+            })
+            .detach();
+            let focus = cx.focus_handle();
+            window.focus(&focus);
             let mut view = SettingsWindow {
+                page: Page::General,
                 on: [false; Setting::ALL.len()],
                 keep_days: 0,
                 lineup: Lineup::new([]),
                 on_change,
-                mica,
+                frame,
+                focus,
+                hwnd,
+                previous,
             };
             view.reload();
             view
-        })
-    });
+        },
+    );
     match opened {
         Ok(handle) => cx.set_global(Open(handle)),
         Err(err) => eprintln!("topsy: could not open the settings window: {err}"),
@@ -208,140 +231,61 @@ pub fn refresh(cx: &mut App) {
     if let Some(handle) = cx.try_global::<Open>().map(|open| open.0) {
         handle
             .update(cx, |view, _, cx| {
+                let before = view.on;
                 view.reload();
+                if let Some(i) = Setting::ALL.iter().position(|s| *s == Setting::Black)
+                    && before[i] != view.on[i]
+                {
+                    view.frame.set_black(view.on[i], cx);
+                }
                 cx.notify();
             })
             .log_err();
     }
 }
 
-fn days(days: u32) -> String {
-    match days {
-        0 => "Forever".into(),
-        1 => "1 day".into(),
-        n => format!("{n} days"),
-    }
-}
-
-fn button(id: &'static str, label: String) -> gpui::Stateful<gpui::Div> {
-    div()
-        .id(id)
-        .px(px(10.0))
-        .py(px(3.0))
-        .rounded(px(6.0))
-        .bg(rgba(0xffffff14))
-        .hover(|button| button.bg(rgba(0xffffff24)))
-        .child(label)
-}
-
-fn switch(on: bool) -> impl IntoElement {
-    let track = if on { rgb(ACCENT) } else { rgb(0x3a3a3a) };
-    div()
-        .flex()
-        .flex_none()
-        .items_center()
-        .w(px(36.0))
-        .h(px(20.0))
-        .p(px(3.0))
-        .rounded_full()
-        .bg(track)
-        .when(on, |track| track.justify_end())
-        .child(div().size(px(14.0)).rounded_full().bg(rgb(0xffffff)))
-}
-
 impl Render for SettingsWindow {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let rows = Setting::ALL.into_iter().enumerate().map(|(i, setting)| {
-            let on = self.on[i];
-            div()
-                .id(i)
-                .flex()
-                .items_center()
-                .justify_between()
-                .px(px(12.0))
-                .py(px(10.0))
-                .rounded(px(6.0))
-                .hover(|row| row.bg(rgba(0xffffff0d)))
-                .child(SharedString::from(setting.label()))
-                .child(switch(on))
-                .on_click(cx.listener(move |view, _, _, cx| {
-                    if let Some(on) = setting.toggle() {
-                        view.on[i] = on;
-                        cx.notify();
-                        (view.on_change.clone())(Change::Setting(setting, on), cx);
-                    }
-                }))
-        });
-        let keep = button("keep", days(self.keep_days)).on_click(cx.listener(|view, _, _, cx| {
-            let choices = clipboard::DAY_CHOICES;
-            let at = choices.iter().position(|&d| d == view.keep_days);
-            let next = choices[at.map_or(0, |i| (i + 1) % choices.len())];
-            match clipboard::set_keep_days(next) {
-                Ok(()) => view.keep_days = next,
-                Err(err) => eprintln!("topsy: could not change how long history is kept: {err}"),
-            }
-            cx.notify();
-        }));
-        let clear = button("clear", "Clear unpinned".into())
-            .on_click(|_, _, _| clipboard::send(clipboard::Command::Clear));
-        let retention = div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .px(px(12.0))
-            .py(px(8.0))
-            .child("Keep clipboard for")
-            .child(div().flex().gap(px(6.0)).child(keep).child(clear));
-        let quit = button("quit", "Quit topsy".into()).on_click(|_, _, cx| cx.quit());
-        let update = update::ready().map(|version| {
-            div()
-                .flex()
-                .items_center()
-                .justify_between()
-                .px(px(12.0))
-                .py(px(8.0))
-                .child(format!("Update ready: {}", version.short()))
-                .child(
-                    button("update", "Restart to update".into())
-                        .on_click(|_, _, cx| update::restart(cx)),
-                )
-        });
-        div()
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.frame
+            .sync(SIZE.0, SIZE.1, 0.0, window.scale_factor(), false, cx);
+        let viewport = window.viewport_size();
+        let content = div()
             .size_full()
+            .relative()
             .flex()
             .flex_col()
-            .justify_between()
-            .p(px(8.0))
-            .when(!self.mica, |window| window.bg(rgb(BACKGROUND)))
-            .text_color(rgb(0xffffff))
-            .text_sm()
             .child(
                 div()
-                    .id("settings")
-                    .flex_1()
-                    .min_h_0()
-                    .overflow_y_scroll()
-                    .flex()
-                    .flex_col()
-                    .children(rows)
-                    .child(retention)
-                    .child(self.droplet_rows(cx)),
+                    .flex_none()
+                    .h(px(HEADER))
+                    .w_full()
+                    // GPUI's `start_window_move` does nothing on Windows; a caption area lets
+                    // Windows move it. Occluded, or the focus-on-click marks the press handled.
+                    .window_control_area(WindowControlArea::Drag)
+                    .occlude(),
             )
             .child(
-                div().flex().flex_col().children(update).child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .px(px(12.0))
-                        .py(px(8.0))
-                        .child(
-                            div()
-                                .text_color(rgba(0xffffff80))
-                                .child(format!("topsy {}", update::VERSION)),
-                        )
-                        .child(quit),
-                ),
+                div()
+                    .id(("page", self.page as usize))
+                    .flex_1()
+                    .min_h_0()
+                    .w_full()
+                    .overflow_y_scroll()
+                    .px(px(GUTTER))
+                    .pb(px(12.0))
+                    .child(self.page(self.page, cx)),
             )
+            .child(self.notch(cx))
+            .child(self.close_button(cx))
+            .into_any_element();
+        div()
+            .id("settings")
+            .relative()
+            .w(viewport.width)
+            .h(viewport.height)
+            .text_color(rgb(TEXT))
+            .track_focus(&self.focus)
+            .on_key_down(cx.listener(Self::on_key))
+            .children(self.frame.draw(viewport, SIZE.1, content, None))
     }
 }

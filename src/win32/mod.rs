@@ -32,7 +32,7 @@ pub mod sysinfo;
 pub mod volume;
 mod window;
 
-pub use dialog::{bring_to_front, dark_title_bar, mica};
+pub use dialog::bring_to_front;
 pub use dragdrop::{DragOutcome, DropEvent, drag_files_out, watch_drop_refusals};
 pub use hook::{HookEvent, spawn_mouse_hook};
 pub use menu::{Entry as MenuEntry, popup as popup_menu};
@@ -41,7 +41,7 @@ pub use process::window_exe;
 pub use shell::{app_name, exe_description, move_new, open_path, show_in_folder};
 pub use window::{
     Capsule, Clip, apply_focus_styles, apply_overlay_styles, cursor_monitor, cursor_over,
-    foreground_window, fullscreen_over, monitor_at, monitor_top_center, move_window,
+    drop_topmost, foreground_window, fullscreen_over, monitor_at, monitor_top_center, move_window,
     move_window_under, restore_foreground, round_corners, set_acrylic, set_clip, set_visible,
     window_rect,
 };

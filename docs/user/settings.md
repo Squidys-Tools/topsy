@@ -14,11 +14,12 @@ visible.
 
 ## Settings window
 
-*Settings…* opens *topsy settings*, a small window with a switch for each setting, how long
-[clipboard history](clipboard-history.md) is kept, which [shelf widgets](widgets.md) show and in what order, the
-version and *Quit topsy*. Asking again brings the open
-one to the front. Closing it leaves topsy running. A switch changed in the menu shows in the window, and the
-other way round.
+*Settings…* opens topsy's settings, a pane of the notch's glass with its pages in a little notch along its top:
+*General* (startup and *Send to*), *Notch* (how it looks and what it shows), *Widgets* (which
+[shelf widgets](widgets.md) show, in what order), *Clipboard* (how long [clipboard history](clipboard-history.md)
+is kept, and clearing it) and *About* (updates, links and *Quit topsy*). Drag it by its top edge to move it; the
+✕ or Escape closes it. Asking again brings the open one to the front. Closing it leaves topsy running. A switch
+changed in the menu shows in the window, and the other way round.
 
 ## Settings
 
@@ -43,9 +44,9 @@ other way round.
 
 A nightly build looks for a newer nightly when it starts and every 4 hours, and downloads it quietly into
 `%LOCALAPPDATA%\topsy\update`. When one is ready the notch shows *Update ready* for a few seconds; click it for
-the settings window, then *Restart to update*. The tray icon's menu has *Restart to update* too. topsy swaps
-its own `topsy.exe` and starts again; *Start with Windows* keeps working. An update you don't restart into is
-installed the next time topsy starts.
+the settings window, then *Restart to update* on its *About* page. The tray icon's menu has *Restart to update*
+too. topsy swaps its own `topsy.exe` and starts again; *Start with Windows* keeps working. An update you don't
+restart into is installed the next time topsy starts.
 
 Only nightlies update. A build from source or from CI never does.
 

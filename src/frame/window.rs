@@ -24,6 +24,8 @@ fn hwnd(window: &Window) -> Option<HWND> {
 pub(crate) enum Shape {
     /// Centred where it opens, evenly glazed like a menu.
     Floating,
+    /// [`Shape::Floating`], with a window's rounder corners: the settings window.
+    Panel,
     /// Hanging from the top edge of the monitor it opens on, a notch of its own.
     Hanging,
 }
@@ -73,7 +75,8 @@ pub(crate) fn open_window<V: 'static + Render>(
         focus: activate,
         show: true,
         kind: WindowKind::PopUp,
-        is_movable: false,
+        // A drag area moves only a movable window; only the settings window has one.
+        is_movable: shape == Shape::Panel,
         is_resizable: false,
         is_minimizable: false,
         window_background: WindowBackgroundAppearance::Transparent,
@@ -107,8 +110,12 @@ pub(crate) fn open_window<V: 'static + Render>(
         }
         let frame = Frame::new(hwnd, scale, glass, black, backdrop);
         let frame = match shape {
-            Shape::Floating => {
-                let mut frame = frame.menu();
+            Shape::Floating | Shape::Panel => {
+                let mut frame = if shape == Shape::Panel {
+                    frame.panel()
+                } else {
+                    frame.menu()
+                };
                 let to_px = |v: f32| (v * scale).round() as i32;
                 let (w, h) = (to_px(size_px.0), to_px(size_px.1));
                 frame.float_at((origin.0 + w / 2, origin.1 + h / 2), scale);

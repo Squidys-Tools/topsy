@@ -32,5 +32,5 @@ widgets are the first droplets; their own decisions are in [Shelf widgets](widge
 2. **A type** in `src/droplets/` implementing `Droplet` and `Default`, and `Card` if it shows in the row. Its
    listeners and tasks go through `update_droplet`; its redraws are booked as in [Features](features.md).
 3. **A line in `CATALOG`**: its id, its name, and whether a new lineup has it on. The settings window's switch,
-   the arrows that order it, the row's width and `TOPSY_NO_WIDGETS` come with it.
+   its place in the drag-ordered list, the row's width and `TOPSY_NO_WIDGETS` come with it.
 4. **Docs**: a section in `docs/user/`, as for any feature.

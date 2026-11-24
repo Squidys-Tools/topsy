@@ -1,8 +1,9 @@
-//! Placing a floating frame: the basket, the floating player and the tray icon's menu.
+//! Placing a floating frame: the basket, the floating player, the tray icon's menu and the
+//! settings window.
 
 use gpui::App;
 
-use super::{BASKET_FLOOR, Frame, MENU_FLOOR, MENU_RADIUS, Place};
+use super::{BASKET_FLOOR, Frame, MENU_FLOOR, MENU_RADIUS, PANEL_RADIUS, Place};
 use crate::win32;
 
 impl Frame {
@@ -23,6 +24,15 @@ impl Frame {
         frame.floor = MENU_FLOOR;
         frame.radius = MENU_RADIUS;
         frame.even = true;
+        frame
+    }
+
+    /// Floating and evenly glazed like the menu, with rounder corners and the basket's darker
+    /// floor, since it holds lines of small text: the settings window.
+    pub fn panel(self) -> Self {
+        let mut frame = self.menu();
+        frame.radius = PANEL_RADIUS;
+        frame.floor = BASKET_FLOOR;
         frame
     }
 
