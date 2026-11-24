@@ -25,3 +25,29 @@ out (`TrayCause::sections`).
   books frames; a rest books one wake for its end, and a tray that closes books nothing more.
 - **Buttons** go to the same thread, which calls the session's `Try*Async` without waiting; the icon changes
   when the app reports its new state.
+
+## Floating player
+
+- **Its own window, made at launch**, hidden as a 1 px window with an empty region, for the basket's reason: made
+  later, its creation would take the foreground. `TOPSY_NO_MEDIA` makes none.
+- **Its own copy of what is playing.** `Media::apply` hands every update from the media thread to the player
+  too, art included (`Update` is cheap to clone; the art is shared). The island never reads the player's entity
+  in its render: GPUI redraws every window that read an entity whenever that entity notifies, so the island would
+  redraw with each of the player's frames. What the tray needs (whether the player is out) is a flag the two
+  share (`floating::Handle`).
+- **Pulling it out** hands the press to Windows' move loop: once the tray player has been dragged a few pixels,
+  the floating player is placed at its full size with its art under the pointer, then the island lets go of the
+  mouse and the player is posted `WM_NCLBUTTONDOWN` on its caption (`win32::grab`). The move loop keeps the
+  pointer's offset from where the window was when it started, so the window must already be in place: it is not
+  sprung in, and the post is queued after the move its render asked for. The loop pumps messages, so it is
+  posted, never sent from a handler.
+- **Cost on screen.** It may stay up all day, so it redraws less than the notch: the level bars move only while
+  the pointer is over it (and its hover is checked against the real pointer each frame, so a lost "leave" can't
+  keep the meter open); Mini has no clock and books nothing while a song plays; Player and Expanded redraw once
+  a second for the clock. The title is cut short rather than scrolled.
+- **The cover** is decoded once per track at a second, larger size beside the notch's art (the same thumbnail,
+  two WIC transforms): the notch's small art would blur at the cover's size, and the cover is more texture
+  than the notch needs.
+- **Saved** as `HKCU\Software\topsy\Player` (`x,y,size,open|closed`, `model::player`) when it opens, closes,
+  changes size, or stays put after a move. A run with `TOPSY_STATE` or `TOPSY_PLAYER` set neither reads nor
+  writes it, so a live check never meets the developer's own player.

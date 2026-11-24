@@ -12,6 +12,7 @@ mod dragdrop;
 pub mod earbuds;
 pub mod escape;
 pub mod folder;
+pub mod grab;
 mod hook;
 pub mod http;
 pub mod inbox;

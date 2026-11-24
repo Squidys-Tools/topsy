@@ -1,5 +1,6 @@
 //! A glass window of its own: a bare topmost popup with the notch's glass behind it, floating
-//! as the tray icon's menu does, or hanging from the top edge as the clipboard palette does.
+//! as the tray icon's menu does, or hanging from the top edge as the clipboard palette does;
+//! and the windows made at launch (the island's, the basket's, the floating player's).
 
 use gpui::{
     App, Bounds, Context, Entity, Pixels, TitlebarOptions, Window, WindowBackgroundAppearance,
@@ -121,13 +122,13 @@ pub(crate) fn open_window<V: 'static + Render>(
 
 /// Open one of topsy's glass windows: transparent, never activated, click-through until it is
 /// given a shape, with the compositor's blur behind it (or acrylic where that can't start), and
-/// a drop target that reports refused drags on `refusals`. `build` makes its view.
+/// a drop target that reports refused drags on `refusals`, if given. `build` makes its view.
 pub(crate) fn open_glass<V: 'static + Render>(
     cx: &mut App,
     bounds: Bounds<Pixels>,
     mut glass: Glass,
     black: bool,
-    refusals: async_channel::Sender<DropEvent>,
+    refusals: Option<async_channel::Sender<DropEvent>>,
     previous_foreground: HWND,
     build: impl FnOnce(Option<HWND>, Glass, Option<Backdrop>, &mut Window, &mut App) -> Entity<V>
     + 'static,
@@ -179,7 +180,9 @@ pub(crate) fn open_glass<V: 'static + Render>(
                         win32::set_acrylic(hwnd, Some(ACRYLIC_TINT));
                     }
                 }
-                win32::watch_drop_refusals(hwnd, refusals);
+                if let Some(refusals) = refusals {
+                    win32::watch_drop_refusals(hwnd, refusals);
+                }
                 win32::restore_foreground(previous_foreground);
             }
             build(hwnd, glass, backdrop, window, cx)

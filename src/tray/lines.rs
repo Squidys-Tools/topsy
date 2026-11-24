@@ -18,6 +18,8 @@ pub(super) enum Item {
     Show,
     Clear,
     Basket,
+    /// Show the floating player, or hide it while it is out.
+    Player(bool),
     Clipboard,
     Options,
     Settings,
@@ -33,6 +35,7 @@ impl Item {
             Item::Show => "&Show shelf",
             Item::Clear => "&Clear shelf",
             Item::Basket => "Show bas&ket",
+            Item::Player(out) => ["Show floating &player", "Hide floating &player"][out as usize],
             Item::Clipboard => "Clipboard &history",
             Item::Options => "&Options",
             Item::Settings => "Se&ttings…",
@@ -69,20 +72,19 @@ pub(super) fn top_of(lines: &[Line], at: usize) -> f32 {
     PAD + lines[..at].iter().map(|line| line.height()).sum::<f32>()
 }
 
-pub(super) fn lines() -> Vec<Line> {
-    let mut lines = vec![
-        Line::Header,
-        Line::Gap,
-        Line::Item(Item::Show),
-        Line::Item(Item::Clear),
-        Line::Item(Item::Basket),
-        Line::Item(Item::Clipboard),
+/// The menu's lines; the floating player's only with Now Playing (`player` is whether it is out).
+pub(super) fn lines(player: Option<bool>) -> Vec<Line> {
+    let mut lines = vec![Line::Header, Line::Gap];
+    lines.extend([Item::Show, Item::Clear, Item::Basket].map(Line::Item));
+    lines.extend(player.map(|out| Line::Item(Item::Player(out))));
+    lines.push(Line::Item(Item::Clipboard));
+    lines.extend([
         Line::Gap,
         Line::Item(Item::Options),
         Line::Item(Item::Settings),
         Line::Item(Item::AddHeadset),
         Line::Gap,
-    ];
+    ]);
     if let Some(version) = update::ready() {
         lines.push(Line::Item(Item::Update(version)));
     }

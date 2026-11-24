@@ -93,6 +93,7 @@ impl Island {
         match update(&mut self.media, shown, cx) {
             Some(now_playing::Effect::Pressed) => self.press = None,
             Some(now_playing::Effect::Refit) => self.fit_tray(),
+            Some(now_playing::Effect::PulledOut) => self.fold(cx),
             None => {}
         }
     }

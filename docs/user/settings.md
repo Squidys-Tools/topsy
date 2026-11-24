@@ -4,9 +4,10 @@
 
 topsy's icon in the notification area is a small topsy-turvy notch. **Left-click** it to open or close the
 shelf. **Right-click** it, or right-click the notch itself, for the menu: *Show shelf*, *Clear shelf*, *Show
-basket*, *Clipboard history*, *Options* (a submenu with each setting below, ticked when on), *Settings…*,
-*Add my headset…* (see [Live Activities](live-activities.md#your-headset)), *Restart to update* when an update
-is ready, and *Quit topsy*. The arrow keys and Enter work in it too, and Escape closes it.
+basket*, *Show floating player* (or *Hide* while it is out), *Clipboard history*, *Options* (a submenu with each
+setting below, ticked when on), *Settings…*, *Add my headset…* (see
+[Live Activities](live-activities.md#your-headset)), *Restart to update* when an update is ready, and *Quit
+topsy*. The arrow keys and Enter work in it too, and Escape closes it.
 
 On Windows 11 a new icon starts in the overflow flyout (the ^ arrow); drag it onto the taskbar to keep it
 visible.

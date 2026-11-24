@@ -11,7 +11,7 @@ mod menu_view;
 
 use std::ffi::c_void;
 use std::sync::OnceLock;
-use std::sync::atomic::{AtomicIsize, AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicIsize, AtomicU8, AtomicU32, AtomicUsize, Ordering};
 
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
 
@@ -46,6 +46,8 @@ pub enum TrayEvent {
     ClearShelf,
     /// "Show basket": bring the basket up with what it holds, as a jiggle would.
     ShowBasket,
+    /// "Show floating player" or "Hide floating player".
+    Player,
     /// A setting was switched to this value; it is saved already.
     Setting(Setting, bool),
     /// "Settings…": open the settings window, or bring it to the front. Carries the window that
@@ -76,6 +78,8 @@ static ICON: AtomicIsize = AtomicIsize::new(0);
 static TASKBAR_CREATED: AtomicU32 = AtomicU32::new(0);
 static SHELF_COUNT: AtomicUsize = AtomicUsize::new(0);
 static BASKET_COUNT: AtomicUsize = AtomicUsize::new(0);
+/// The floating player: 0 without one, 1 put away, 2 out.
+static PLAYER: AtomicU8 = AtomicU8::new(0);
 static EVENTS: OnceLock<async_channel::Sender<TrayEvent>> = OnceLock::new();
 
 pub(crate) fn send(event: TrayEvent) {
@@ -97,6 +101,18 @@ pub fn set_shelf_count(count: usize) {
 /// Tell the menu how many files are in the basket (it greys out "Show basket" at zero).
 pub fn set_basket_count(count: usize) {
     BASKET_COUNT.store(count, Ordering::Relaxed);
+}
+
+/// Tell the menu whether the floating player is out (it offers to show it or hide it).
+pub fn set_player_out(out: bool) {
+    PLAYER.store(1 + u8::from(out), Ordering::Relaxed);
+}
+
+fn player() -> Option<bool> {
+    match PLAYER.load(Ordering::Relaxed) {
+        0 => None,
+        state => Some(state == 2),
+    }
 }
 
 fn shelf_count() -> usize {

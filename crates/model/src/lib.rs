@@ -46,6 +46,7 @@ pub mod pager;
 pub mod pdf;
 pub mod pdf_image;
 pub mod pdf_place;
+pub mod player;
 pub mod pomodoro;
 pub mod selection;
 pub mod sessions;
