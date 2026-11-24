@@ -349,7 +349,7 @@ impl Menu {
                 cx.notify();
                 return;
             }
-            Item::Settings => (Hand::Keep, TrayEvent::OpenSettings(previous)),
+            Item::Settings => (Hand::Back, TrayEvent::OpenSettings),
             Item::AddHeadset => (Hand::Leave, TrayEvent::AddHeadset),
             Item::Update(_) => (Hand::Back, TrayEvent::Update),
             Item::Quit => (Hand::Back, TrayEvent::Quit),

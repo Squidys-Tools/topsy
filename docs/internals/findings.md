@@ -10,7 +10,7 @@ take the foreground (AGENTS.md, rule 2 of what we never compromise on), and thes
   expanding the tray mid-drag (checked in the e2e). The basket's window is made at launch for the same reason:
   made on the first jiggle, its creation would take the foreground from the app being dragged out of.
 - **`WS_EX_NOACTIVATE` only keeps a click from taking the foreground from another app.** While topsy holds the
-  foreground itself (its settings window is in front), a click on the island still made it the active window,
+  foreground itself (its clipboard palette is in front), a click on the island still made it the active window,
   as GPUI leaves `WM_MOUSEACTIVATE` to `DefWindowProc`. The island's window is subclassed to answer
   `MA_NOACTIVATE`.
 - **A popup menu needs its owner in front.** `TrackPopupMenu` doesn't close on a click elsewhere unless its owner
@@ -23,7 +23,7 @@ take the foreground (AGENTS.md, rule 2 of what we never compromise on), and thes
 - **The share sheet only comes up over the foreground window.** Otherwise it reports success and never asks for
   the files, so *Share…* brings the basket (or the island) to the front first.
 - **`SetCursorPos` does not reliably reach `WH_MOUSE_LL`**; test input must be `mouse_event`/`SendInput`.
-- **Windows that are typed into take focus.** The settings window, the clipboard palette and the basket's rename
-  field are ordinary focusable windows; each remembers the window that was in front and hands focus back when it
+- **Windows that are typed into take focus.** The clipboard palette and the basket's rename field are ordinary
+  focusable windows; each remembers the window that was in front and hands focus back when it
   goes. The Transform panel takes focus too but doesn't hand it back. The island and the result cards never take
   focus.

@@ -1,7 +1,7 @@
 //! The island: the one GPUI view, its modes and springs, the shelf it holds, and the policy that
 //! decides what it shows. Features keep their own state and rendering; they reach the island
 //! through its entry points (`update_droplets`, `update_media`, `update_hud`,
-//! `update_activities`) and the effects those apply.
+//! `update_activities`, `update_settings`) and the effects those apply.
 
 pub(crate) mod chip;
 pub(crate) mod pager;
@@ -22,7 +22,7 @@ use windows::Win32::Foundation::HWND;
 use crate::frame::{self, Frame, Mode};
 use crate::log::log;
 use crate::win32::{DropEvent, HookEvent};
-use crate::{activity, basket, config, droplets, hud, now_playing, state, tray, win32};
+use crate::{activity, basket, config, droplets, hud, now_playing, settings, state, tray, win32};
 use model::shelf::Shelf;
 use model::spring::{Spring, SpringConfig};
 use model::tray_cause::{HeldDrag, TrayCause};
@@ -68,6 +68,7 @@ pub(crate) struct Island {
     pub(crate) activity: activity::State,
     pub(crate) droplets: droplets::State,
     pub(crate) pager: pager::State,
+    pub(crate) settings: settings::State,
     pub(crate) basket: Option<Entity<basket::Basket>>,
 }
 
@@ -103,6 +104,7 @@ impl Island {
             activity: Default::default(),
             droplets: Default::default(),
             pager: Default::default(),
+            settings: Default::default(),
             basket: None,
         }
     }
@@ -112,7 +114,7 @@ impl Island {
             self.opened(cx);
         }
         self.mode = mode;
-        win32::escape::take(mode == Mode::Tray && self.tray_cause == TrayCause::Opened);
+        win32::escape::take(mode == Mode::Tray && self.tray_cause.escape_folds());
         self.retarget();
         if mode == Mode::Tray {
             self.prune_missing(cx);
@@ -200,13 +202,11 @@ impl Island {
     /// for that drag (one brought to the edge), its payload can never land: fold it away.
     pub(crate) fn on_drop_event(&mut self, event: DropEvent, cx: &mut Context<Self>) {
         log(&format!("drop-target {event:?} (mode {:?})", self.mode));
-        if event == DropEvent::Refused {
-            self.held.refuse();
+        if event != DropEvent::Refused {
+            return;
         }
-        if event == DropEvent::Refused
-            && self.mode == Mode::Tray
-            && self.tray_cause.closed_by_refusal()
-        {
+        self.held.refuse();
+        if self.mode == Mode::Tray && self.tray_cause.closed_by_refusal() {
             self.fold(cx);
         }
     }

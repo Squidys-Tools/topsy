@@ -1,6 +1,6 @@
 //! Updating a nightly build in place: a check at launch and every 4 hours, a quiet download of
-//! the newer exe, then the swap when the user restarts into it (from the HUD's Settings, the
-//! settings window or the tray icon's menu), or at the next launch. Only a nightly updates: a
+//! the newer exe, then the swap when the user restarts into it (from the settings page's About,
+//! which a click on the HUD opens, or the tray icon's menu), or at the next launch. Only a nightly updates: a
 //! local or CI build carries no release version. The rules are in `model::update`.
 
 use std::fs;
@@ -21,7 +21,7 @@ use crate::{Island, config, hud, log};
 use model::download::split_url;
 use model::update::{self, EXE, Nightly};
 
-/// What the settings window shows: the release version a nightly is stamped with
+/// What the settings page shows: the release version a nightly is stamped with
 /// (`.github/workflows/nightly.yml`), else the crate's.
 pub const VERSION: &str = match STAMP {
     Some(version) => version,
@@ -126,7 +126,6 @@ pub fn start(cx: &mut App, island: &Entity<Island>) {
             *ready = Some(version);
         }
         log(&format!("update: {version} ready"));
-        crate::settings::window::refresh(cx);
         island.update_hud(cx, |hud, mode, cx| {
             hud.show(hud::Event::Update(version), mode, cx)
         });

@@ -36,7 +36,8 @@ pub enum TrayEvent {
     /// Left click on the icon: open the shelf, or close it if it is open.
     Toggle,
     /// Right click on the icon, or on the notch: open the menu at `at` (physical screen
-    /// pixels). `previous` is the window that was foreground before, as for `OpenSettings`.
+    /// pixels). `previous` is the window that was foreground before (as an address: `HWND` can't
+    /// cross threads).
     Menu {
         at: (i32, i32),
         previous: usize,
@@ -50,10 +51,8 @@ pub enum TrayEvent {
     Player,
     /// A setting was switched to this value; it is saved already.
     Setting(Setting, bool),
-    /// "Settings…": open the settings window, or bring it to the front. Carries the window that
-    /// was foreground before the menu (as an address: `HWND` can't cross threads), to hand
-    /// foreground back to when the settings window closes.
-    OpenSettings(usize),
+    /// "Settings…": open the tray on its settings page, or turn to it.
+    OpenSettings,
     /// "Clipboard history": open the clipboard strip, to paste into `previous`.
     Clipboard(usize),
     /// "Add my headset…": hand the user's headsets to a coding agent (`headset::report`).
@@ -124,7 +123,7 @@ fn basket_count() -> usize {
 }
 
 /// Make the hidden window foreground, so topsy keeps the right to bring a window of its own to
-/// the front (the settings window, the clipboard strip) once the menu has closed.
+/// the front (the clipboard strip) once the menu has closed.
 fn hold_foreground() {
     if let Some(hwnd) = window() {
         unsafe {

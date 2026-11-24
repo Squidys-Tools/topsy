@@ -1,7 +1,12 @@
-//! The app's on/off settings, in one list that both the tray icon's menu and the settings
-//! window are built from. A new toggle is a variant here and an arm in each match below.
+//! The app's on/off settings, in one list that both the tray icon's menu and the tray's settings
+//! page are built from. A new toggle is a variant here and an arm in each match below and in
+//! `page`.
 
-pub(crate) mod window;
+mod about;
+mod controls;
+mod page;
+
+pub(crate) use page::{Effect, Section, State, WIDTH};
 
 use crate::win32::sendto;
 use crate::{activity, autostart, clipboard, hud, look, update};
@@ -25,7 +30,7 @@ pub enum Setting {
 }
 
 impl Setting {
-    /// In the order the menu and the window show them.
+    /// In the order the menu and the page show them.
     pub const ALL: [Setting; 8] = [
         Setting::Black,
         Setting::LiveGlass,

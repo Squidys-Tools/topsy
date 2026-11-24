@@ -1,6 +1,6 @@
 //! Transform, after Droppy's: a panel that turns the files given to it into something else
 //! (compressed, converted, resized, trimmed, a GIF, a PDF, a zip, renamed). It opens from a
-//! chip's menu or the shelf's header, takes the focus like the settings window (the island
+//! chip's menu or the shelf's header, takes the focus like the clipboard palette (the island
 //! never does), steps aside for result cards while it works, and parks what it makes on the
 //! shelf. The rules are in `model::transform`;
 //! the work itself is in the engines beside this file, run on a worker thread by `job`.

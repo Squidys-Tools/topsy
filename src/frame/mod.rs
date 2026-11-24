@@ -24,7 +24,7 @@ pub const TRAY: (f32, f32) = (400.0, 152.0);
 pub const SHELF_WIDTH: f32 = 460.0;
 /// The page capsule under the open tray, and the strip of window it hangs in: Droppy's, a gap
 /// below the notch.
-pub const CAPSULE: (f32, f32) = (94.0, 32.0);
+pub const CAPSULE: (f32, f32) = (137.0, 32.0);
 pub const STRIP: f32 = 8.0 + CAPSULE.1;
 /// The capsule's fill and edge on the glass.
 const CAPSULE_FILL: u32 = 0x000000b3;

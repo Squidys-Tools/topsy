@@ -1,7 +1,7 @@
 //! Droplets, after Droppy's: small self-contained features that can be switched on and off one by
 //! one. Each is a type of its own implementing [`Droplet`] and a line in [`CATALOG`]; the island
 //! owns one of each and hands them the moments they need. Which are on, and in what order, is the
-//! lineup in `model::droplets`, set in the settings window. A droplet that is on and has a
+//! lineup in `model::droplets`, set on the tray's settings page. A droplet that is on and has a
 //! [`Card`] shows it in the row across the top of Home; nothing runs while the row is off screen,
 //! since each card books its own redraws only while it is drawn.
 
@@ -160,7 +160,7 @@ impl State {
         widths + gaps + 2.0 * PAD_X
     }
 
-    /// The settings window changed the lineup (it is saved already). `open`: the tray is open, so
+    /// The settings page changed the lineup (it is saved already). `open`: the tray is open, so
     /// a droplet switched on is opened at once.
     pub(crate) fn set_lineup(
         &mut self,

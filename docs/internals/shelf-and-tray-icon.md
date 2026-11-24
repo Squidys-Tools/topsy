@@ -29,9 +29,9 @@ Decisions behind [the shelf](../user/shelf.md) and [the tray icon and settings](
   hidden window foreground, the menu takes it from there, and it closes when it loses it. The *Options*
   submenu is a second window that never activates, so the menu keeps the keyboard; while it is being made it
   takes the foreground for a moment, so the menu checks what is in front a frame later before closing. A
-  choice that opens a window of topsy's (*Settings…*, *Clipboard history*) leaves the foreground with the
-  hidden window, so that window may come to the front; any other hands it back.
-- **One list of settings.** The menu and the settings window are both built from the list in
+  choice that opens a window of topsy's (*Clipboard history*) leaves the foreground with the hidden window, so
+  that window may come to the front; any other (*Settings…* too, which only opens the tray) hands it back.
+- **One list of settings.** The menu and the tray's settings page are both built from the list in
   `src/settings/mod.rs`, and each reads its value from where it is saved, so a switch in one shows in the other. A new
   toggle is a variant there, an arm in each of its matches, and what the island does about it
   (`Island::on_setting`).
@@ -45,4 +45,6 @@ Decisions behind [the shelf](../user/shelf.md) and [the tray icon and settings](
 - **Only a nightly registers itself** in Start and Installed apps (`src/install.rs`), rewriting both at every
   launch so they follow the exe. A build without a release stamp never does, so no worktree's build lands in
   Start. Uninstall removes only entries that start its own exe.
-- The settings window is an ordinary window and takes focus, unlike the island. There is one at a time.
+- **The settings are a page of the tray, not a window.** Nothing on it is typed into, so it needs no focus, and
+  it springs open and folds like the rest of the island. It reads the saved values when it is turned to (not
+  every frame, since some are registry reads) and after the menu changes one.

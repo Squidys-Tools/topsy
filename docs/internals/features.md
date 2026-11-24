@@ -34,6 +34,6 @@ A small feature that is switched on and off by itself and shows as a card on Hom
    (`src/booking.rs`), which keeps one timer however often the render runs, and redraws only while the
    feature shows. Check the idle with `scripts/count-renders.ps1`.
 6. **A switch to turn it off.** A `Setting` variant (`src/settings/mod.rs`) reaches the tray icon's menu and the
-   settings window; a `TOPSY_NO_*` field in `src/config.rs` and a row in
+   settings page (an arm in `Setting::section` and `description`); a `TOPSY_NO_*` field in `src/config.rs` and a row in
    [Running](../operations/running.md), and the live checks that click the tray turn it off.
 7. **Docs**: a section in `docs/user/`, and an internals page only for a decision the code can't show.

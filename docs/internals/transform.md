@@ -36,7 +36,7 @@ How [Transform](../user/transform.md) is built, and why.
   match.
 - **Remove background runs on this PC:** BiRefNet-lite (a 178 MB model from Hugging Face, fetched once) in pure
   Rust on the CPU, through gemm and rayon.
-- **Windows and focus.** The panel takes the focus, like the settings window, since it is typed into; the island
+- **Windows and focus.** The panel takes the focus, like the clipboard palette, since it is typed into; the island
   and the result cards never do. The panel's window is transparent outside its rounded corners, with a region a
   pixel looser so they are click-through too (as the basket's); the cards' window has one per card, so the gaps
   between them are too, unless the column overflows and scrolls. A card's picture is cropped to the card before

@@ -3,7 +3,7 @@
 Decisions behind [Shelf widgets](../user/widgets.md). Each widget is a [droplet](droplets.md) in
 `src/droplets/`, its rules in `crates/model` (`droplets`, `calendar`, `pomodoro`, `stats`, `weather`).
 
-- **They live on Home, a page of their own.** Every open tray has two pages, Home and the shelf, as Droppy's has
+- **They live on Home, a page of their own.** Every open tray has three pages, Home, the shelf and the settings, as Droppy's has
   (`src/island/pager.rs`, rules in `model::pager`; `tray_cause::sections` says what each page shows), and the
   capsule always hangs under it, so there is always a way to the other page. `TrayCause::page` picks the first:
   a drag or a drop is about the shelf, a look opens on Home unless it has nothing to show. Each page has its own
@@ -30,6 +30,5 @@ Decisions behind [Shelf widgets](../user/widgets.md). Each widget is a [droplet]
   card in the lineup, or when the card is switched on, and stops when it is switched off; between events it costs nothing. Its changes carry
   an event-context GUID, so their echoes are dropped and only other apps' changes come back. It follows a new
   default output device when the tray next opens, not while it is open.
-- **The lineup is one registry string**, read when the island starts and written by the settings window, which
-  hands the island the new lineup (`settings::window::Change::Droplets`) rather than having it read the registry
-  again.
+- **The lineup is one registry string**, read when the island starts and written by the settings page, which
+  hands the island the new lineup (`settings::Effect::Lineup`) rather than having it read the registry again.
