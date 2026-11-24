@@ -1,5 +1,5 @@
-//! The open tray's pages, after Droppy's: Home (Now Playing and the widgets) and the shelf, one
-//! at a time. A capsule hanging under every open tray shows which is up and switches them, and a
+//! The open tray's pages, after Droppy's: Home (Now Playing and the widgets), the shelf and the
+//! settings, one at a time. A capsule hanging under every open tray shows which is up and switches them, and a
 //! sideways swipe (a touchpad, a tilt wheel, Shift and the wheel) turns them. The rules are in
 //! `model::pager`; which page shows what is `tray_cause::sections`.
 
@@ -23,7 +23,7 @@ const INNER: (f32, f32) = (
     CAPSULE.1 - 2.0 * (INSET + 1.0),
 );
 /// One page's button. The content slides by as much when the page turns, as the highlight does.
-const SEGMENT: f32 = INNER.0 / 2.0;
+const SEGMENT: f32 = INNER.0 / Page::ALL.len() as f32;
 const ACTIVE: u32 = 0xffffff2e;
 const DIM: u32 = 0xffffff8c;
 
@@ -87,6 +87,9 @@ impl Island {
         }
         log(&format!("page {page:?}"));
         self.pager.page = page;
+        if page == Page::Settings {
+            self.settings.reload();
+        }
         // The new page comes in from the side it lies on.
         self.pager.slide.value = (page.index() as f32 - from.index() as f32) * SEGMENT;
         self.pager.slide.velocity = 0.0;
@@ -149,6 +152,7 @@ impl Island {
             let (glyph, badge) = match page {
                 Page::Home => (Icon::Home, None),
                 Page::Shelf => (Icon::Tray, (count > 0).then(|| count.to_string())),
+                Page::Settings => (Icon::Settings, None),
             };
             div()
                 .id(("page", page.index()))

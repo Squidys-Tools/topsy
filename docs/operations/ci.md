@@ -34,7 +34,7 @@ It calls `build.yml`, so a nightly passes the same gates as every PR. The tag is
 under that same name (so replacing it keeps *Start with Windows* pointing at it) and its `SHA256SUMS`. A
 nightly is never marked latest, so a stable release later takes `releases/latest` without a change here.
 
-The build stamps `TOPSY_RELEASE_VERSION` into the exe, which the settings window shows in place of the crate
+The build stamps `TOPSY_RELEASE_VERSION` into the exe, which the settings page's About shows in place of the crate
 version. It is a build-time variable, not a `TOPSY_*` run switch.
 
 The exe is unsigned, so SmartScreen warns on first run. Signing needs a paid certificate; until then the release

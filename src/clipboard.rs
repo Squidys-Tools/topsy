@@ -37,7 +37,7 @@ const ENABLED: RegString<'static> = RegString::new(r"Software\topsy", "Clipboard
 const KEEP_DAYS: RegString<'static> = RegString::new(r"Software\topsy", "ClipboardDays");
 /// How long history is kept when the user hasn't chosen.
 pub const DEFAULT_DAYS: u32 = 7;
-/// The choices the settings window steps through; 0 is forever.
+/// The choices the settings page offers; 0 is forever.
 pub const DAY_CHOICES: [u32; 4] = [1, 7, 30, 0];
 
 pub enum Command {

@@ -1,5 +1,5 @@
-//! The open tray's pages, after Droppy's: Home (Now Playing and the widgets) and the shelf, one at
-//! a time, switched by the capsule under the notch or by a sideways swipe.
+//! The open tray's pages, after Droppy's: Home (Now Playing and the widgets), the shelf and the
+//! settings, one at a time, switched by the capsule under the notch or by a sideways swipe.
 
 use std::time::{Duration, Instant};
 
@@ -8,15 +8,17 @@ use std::time::{Duration, Instant};
 pub enum Page {
     Home,
     Shelf,
+    Settings,
 }
 
 impl Page {
-    pub const ALL: [Page; 2] = [Page::Home, Page::Shelf];
+    pub const ALL: [Page; 3] = [Page::Home, Page::Shelf, Page::Settings];
 
     pub fn index(self) -> usize {
         match self {
             Page::Home => 0,
             Page::Shelf => 1,
+            Page::Settings => 2,
         }
     }
 
@@ -89,8 +91,9 @@ mod tests {
     fn pages_step_within_the_ends() {
         assert_eq!(Page::Home.step(Step::On), Some(Page::Shelf));
         assert_eq!(Page::Shelf.step(Step::Back), Some(Page::Home));
+        assert_eq!(Page::Shelf.step(Step::On), Some(Page::Settings));
         assert_eq!(Page::Home.step(Step::Back), None);
-        assert_eq!(Page::Shelf.step(Step::On), None);
+        assert_eq!(Page::Settings.step(Step::On), None);
     }
 
     #[test]

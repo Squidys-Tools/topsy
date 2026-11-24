@@ -80,8 +80,8 @@ Keep this honest: remove a gap you close, add one you find and leave.
 - **Shelf widgets.** Weather is untested with Windows' location on (only the *location is off* card was seen
   live) and shows no town name. The calendar has no events and its month and day names are English. The stats'
   graphs hold only what was sampled while the tray was open. The Pomodoro's end shows as a Live Activity, so with
-  *Live Activities* off only the chime says so; quitting topsy forgets a running timer. The row can't be
-  reordered by dragging on the notch, only with the settings window's arrows. With all five on the tray is about
+  *Live Activities* off only the chime says so; quitting topsy forgets a running timer. The row is reordered
+  on the settings page, not by dragging its cards. With all five on the tray is about
   1110 px wide and isn't narrowed for a smaller monitor. Audio is untested on the live desktop; it shows the
   default output device only, follows a change of it only when the tray next opens, leaves out system sounds,
   and its slider stops following a drag that leaves the slider's row.

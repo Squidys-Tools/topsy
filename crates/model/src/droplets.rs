@@ -45,19 +45,18 @@ impl Lineup {
         }
     }
 
-    /// Move a droplet that is on one place left (`-1`) or right (`1`); at either end it stays.
-    pub fn shift(&mut self, id: &str, by: isize) {
+    /// Move a droplet that is on to `index` (past the end: the last place); one that is off stays
+    /// off.
+    pub fn move_to(&mut self, id: &str, index: usize) {
         let Some(at) = self.0.iter().position(|kept| *kept == id) else {
             return;
         };
-        let to = at.saturating_add_signed(by);
-        if to < self.0.len() {
-            self.0.swap(at, to);
-        }
+        let moved = self.0.remove(at);
+        self.0.insert(index.min(self.0.len()), moved);
     }
 
     /// Every droplet of `known`, those on first in their order, then those off in `known`'s: the
-    /// settings window's rows.
+    /// settings' widget pills.
     pub fn rows(&self, known: &[&'static str]) -> Vec<(&'static str, bool)> {
         let off = known.iter().filter(|id| !self.contains(id));
         (self.0.iter().map(|id| (*id, true)))
@@ -98,17 +97,22 @@ mod tests {
     }
 
     #[test]
-    fn shifting_moves_one_place_and_stops_at_the_ends() {
+    fn moving_puts_a_droplet_in_place_and_leaves_off_ones_off() {
         let mut lineup = Lineup::parse("calendar,pomodoro,stats", &KNOWN);
-        lineup.shift("stats", -1);
+        lineup.move_to("stats", 0);
+        assert_eq!(lineup.serialize(), "stats,calendar,pomodoro");
+        lineup.move_to("stats", 1);
         assert_eq!(lineup.serialize(), "calendar,stats,pomodoro");
-        lineup.shift("calendar", -1);
-        lineup.shift("pomodoro", 1);
-        assert_eq!(lineup.serialize(), "calendar,stats,pomodoro");
-        lineup.shift("weather", 1);
+        lineup.move_to("calendar", 9);
         assert_eq!(
             lineup.serialize(),
-            "calendar,stats,pomodoro",
+            "stats,pomodoro,calendar",
+            "past the end"
+        );
+        lineup.move_to("weather", 0);
+        assert_eq!(
+            lineup.serialize(),
+            "stats,pomodoro,calendar",
             "an off droplet"
         );
     }

@@ -12,13 +12,14 @@ topsy*. The arrow keys and Enter work in it too, and Escape closes it.
 On Windows 11 a new icon starts in the overflow flyout (the ^ arrow); drag it onto the taskbar to keep it
 visible.
 
-## Settings window
+## Settings page
 
-*Settings…* opens *topsy settings*, a small window with a switch for each setting, how long
-[clipboard history](clipboard-history.md) is kept, which [shelf widgets](widgets.md) show and in what order, the
-version and *Quit topsy*. Asking again brings the open
-one to the front. Closing it leaves topsy running. A switch changed in the menu shows in the window, and the
-other way round.
+The settings live in the notch, on the tray's third page: click the gear in the capsule under the open tray, or
+choose *Settings…* in the menu. Its sections run down the left: **Notch** and **General** hold the switches below,
+**Widgets** which [shelf widgets](widgets.md) show and in what order, **Clipboard** how long
+[clipboard history](clipboard-history.md) is kept, and **About** the version, an update waiting (a dot marks the
+section) and links to the source and this help. *Quit topsy* is under General. A switch changed in the menu shows
+on the page, and the other way round.
 
 ## Settings
 
@@ -43,7 +44,7 @@ other way round.
 
 A nightly build looks for a newer nightly when it starts and every 4 hours, and downloads it quietly into
 `%LOCALAPPDATA%\topsy\update`. When one is ready the notch shows *Update ready* for a few seconds; click it for
-the settings window, then *Restart to update*. The tray icon's menu has *Restart to update* too. topsy swaps
+the settings page's About, then *Restart to update*. The tray icon's menu has *Restart to update* too. topsy swaps
 its own `topsy.exe` and starts again; *Start with Windows* keeps working. An update you don't restart into is
 installed the next time topsy starts.
 
@@ -57,9 +58,9 @@ it. Starting it again while it runs opens the shelf. If you move `topsy.exe`, bo
 start it.
 
 *Uninstall* in Installed apps quits topsy, removes it from Start, startup and *Send to*, and deletes `topsy.exe`.
-Your shelf, clipboard history and settings stay in `%LOCALAPPDATA%	opsy` and `HKCU\Software	opsy`; delete
+Your shelf, clipboard history and settings stay in `%LOCALAPPDATA%\topsy` and `HKCU\Software\topsy`; delete
 them by hand if you want them gone.
 
 ## Quitting
 
-*Quit topsy* in the menu or the settings window quits and removes the icon.
+*Quit topsy* in the menu or *Quit* on the settings page quits and removes the icon.

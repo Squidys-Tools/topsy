@@ -29,8 +29,6 @@ macro_rules! icons {
 icons! {
     Add => "add",
     Archive => "archive",
-    ArrowDown => "arrow-down",
-    ArrowUp => "arrow-up",
     Basket => "basket",
     Brightness => "brightness",
     Buds => "buds",
@@ -73,6 +71,7 @@ icons! {
     Resize => "resize",
     Rotate => "rotate",
     Search => "search",
+    Settings => "settings",
     Shrink => "shrink",
     Snow => "snow",
     Speaker => "speaker",

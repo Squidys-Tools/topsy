@@ -1,5 +1,5 @@
-//! What the island shows: the peek's line, and the tray's layout (Home's player and droplets, or
-//! the shelf's header and its chips, as the page and `tray_cause::sections` say).
+//! What the island shows: the peek's line, and the tray's layout (Home's player and droplets, the
+//! shelf's header and its chips, or the settings, as the page and `tray_cause::sections` say).
 
 mod shelf_view;
 
@@ -9,7 +9,8 @@ use gpui::{Context, Div, ScrollWheelEvent, div, prelude::*, px, rgba};
 
 use crate::droplets::{self, Droplet, Effect};
 use crate::island::PEEK_LINGER;
-use crate::{Island, Mode, activity, frame, hud, now_playing, tray, win32};
+use crate::{Island, Mode, activity, frame, hud, now_playing, settings, win32};
+use model::pager::Page;
 use model::tray_cause::{self, Sections, TrayCause};
 
 impl Island {
@@ -98,11 +99,30 @@ impl Island {
         }
     }
 
-    /// A click on the notch opens the tray, or the settings while the update HUD offers them.
+    /// The one way into the settings page from its listeners: `update` changes its state, and
+    /// the island applies what was changed.
+    pub(crate) fn update_settings(
+        &mut self,
+        cx: &mut Context<Self>,
+        update: impl FnOnce(&mut settings::State, &mut Context<Self>) -> Option<settings::Effect>,
+    ) {
+        match update(&mut self.settings, cx) {
+            Some(settings::Effect::Setting(setting, on)) => self.on_setting(setting, on, cx),
+            Some(settings::Effect::Lineup(lineup)) => {
+                let open = self.mode == Mode::Tray;
+                self.update_droplets(cx, |droplets, _, cx| droplets.set_lineup(lineup, open, cx));
+            }
+            Some(settings::Effect::Redraw) | None => {}
+        }
+        cx.notify();
+    }
+
+    /// A click on the notch opens the tray, or the settings' About while the update HUD offers
+    /// the update.
     pub(crate) fn clicked(&mut self, cx: &mut Context<Self>) {
         if self.hud.shows_update() {
-            let previous = win32::foreground_window().0 as usize;
-            self.on_tray(tray::TrayEvent::OpenSettings(previous), cx);
+            self.settings.show(settings::Section::About);
+            self.open_tray(TrayCause::Settings, cx);
         } else if self.mode != Mode::Tray {
             self.open_tray(TrayCause::Opened, cx);
         }
@@ -240,9 +260,10 @@ impl Island {
             true => (droplets::HEIGHT, w.max(self.droplets.width())),
             false => (0.0, w),
         };
-        let (shelf, w) = match sections.shelf {
-            true => (h, w.max(frame::SHELF_WIDTH)),
-            false => (0.0, w),
+        let (shelf, w) = match (sections.shelf, sections.settings) {
+            (true, _) => (h, w.max(frame::SHELF_WIDTH)),
+            (false, true) => (h, w.max(settings::WIDTH)),
+            (false, false) => (0.0, w),
         };
         let empty = if sections.is_empty() { EMPTY_HOME } else { 0.0 };
         (w, player + row + shelf + empty)
@@ -260,8 +281,11 @@ impl Island {
     /// on the shelf.
     pub(crate) fn opened(&mut self, cx: &mut Context<Self>) {
         self.shelf.deselect();
-        self.pager
-            .opened(self.tray_cause.page(self.home_has_content()));
+        let page = self.tray_cause.page(self.home_has_content());
+        if page == Page::Settings {
+            self.settings.reload();
+        }
+        self.pager.opened(page);
         self.droplets.opened(cx);
     }
 
@@ -301,6 +325,7 @@ impl Island {
             )
             .children((sections.widgets).then(|| self.droplets.row(self.row_visible(), cx)))
             .children(sections.shelf.then(|| self.shelf_section(cx)))
+            .children(sections.settings.then(|| self.settings.view(h, cx)))
             .children(sections.is_empty().then(empty_home))
             .children(self.hud.over_tray())
     }

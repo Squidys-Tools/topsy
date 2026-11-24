@@ -1,8 +1,6 @@
-//! The app's wiring: opening the island, and connecting the threads, the tray icon and the
-//! settings window to it.
+//! The app's wiring: opening the island, and connecting the threads and the tray icon to it.
 
 use std::path::PathBuf;
-use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use gpui::{App, Application, Bounds, Context, Entity, point, prelude::*, px, size};
@@ -12,7 +10,6 @@ use crate::config::Lens;
 use crate::frame::{Frame, Glass, PEEK, open_glass};
 use crate::log::LogErr;
 use crate::settings::Setting;
-use crate::settings::window::{self as settings_window, Change, OnChange};
 use crate::tray::{self, TrayEvent};
 use crate::win32::inbox::Delivery;
 use crate::win32::sendto;
@@ -38,26 +35,10 @@ impl Island {
             }
             TrayEvent::Setting(setting, on) => {
                 self.on_setting(setting, on, cx);
-                settings_window::refresh(cx);
+                self.settings.reload();
+                cx.notify();
             }
-            TrayEvent::OpenSettings(previous) => {
-                let island = cx.entity().downgrade();
-                let on_change: OnChange = Rc::new(move |change, cx| {
-                    island
-                        .update(cx, |island, cx| match change {
-                            Change::Setting(setting, on) => island.on_setting(setting, on, cx),
-                            Change::Droplets(lineup) => {
-                                let open = island.mode == Mode::Tray;
-                                island.update_droplets(cx, |droplets, _, cx| {
-                                    droplets.set_lineup(lineup, open, cx)
-                                })
-                            }
-                        })
-                        .log_err();
-                });
-                // Out of the island's update: a new window must not be made while it is leased.
-                cx.defer(move |cx| settings_window::open(cx, on_change, previous));
-            }
+            TrayEvent::OpenSettings => self.open_tray(TrayCause::Settings, cx),
             TrayEvent::ClearShelf => self.clear_shelf(cx),
             TrayEvent::ShowBasket => {
                 if let Some(basket) = self.basket.clone() {
@@ -94,8 +75,8 @@ impl Island {
         }
     }
 
-    /// A setting was switched, from the menu or the settings window, and is saved already.
-    fn on_setting(&mut self, setting: Setting, on: bool, cx: &mut Context<Self>) {
+    /// A setting was switched, from the menu or the settings page, and is saved already.
+    pub(crate) fn on_setting(&mut self, setting: Setting, on: bool, cx: &mut Context<Self>) {
         log(&format!("setting {setting:?} {on}"));
         match setting {
             Setting::Black => {

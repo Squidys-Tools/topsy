@@ -165,7 +165,7 @@ pub fn apply_focus_styles(hwnd: HWND) {
 }
 
 /// `WS_EX_NOACTIVATE` keeps a click from making the island the foreground window, but while
-/// topsy already holds the foreground (its settings window is in front) the default answer to
+/// topsy already holds the foreground (its clipboard palette is in front) the default answer to
 /// `WM_MOUSEACTIVATE`, which GPUI leaves to `DefWindowProc`, still makes it the active window.
 unsafe extern "system" fn no_mouse_activate(
     hwnd: HWND,

@@ -19,9 +19,9 @@ files, with the app and when it was copied in its tag and the size below it.
 
 ## Settings
 
-History is kept 7 days by default. Choose 1, 7 or 30 days or forever in the settings window, whose *Clear
-unpinned* empties it but for the pins; pinned entries never expire. Turn history off from the tray icon's menu
-or the settings window (see [Tray icon and settings](settings.md)).
+History is kept 7 days by default. Choose 1, 7 or 30 days or forever under Clipboard on the settings page,
+whose *Clear* empties it but for the pins; pinned entries never expire. Turn history off there or from the tray
+icon's menu (see [Tray icon and settings](settings.md)).
 
 History is kept in `%LOCALAPPDATA%\topsy\clipboard`.
 
