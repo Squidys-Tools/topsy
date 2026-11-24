@@ -16,6 +16,7 @@ use std::any::Any;
 use gpui::{AnyElement, Context, MouseDownEvent, Window, div, prelude::*, px, rgba};
 
 use crate::autostart::RegString;
+use crate::icons::Icon;
 use crate::{Island, config};
 use model::activity::{Activity, Key};
 use model::droplets::Lineup;
@@ -23,11 +24,11 @@ use model::droplets::Lineup;
 /// Every droplet topsy has, in the order a new lineup offers them. Weather is off at first, since
 /// finding where you are asks Windows for your location; Audio too, the row is wide enough already.
 pub(crate) const CATALOG: [Entry; 5] = [
-    Entry::new::<calendar::State>("calendar", "Calendar", true),
-    Entry::new::<pomodoro::State>("pomodoro", "Pomodoro", true),
-    Entry::new::<stats::State>("stats", "System stats", true),
-    Entry::new::<weather::State>("weather", "Weather", false),
-    Entry::new::<audio::State>("audio", "Audio", false),
+    Entry::new::<calendar::State>("calendar", "Calendar", Icon::Calendar, 0xe9453a, true),
+    Entry::new::<pomodoro::State>("pomodoro", "Pomodoro", Icon::Timer, 0xf2811d, true),
+    Entry::new::<stats::State>("stats", "System stats", Icon::Cpu, 0x48484f, true),
+    Entry::new::<weather::State>("weather", "Weather", Icon::SunCloud, 0x2f8cff, false),
+    Entry::new::<audio::State>("audio", "Audio", Icon::Headphones, 0x9b51e0, false),
 ];
 
 /// One droplet. Every method has a default, so a droplet implements only the moments and the
@@ -62,15 +63,26 @@ pub(crate) struct Entry {
     /// Its name in the saved lineup: a lowercase word, never changed once shipped.
     pub(crate) id: &'static str,
     pub(crate) name: &'static str,
+    /// Its icon in the settings window, on a square of `tint`.
+    pub(crate) icon: Icon,
+    pub(crate) tint: u32,
     on_at_first: bool,
     make: fn() -> Box<dyn Droplet>,
 }
 
 impl Entry {
-    const fn new<D: Droplet + Default>(id: &'static str, name: &'static str, on: bool) -> Self {
+    const fn new<D: Droplet + Default>(
+        id: &'static str,
+        name: &'static str,
+        icon: Icon,
+        tint: u32,
+        on: bool,
+    ) -> Self {
         Entry {
             id,
             name,
+            icon,
+            tint,
             on_at_first: on,
             make: make::<D>,
         }

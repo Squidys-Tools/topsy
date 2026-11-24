@@ -1,6 +1,10 @@
 //! The app's on/off settings, in one list that both the tray icon's menu and the settings
 //! window are built from. A new toggle is a variant here and an arm in each match below.
 
+mod controls;
+mod lineup;
+mod pages;
+mod previews;
 pub(crate) mod window;
 
 use crate::win32::sendto;
@@ -53,6 +57,22 @@ impl Setting {
 
     pub fn label(self) -> String {
         self.menu_label().replace('&', "")
+    }
+
+    /// The line under its label in the settings window.
+    pub fn description(self) -> &'static str {
+        match self {
+            Setting::Black => "Draw the notch plain black instead of glass",
+            Setting::LiveGlass => {
+                "Keep the glass in step with the screen behind it while the tray is open"
+            }
+            Setting::Autostart => "Start topsy when you sign in",
+            Setting::SendTo => "Send files to the shelf from Explorer's right-click menu",
+            Setting::Clipboard => "Keep what you copy, to paste it again later",
+            Setting::VolumeHud => "Show the volume keys' level in the notch, in place of Windows'",
+            Setting::LiveActivities => "Show downloads and Bluetooth audio in the notch",
+            Setting::Updates => "Download newer nightlies quietly, to install on restart",
+        }
     }
 
     /// Read from where the setting is kept, so every surface agrees with it.

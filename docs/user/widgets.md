@@ -20,9 +20,9 @@ A drag or a drop opens the tray on the shelf; the capsule turns back to the widg
 
 ## Choosing them
 
-In *Settings…* (see [Tray icon and settings](settings.md)), under *Shelf widgets*, switch each widget on or off
-and move it left or right with the arrows. The tray widens to fit them. Calendar, Pomodoro and System stats are on
-to begin with; turn every one off (with nothing playing) to get the plain tray back, with no pages. Saved in `HKCU\Software\topsy\Widgets`.
+In *Settings…* (see [Tray icon and settings](settings.md)), on the *Shelf & Widgets* page, click a widget to put
+it in the tray or take it out, and drag the ticked ones into the order you want, first on the left. The tray
+widens to fit them. Calendar, Pomodoro and System stats are on to begin with; turn every one off (with nothing playing) to get the plain tray back, with no pages. Saved in `HKCU\Software\topsy\Widgets`.
 
 ## Good to know
 

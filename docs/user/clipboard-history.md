@@ -19,8 +19,8 @@ files, with the app and when it was copied in its tag and the size below it.
 
 ## Settings
 
-History is kept 7 days by default. Choose 1, 7 or 30 days or forever in the settings window, whose *Clear
-unpinned* empties it but for the pins; pinned entries never expire. Turn history off from the tray icon's menu
+History is kept 7 days by default. Choose 1, 7 or 30 days or forever on the settings window's *Clipboard*
+page, whose *Clear* empties it but for the pins; pinned entries never expire. Turn history off from the tray icon's menu
 or the settings window (see [Tray icon and settings](settings.md)).
 
 History is kept in `%LOCALAPPDATA%\topsy\clipboard`.
@@ -39,5 +39,5 @@ History is kept in `%LOCALAPPDATA%\topsy\clipboard`.
 - Links show their site's icon, and a selected link shows its page's preview: its picture, title and
   description. Both are fetched once, over https, from public sites only; that is the only network traffic
   history makes. A link with a query (`?…`) or what looks like a key in it is never opened, as some links act
-  when opened. *Clear unpinned* removes the previews but leaves the saved icons, which name the sites you
+  when opened. *Clear* removes the previews but leaves the saved icons, which name the sites you
   copied from.

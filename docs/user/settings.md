@@ -14,11 +14,13 @@ visible.
 
 ## Settings window
 
-*Settings…* opens *topsy settings*, a small window with a switch for each setting, how long
-[clipboard history](clipboard-history.md) is kept, which [shelf widgets](widgets.md) show and in what order, the
-version and *Quit topsy*. Asking again brings the open
-one to the front. Closing it leaves topsy running. A switch changed in the menu shows in the window, and the
-other way round.
+*Settings…* opens topsy's settings, a pane of the notch's glass with its pages down the left: *Shelf & Widgets*
+(*Send to*, and which [shelf widgets](widgets.md) show, in what order), *Notch & HUD* (glass or black, and what
+the notch shows), *Clipboard* (how long [clipboard history](clipboard-history.md) is kept, and clearing it),
+*General* (startup and updates) and *About* (the version and links). *Quit topsy* sits below the pages, and
+*Restart to update* above it when an update is ready. Drag the window by its top edge to move it; the ✕ or Escape
+closes it. Asking again brings the open one to the front. Closing it leaves topsy running. A switch
+changed in the menu shows in the window, and the other way round.
 
 ## Settings
 
@@ -43,9 +45,9 @@ other way round.
 
 A nightly build looks for a newer nightly when it starts and every 4 hours, and downloads it quietly into
 `%LOCALAPPDATA%\topsy\update`. When one is ready the notch shows *Update ready* for a few seconds; click it for
-the settings window, then *Restart to update*. The tray icon's menu has *Restart to update* too. topsy swaps
-its own `topsy.exe` and starts again; *Start with Windows* keeps working. An update you don't restart into is
-installed the next time topsy starts.
+the settings window, then *Restart to update* below its pages. The tray icon's menu has *Restart to update*
+too. topsy swaps its own `topsy.exe` and starts again; *Start with Windows* keeps working. An update you don't
+restart into is installed the next time topsy starts.
 
 Only nightlies update. A build from source or from CI never does.
 

@@ -45,4 +45,6 @@ Decisions behind [the shelf](../user/shelf.md) and [the tray icon and settings](
 - **Only a nightly registers itself** in Start and Installed apps (`src/install.rs`), rewriting both at every
   launch so they follow the exe. A build without a release stamp never does, so no worktree's build lands in
   Start. Uninstall removes only entries that start its own exe.
-- The settings window is an ordinary window and takes focus, unlike the island. There is one at a time.
+- The settings window takes focus, unlike the island, and is a pane of the same glass (`frame::Shape::Panel`) rather
+  than a system window. It opens topmost, as the frame's windows do, and drops that once another window is used, so
+  it falls behind like an ordinary one. There is one at a time.
