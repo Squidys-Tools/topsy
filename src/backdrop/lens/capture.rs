@@ -21,14 +21,14 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::System::WinRT::Direct3D11::IDirect3DDxgiInterfaceAccess;
 use windows::Win32::System::WinRT::Graphics::Capture::IGraphicsCaptureItemInterop;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DestroyWindow, GetSystemMetrics, SM_CXVIRTUALSCREEN, SM_XVIRTUALSCREEN,
-    SM_YVIRTUALSCREEN, SW_HIDE, SWP_NOACTIVATE, SWP_NOZORDER, SWP_SHOWWINDOW, SetWindowPos,
-    ShowWindow, WS_EX_NOACTIVATE, WS_EX_NOREDIRECTIONBITMAP, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
-    WS_POPUP,
+    CreateWindowExW, DestroyWindow, GetSystemMetrics, GetWindowRect, IsWindowVisible,
+    SET_WINDOW_POS_FLAGS, SM_CXVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SW_HIDE,
+    SWP_NOACTIVATE, SWP_NOZORDER, SWP_SHOWWINDOW, SetWindowPos, ShowWindow, WS_EX_NOACTIVATE,
+    WS_EX_NOREDIRECTIONBITMAP, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_POPUP,
 };
 use windows::core::{Error, Interface, factory, w};
 
-use super::super::live::Shared;
+use super::super::live::{Shared, track_mirror, untrack_mirror};
 use crate::log::LogErr;
 use model::float::Rect;
 
@@ -131,6 +131,7 @@ impl Mirror {
                 }
             };
             // From here on, dropping the mirror lets go of the window and the copy.
+            track_mirror(window);
             let mirror = Self {
                 window,
                 target,
@@ -187,18 +188,7 @@ impl Mirror {
     ) -> windows::core::Result<Capture> {
         let (width, height) = (rect.right - rect.left, rect.bottom - rect.top);
         self.aim(rect, excluded)?;
-        unsafe {
-            // Beside every screen: never seen, but composed, so it can be captured.
-            SetWindowPos(
-                self.window,
-                None,
-                GetSystemMetrics(SM_XVIRTUALSCREEN) + GetSystemMetrics(SM_CXVIRTUALSCREEN) + width,
-                GetSystemMetrics(SM_YVIRTUALSCREEN),
-                width,
-                height,
-                SWP_NOACTIVATE | SWP_NOZORDER | SWP_SHOWWINDOW,
-            )?;
-        }
+        beside_screens(self.window, width, height, SWP_SHOWWINDOW)?;
         let interop = factory::<GraphicsCaptureItem, IGraphicsCaptureItemInterop>()?;
         let item: GraphicsCaptureItem = unsafe { interop.CreateForWindow(self.window)? };
         let pool = Direct3D11CaptureFramePool::CreateFreeThreaded(
@@ -237,8 +227,46 @@ impl Mirror {
     }
 }
 
+/// Put a mirror beside every screen: never seen, but composed, so it can be captured.
+fn beside_screens(
+    window: HWND,
+    width: i32,
+    height: i32,
+    flags: SET_WINDOW_POS_FLAGS,
+) -> windows::core::Result<()> {
+    unsafe {
+        SetWindowPos(
+            window,
+            None,
+            GetSystemMetrics(SM_XVIRTUALSCREEN) + GetSystemMetrics(SM_CXVIRTUALSCREEN) + width,
+            GetSystemMetrics(SM_YVIRTUALSCREEN),
+            width,
+            height,
+            SWP_NOACTIVATE | SWP_NOZORDER | flags,
+        )
+    }
+}
+
+/// Keep a mirror in use beside the screens after they change, or it may show on a new monitor.
+pub fn park(window: HWND) {
+    let mut rect = RECT::default();
+    unsafe {
+        if !IsWindowVisible(window).as_bool() || GetWindowRect(window, &mut rect).is_err() {
+            return;
+        }
+    }
+    beside_screens(
+        window,
+        rect.right - rect.left,
+        rect.bottom - rect.top,
+        SET_WINDOW_POS_FLAGS(0),
+    )
+    .log_err();
+}
+
 impl Drop for Mirror {
     fn drop(&mut self) {
+        untrack_mirror(self.window);
         unsafe { DwmUnregisterThumbnail(self.thumbnail) }.log_err();
         unsafe { DestroyWindow(self.window) }.log_err();
     }

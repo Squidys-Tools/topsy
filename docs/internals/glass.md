@@ -85,7 +85,10 @@ it can't leave the ears' corners clear, so that notch has no ears and DWM's corn
   the soft border mode, or DirectComposition draws it aliased.
 - **A window Windows moves takes its glass along.** Both glasses are offset by the window's origin to line up
   with what is behind, so a floating window dragged by its caption reshapes its glass at the new origin, or it
-  would show the screen from where the drag began.
+  would show the screen from where the drag began. The live glass is placed against the virtual screen, whose
+  origin moves when a monitor is added, removed or rearranged, under windows that stay put; its hidden host
+  window hears `WM_DISPLAYCHANGE` and sets every pane again, and moves a capturing lens's mirror back beside the
+  screens, where a new monitor could otherwise show it.
 - **The resize must not happen inside `render`.** `SWP_ASYNCWINDOWPOS` only defers across threads; here it is
   synchronous, so `WM_SIZE` reaches GPUI mid-draw, where its resize callback can't update the window and GPUI
   never learns the new size. The move runs in a foreground task (what GPUI's own `Window::resize` does). The

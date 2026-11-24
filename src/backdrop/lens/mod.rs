@@ -19,6 +19,7 @@ use windows::Win32::Foundation::{E_FAIL, HWND};
 use windows::Win32::Graphics::Direct3D11::{D3D11_BOX, D3D11_TEXTURE2D_DESC};
 use windows::core::Error;
 
+pub(super) use self::capture::park as park_mirror;
 use self::capture::{Capture, Mirror, failed, snapshot};
 use self::draw::{Painter, Source};
 use super::Outline;
