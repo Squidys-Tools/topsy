@@ -13,7 +13,8 @@ that holds your files, shows what is playing and keeps your clipboard. Native Ru
 - **[A basket that comes to you.](./docs/user/basket.md)** Jiggle a drag anywhere on screen and a floating file
   tray flies in under the pointer to catch it. Rename, share or hand over everything at once.
 - **[Now Playing.](./docs/user/now-playing.md)** The art, title, progress and controls of whatever Windows is
-  playing, with level bars that move with the music.
+  playing, with level bars that move with the music. Pull it out of the notch into a floating player that stays
+  on screen, in liquid glass.
 - **[Clipboard history.](./docs/user/clipboard-history.md)** Ctrl+Alt+V opens everything you copied: text,
   links, colours, code, images and files. Search, pin, paste.
 - **[HUDs.](./docs/user/huds.md)** Volume, brightness and battery changes drop the notch down instead of
